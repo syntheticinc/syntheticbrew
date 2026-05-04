@@ -51,6 +51,21 @@ on `helmfile sync`, no bash glue.
   exceeded → operators lose access to the actual error logs. Single-shot
   with `Never` keeps the failed pod in `Failed` state for `kubectl logs`
   inspection.
+- **`knowledgeLoader.embeddingModel` workaround for brewctl 0.1.0.**
+  brewctl 0.1.0 resolves `embedding_model: <name>` against pre-apply
+  state when models and `knowledge_bases` are declared in the same
+  bundle — the embedding model is not yet in `current.Models`, so
+  brewctl creates the KB with empty `embedding_model_id` and every
+  `POST /files` call returns `400 no embedding model configured`. The
+  loader now probes the KB after `configApply` runs; if the link is
+  missing, it resolves `knowledgeLoader.embeddingModel` to a model UUID
+  and `PATCH`es the KB. Self-healing — becomes a no-op once brewctl
+  0.1.1+ ships a two-pass apply.
+- **Idempotent file skip with UUID prefix awareness.** Engine stores
+  uploaded files on disk as `<uuid>_<original>`. The loader now strips
+  this prefix when matching local filenames against remote, so
+  `skip-existing` mode actually skips on re-runs instead of re-uploading
+  every file on every `helm upgrade` (KB grew linearly per sync before).
 
 ### Future (chart 0.5.x / engine 1.0.4+)
 Engine currently does not expose `file_hash` on `GET /files` (DB has it,

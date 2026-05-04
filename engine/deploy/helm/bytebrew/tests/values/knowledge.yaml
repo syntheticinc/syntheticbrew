@@ -91,6 +91,7 @@ configApply:
 knowledgeLoader:
   enabled: true
   kb: kind-smoke-kb
+  embeddingModel: kind-smoke-embed              # workaround for brewctl 0.1.0
   existingConfigMap: kind-smoke-knowledge-files
   # Inherits tokenSecret from configApply.tokenSecret (postgres-credentials).
   mode: skip-existing

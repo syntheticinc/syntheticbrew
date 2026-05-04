@@ -363,6 +363,15 @@ knowledgeLoader:
   # and uploads files into that KB.
   kb: ""
 
+  # Embedding model name. MUST match models[].name in your configApply.config
+  # bundle (model_kind: embedding). Workaround for brewctl 0.1.0 which does
+  # not link embedding_model_id when models + knowledge_bases are declared in
+  # the same bundle (it resolves the model name against pre-apply state, so
+  # the model isn't seen yet). Loader probes the KB after configApply runs;
+  # if embedding_model_id is empty, it resolves this name to a model UUID
+  # and PATCHes the KB. No-op once brewctl 0.1.1+ ships a two-pass apply.
+  embeddingModel: ""
+
   # Existing ConfigMap whose data keys are filenames (e.g. policy.md, faq.md).
   # The Job mounts this at /etc/bytebrew/knowledge-files/ and walks the
   # directory. ConfigMap data values are the file contents (max ~1MB total

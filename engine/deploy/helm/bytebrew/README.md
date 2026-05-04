@@ -285,11 +285,23 @@ no hand-rolled bash on top of `helmfile sync`.
     knowledgeLoader:
       enabled: true
       kb: handbook                                # MUST match knowledge_bases[].name
+      embeddingModel: embed-default               # MUST match models[].name (kind: embedding).
+                                                  # Workaround for brewctl 0.1.0 — see note below.
       existingConfigMap: handbook-files           # ConfigMap from step 2
       mode: skip-existing                         # or replace / always (see below)
       prune: false                                # delete remote files not in CM
       # tokenSecret/tokenSecretKey default to configApply's
     ```
+
+    > **Why `embeddingModel` is a separate field.** brewctl 0.1.0 has a
+    > limitation: when models and knowledge_bases are declared in the same
+    > bundle, brewctl resolves `embedding_model: <name>` against pre-apply
+    > state — the embedding model isn't yet in `current.Models`, so the KB
+    > is created with empty `embedding_model_id`. The loader Job probes
+    > the KB after `configApply` runs, and if the link is missing it
+    > resolves `knowledgeLoader.embeddingModel` to a model UUID and
+    > `PATCH`es the KB. Self-healing — becomes a no-op once brewctl 0.1.1+
+    > ships a two-pass apply.
 
 **What runs:**
 
