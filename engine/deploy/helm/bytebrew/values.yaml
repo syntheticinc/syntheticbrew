@@ -325,3 +325,96 @@ bootstrapAdminToken:
   existingSecret: ""
   # Key within the Secret. Default 'token' aligns with configApply default.
   existingSecretKey: token
+
+# Declarative Knowledge / RAG file loader (chart 0.5.0+).
+#
+# Pairs with configApply.config: declare KB metadata in the brewctl bundle
+# (knowledge_bases:[{name, embedding_model}] + agents:[{knowledge_bases:[name]}])
+# and put the document files in a ConfigMap. The loader Job runs as a
+# post-install/post-upgrade hook (weight 15, after configApply weight 10),
+# walks the ConfigMap-mounted directory, and uploads each file via the
+# engine REST API (POST /api/v1/knowledge-bases/{id}/files). Idempotent
+# across helmfile sync runs.
+#
+# REQUIREMENTS:
+#   - configApply.enabled=true with a knowledge_bases entry matching .kb
+#   - persistence.knowledge.enabled=true (engine writes uploaded files to
+#     {DATA_DIR}/knowledge/{tenant}/{kb}/ on disk; without a PVC mounted
+#     at /etc/bytebrew/knowledge engine returns 500 on every upload).
+#     The chart fail-fasts at template render with a clear error if this
+#     is missing.
+#   - configApply.apiKeysSecret with a real OPENROUTER/OpenAI key bound
+#     to the embedding model declared in the bundle (embeddings run async
+#     after upload; placeholder keys leave files in status=error).
+#
+# Typical wiring (helmfile-side):
+#   1. Build a ConfigMap from your repo's knowledge files. Either render
+#      via Kustomize/Helm post-renderer, or use `kubectl create configmap
+#      <name> --from-file=./configs/knowledge/` as a CI step before sync.
+#   2. Set knowledgeLoader.existingConfigMap to that name and .kb to the
+#      KB declared in your bundle.
+#   3. Enable persistence.knowledge so engine has somewhere to write the
+#      uploaded files.
+knowledgeLoader:
+  enabled: false
+
+  # KB name. MUST match knowledge_bases[].name in your configApply.config
+  # bundle. The loader resolves this name to a UUID via the engine REST API
+  # and uploads files into that KB.
+  kb: ""
+
+  # Existing ConfigMap whose data keys are filenames (e.g. policy.md, faq.md).
+  # The Job mounts this at /etc/bytebrew/knowledge-files/ and walks the
+  # directory. ConfigMap data values are the file contents (max ~1MB total
+  # per ConfigMap by k8s spec — for larger corpora switch to a CSI Secret
+  # Store backed by S3 or similar via .extraVolumes).
+  existingConfigMap: ""
+
+  # Token Secret (admin Bearer). Defaults to configApply.tokenSecret if
+  # unset — same Secret feeds engine bootstrap, brewctl, and the loader.
+  tokenSecret: ""
+  tokenSecretKey: token
+
+  # Idempotency mode. Trade-offs:
+  # - skip-existing (default): if a file with the same name already exists
+  #   in the KB, do nothing. Fastest, $0 embedding cost on no-op syncs.
+  #   CAVEAT: same-name-different-content NOT detected. To force re-upload
+  #   when content changes, either rename the file OR switch mode below.
+  # - replace: skip if name AND file_size match (cheap drift detection),
+  #   else DELETE the existing file and re-upload. Catches most content
+  #   changes (size differs unless edits are perfectly length-preserving).
+  # - always: DELETE everything in the KB and re-upload all files on every
+  #   sync. Hash-perfect idempotent at the cost of re-running embeddings
+  #   on every helm upgrade (pay-per-token API impact).
+  #
+  # Future (chart 0.5.x + engine 1.0.4+ which exposes file_hash on GET):
+  # default will switch to "hash" mode for content-perfect idempotency
+  # without re-uploads. Tracked in chart issue queue.
+  mode: skip-existing
+
+  # Drift cleanup: delete files in the KB which are NOT present in the
+  # ConfigMap. Off by default — operators may upload files via the Admin UI
+  # outside the GitOps loop and prune would silently nuke them.
+  prune: false
+
+  # Image — alpine + curl + jq (installed via apk on Job startup, ~3s).
+  # Override if your cluster requires a private mirror. We do not ship a
+  # bytebrew/kb-loader image because the script is short and reading the
+  # actual logic from the Job manifest is more transparent than pulling a
+  # blob.
+  image:
+    repository: alpine
+    tag: "3.19"
+    pullPolicy: IfNotPresent
+
+  # Loader runtime budget. Each file = 1 HTTP POST + engine-side embedding.
+  # 600s covers ~50 small markdown files at typical embedding latency.
+  activeDeadlineSeconds: 600
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi

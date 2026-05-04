@@ -66,18 +66,42 @@ if kubectl -n "$NAMESPACE" get \
   # don't trip on missing resources.
   if [ "${EXPECT_BREWCTL_RESOURCES:-}" = "true" ]; then
     echo "==> Assert configApply created the smoke resources"
+    # Single-shot scenario uses kind-smoke-{model,agent,schema}; knowledge
+    # scenario uses kind-smoke-{chat,agent,schema} + a KB. Match either.
     models=$(curl -fsS "$ENGINE_URL/api/v1/models" \
-      -H "Authorization: Bearer $TOKEN" | jq -e 'map(select(.name == "kind-smoke-model")) | length')
+      -H "Authorization: Bearer $TOKEN" | jq -e 'map(select(.name | startswith("kind-smoke-"))) | length')
     agents=$(curl -fsS "$ENGINE_URL/api/v1/agents" \
       -H "Authorization: Bearer $TOKEN" | jq -e 'map(select(.name == "kind-smoke-agent")) | length')
     schemas=$(curl -fsS "$ENGINE_URL/api/v1/schemas" \
       -H "Authorization: Bearer $TOKEN" | jq -e 'map(select(.name == "kind-smoke-schema")) | length')
-    if [ "$models" != "1" ] || [ "$agents" != "1" ] || [ "$schemas" != "1" ]; then
+    if [ "$models" -lt 1 ] || [ "$agents" != "1" ] || [ "$schemas" != "1" ]; then
       echo "FAIL: brewctl reported success but smoke resources missing — models=$models agents=$agents schemas=$schemas"
       exit 1
     fi
-    echo "OK: brewctl created kind-smoke-{model,agent,schema}"
+    echo "OK: brewctl created kind-smoke-* (models=$models agents=$agents schemas=$schemas)"
   fi
+fi
+
+# Knowledge loader scenario assertions — gated separately so single-shot
+# doesn't fail when no KB exists.
+if [ "${EXPECT_KB_FILES:-}" = "true" ]; then
+  echo "==> Assert knowledgeLoader uploaded files into KB"
+  KB_NAME="${KB_NAME:-kind-smoke-kb}"
+  KB_ID=$(curl -fsS "$ENGINE_URL/api/v1/knowledge-bases" \
+    -H "Authorization: Bearer $TOKEN" \
+    | jq -r --arg n "$KB_NAME" '.[] | select(.name==$n) | .id' | head -1)
+  if [ -z "$KB_ID" ]; then
+    echo "FAIL: KB '$KB_NAME' not found in /api/v1/knowledge-bases"
+    exit 1
+  fi
+  files=$(curl -fsS "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files" \
+    -H "Authorization: Bearer $TOKEN" | jq -e 'length')
+  expected="${EXPECT_KB_FILE_COUNT:-2}"
+  if [ "$files" != "$expected" ]; then
+    echo "FAIL: KB '$KB_NAME' has $files files, expected $expected"
+    exit 1
+  fi
+  echo "OK: knowledgeLoader uploaded $files files into '$KB_NAME'"
 fi
 
 echo "✅ Smoke pass"

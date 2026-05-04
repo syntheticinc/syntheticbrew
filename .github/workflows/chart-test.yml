@@ -81,6 +81,46 @@ jobs:
           grep -q 'kind: HTTPRoute' "$R"
           grep -q 'apiVersion: gateway.networking.k8s.io/v1' "$R"
 
+      - name: Render — knowledgeLoader (declarative KB ingest)
+        run: |
+          set -euo pipefail
+          R=/tmp/r-knowledge.yaml
+          helm template smoke engine/deploy/helm/bytebrew \
+            -f engine/deploy/helm/bytebrew/tests/values/knowledge.yaml > "$R"
+          # Loader Job present + correct hook weight (15, after configApply 10).
+          grep -q 'app.kubernetes.io/component: knowledge-loader' "$R"
+          grep -q '"helm.sh/hook-weight": "15"' "$R"
+          # ConfigMap volume mount for .md files
+          grep -q 'mountPath: /etc/bytebrew/knowledge-files' "$R"
+          # Required values guards: must fail fast when kb / configmap missing
+          if helm template smoke engine/deploy/helm/bytebrew \
+              -f engine/deploy/helm/bytebrew/tests/values/knowledge.yaml \
+              --set knowledgeLoader.kb='' >/dev/null 2>/tmp/err-kb.txt; then
+            echo "FAIL: should have rejected empty knowledgeLoader.kb"; exit 1
+          fi
+          grep -q 'requires knowledgeLoader.kb' /tmp/err-kb.txt
+          if helm template smoke engine/deploy/helm/bytebrew \
+              -f engine/deploy/helm/bytebrew/tests/values/knowledge.yaml \
+              --set knowledgeLoader.existingConfigMap='' >/dev/null 2>/tmp/err-cm.txt; then
+            echo "FAIL: should have rejected empty knowledgeLoader.existingConfigMap"; exit 1
+          fi
+          grep -q 'requires knowledgeLoader.existingConfigMap' /tmp/err-cm.txt
+          # Without persistence.knowledge.enabled the engine can't store
+          # uploaded files (writes to relative ./data, fails 500). Guard
+          # this at template time so operators get a clear error instead
+          # of a runtime CrashLoop on first upload.
+          if helm template smoke engine/deploy/helm/bytebrew \
+              -f engine/deploy/helm/bytebrew/tests/values/knowledge.yaml \
+              --set persistence.knowledge.enabled=false >/dev/null 2>/tmp/err-pvc.txt; then
+            echo "FAIL: should have rejected knowledgeLoader without persistence.knowledge"; exit 1
+          fi
+          grep -q 'requires persistence.knowledge.enabled=true' /tmp/err-pvc.txt
+          # When persistence.knowledge.enabled, deployment MUST set DATA_DIR
+          # env so engine writes inside the mounted PVC instead of falling
+          # back to UserConfigDir / cwd-relative ./data.
+          grep -A1 '            - name: DATA_DIR' "$R" | grep -q 'value: /etc/bytebrew'
+          echo "OK: knowledgeLoader render + value guards"
+
       - name: replicaCount=local guard
         run: |
           set -euo pipefail
@@ -332,3 +372,73 @@ jobs:
           kubectl logs -l app.kubernetes.io/instance=bb --all-containers --tail=200 || true
           kubectl logs job/bb-bytebrew-engine-migrations --tail=200 || true
           kubectl logs job/bb-bytebrew-engine-config-apply --tail=200 || true
+
+  # Separate job: declarative Knowledge / RAG ingest end-to-end.
+  # Asserts knowledgeLoader Job uploaded ConfigMap-mounted .md files into the
+  # KB declared by configApply bundle. Single k8s version (1.30) — no value
+  # in matrix-running this since the loader logic is k8s-version-neutral.
+  integration-knowledge:
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: helm/kind-action@v1
+        with:
+          node_image: kindest/node:v1.30.0
+          cluster_name: chart-test-knowledge-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+
+      - name: Apply postgres-pgvector + knowledge-files fixtures
+        run: |
+          kubectl apply -f engine/deploy/helm/bytebrew/tests/fixtures/postgres-pgvector.yaml
+          kubectl apply -f engine/deploy/helm/bytebrew/tests/fixtures/knowledge-files.yaml
+          kubectl rollout status statefulset/postgres-pgvector --timeout=300s
+          kubectl wait --for=condition=ready pod \
+            -l app=postgres-pgvector --timeout=300s
+
+      - name: helm install — knowledge scenario
+        run: |
+          helm install bb engine/deploy/helm/bytebrew \
+            -f engine/deploy/helm/bytebrew/tests/values/knowledge.yaml \
+            --wait --timeout 15m
+
+      - name: Verify knowledgeLoader Job ran
+        run: |
+          set -euo pipefail
+          kubectl wait --for=condition=complete \
+            job/bb-bytebrew-engine-knowledge-loader --timeout=120s
+          kubectl logs job/bb-bytebrew-engine-knowledge-loader --tail=40
+
+      - name: Smoke
+        run: |
+          set -euo pipefail
+          kubectl port-forward svc/bb-bytebrew-engine 18443:8443 >/tmp/pf.log 2>&1 &
+          PF_PID=$!
+          trap "kill $PF_PID 2>/dev/null || true" EXIT
+          kubectl wait --for=condition=available deploy/bb-bytebrew-engine --timeout=300s
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:18443/api/v1/health >/dev/null && break
+            sleep 2
+          done
+          ADMIN_TOKEN=$(kubectl get secret postgres-credentials \
+            -o jsonpath='{.data.token}' | base64 -d) \
+            ENGINE_URL=http://localhost:18443 \
+            EXPECT_BREWCTL_RESOURCES=true \
+            EXPECT_KB_FILES=true \
+            KB_NAME=kind-smoke-kb \
+            EXPECT_KB_FILE_COUNT=2 \
+            bash engine/deploy/helm/bytebrew/tests/scripts/smoke.sh
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pod -l app.kubernetes.io/instance=bb || true
+          kubectl logs -l app.kubernetes.io/instance=bb --all-containers --tail=200 || true
+          kubectl logs job/bb-bytebrew-engine-migrations --tail=200 || true
+          kubectl logs job/bb-bytebrew-engine-config-apply --tail=200 || true
+          kubectl logs job/bb-bytebrew-engine-knowledge-loader --tail=200 || true

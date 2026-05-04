@@ -104,6 +104,17 @@ spec:
             - name: EMBED_DIM
               value: {{ .Values.config.embedDim | quote }}
             {{- end }}
+            {{- if .Values.persistence.knowledge.enabled }}
+            # Engine writes uploaded KB files to {DATA_DIR}/knowledge/{tenant}/{kb}/.
+            # Without DATA_DIR set, engine falls back to os.UserConfigDir() — empty
+            # in containers with no HOME — which collapses to relative "./data"
+            # and fails on readOnlyRootFilesystem (or non-root cwd) with
+            # "create knowledge directory: mkdir data: permission denied".
+            # Pinning DATA_DIR to the parent of the mounted PVC keeps every
+            # write inside persistent storage.
+            - name: DATA_DIR
+              value: /etc/bytebrew
+            {{- end }}
             {{- if .Values.bootstrapAdminToken.enabled }}
             - name: BYTEBREW_BOOTSTRAP_ADMIN_TOKEN
               valueFrom:

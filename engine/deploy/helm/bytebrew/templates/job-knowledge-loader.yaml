@@ -1,0 +1,250 @@
+{{- if .Values.knowledgeLoader.enabled }}
+{{- if not .Values.knowledgeLoader.kb }}
+{{- fail "knowledgeLoader.enabled=true requires knowledgeLoader.kb (KB name; must exist in configApply bundle as knowledge_bases[].name)" -}}
+{{- end }}
+{{- if not .Values.knowledgeLoader.existingConfigMap }}
+{{- fail "knowledgeLoader.enabled=true requires knowledgeLoader.existingConfigMap (ConfigMap with knowledge files as data keys)" -}}
+{{- end }}
+{{- if not .Values.persistence.knowledge.enabled }}
+{{- fail "knowledgeLoader.enabled=true requires persistence.knowledge.enabled=true (engine needs a writable PVC at /etc/bytebrew/knowledge to store uploaded files; without it engine returns 500 'create knowledge directory: permission denied')" -}}
+{{- end }}
+{{- $tokenSecret := .Values.knowledgeLoader.tokenSecret | default .Values.configApply.tokenSecret -}}
+{{- if not $tokenSecret }}
+{{- fail "knowledgeLoader.enabled=true requires either knowledgeLoader.tokenSecret or configApply.tokenSecret (Secret with admin Bearer token under key 'token')" -}}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "bytebrew-engine.fullname" . }}-knowledge-loader
+  labels:
+    {{- include "bytebrew-engine.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "15"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  activeDeadlineSeconds: {{ .Values.knowledgeLoader.activeDeadlineSeconds }}
+  # Single-shot Job: no in-place restart, no extra pod attempts. Failed pod
+  # stays in Failed state so its logs remain inspectable via
+  # `kubectl logs job/...` (Job controller's backoffLimit-exceeded path
+  # otherwise deletes the pod, masking the actual error).
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        {{- include "bytebrew-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: knowledge-loader
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "bytebrew-engine.serviceAccountName" . }}
+      # IMPORTANT: knowledgeLoader Job overrides chart's restrictive
+      # podSecurityContext (runAsNonRoot=true, runAsUser=1000). The default
+      # alpine image installs curl+jq via `apk add` at startup, which
+      # requires root. Job is short-lived (seconds), only talks to engine
+      # REST API, no persistent state — accepted trade-off vs maintaining
+      # a dedicated bytebrew/kb-loader image. To re-enable non-root,
+      # override knowledgeLoader.image to a pre-built variant with curl+jq
+      # pre-installed (e.g. your-registry/kb-loader:tag).
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+      initContainers:
+        # Wait for engine to be ready (matches configApply Job pattern).
+        # configApply has weight=10, knowledgeLoader weight=15 — but Helm runs
+        # post-install hooks in parallel by default, so we still need to wait.
+        - name: wait-for-engine
+          image: {{ .Values.knowledgeLoader.image.repository }}:{{ .Values.knowledgeLoader.image.tag }}
+          imagePullPolicy: {{ .Values.knowledgeLoader.image.pullPolicy }}
+          # Override chart's restrictive containerSecurityContext for this
+          # init container — alpine apk install requires writable /var/cache
+          # AND root; the chart sets allowPrivilegeEscalation: false +
+          # readOnlyRootFilesystem (when configured) which would block apk.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: ENGINE_URL
+              value: "http://{{ include "bytebrew-engine.fullname" . }}:{{ .Values.service.port }}"
+          command:
+            - sh
+            - -ec
+            - |
+              apk add --no-cache curl
+              for i in $(seq 1 150); do
+                if curl -sf "$ENGINE_URL/api/v1/health" > /dev/null; then
+                  echo "Engine ready after $i attempts"
+                  exit 0
+                fi
+                echo "Waiting for engine... ($i/150)"
+                sleep 2
+              done
+              echo "Engine did not become ready after 5 minutes" >&2
+              exit 1
+      containers:
+        - name: knowledge-loader
+          image: {{ .Values.knowledgeLoader.image.repository }}:{{ .Values.knowledgeLoader.image.tag }}
+          imagePullPolicy: {{ .Values.knowledgeLoader.image.pullPolicy }}
+          # Same security relaxation as init container — apk install requires
+          # writable /var and root. See pod-level securityContext comment above.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: ENGINE_URL
+              value: "http://{{ include "bytebrew-engine.fullname" . }}:{{ .Values.service.port }}"
+            - name: TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $tokenSecret }}
+                  key: {{ .Values.knowledgeLoader.tokenSecretKey | default "token" }}
+            - name: KB_NAME
+              value: {{ .Values.knowledgeLoader.kb | quote }}
+            - name: MODE
+              value: {{ .Values.knowledgeLoader.mode | quote }}
+            - name: PRUNE
+              value: {{ .Values.knowledgeLoader.prune | quote }}
+            - name: KNOWLEDGE_DIR
+              value: /etc/bytebrew/knowledge-files
+          command:
+            - sh
+            - -eu
+            - -c
+            - |
+              # alpine base — install minimal tooling. apk is fast (~3s).
+              # No `|| true` — fail fast if install fails so the operator
+              # sees the actual error in Job logs.
+              apk add --no-cache curl jq
+
+              auth() { printf 'Authorization: Bearer %s' "$TOKEN"; }
+
+              echo "==> Resolve KB id by name '$KB_NAME'"
+              KB_ID=$(curl -fsS -H "$(auth)" "$ENGINE_URL/api/v1/knowledge-bases" \
+                | jq -r --arg n "$KB_NAME" '.[] | select(.name==$n) | .id' | head -1)
+              if [ -z "$KB_ID" ]; then
+                echo "FAIL: knowledge base '$KB_NAME' not found" >&2
+                echo "Hint: declare it in configApply.config under knowledge_bases:" >&2
+                exit 1
+              fi
+              echo "OK: KB '$KB_NAME' = $KB_ID"
+
+              echo "==> List remote files (file_name + file_size)"
+              REMOTE=$(curl -fsS -H "$(auth)" \
+                "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files" \
+                | jq -c '[.[] | {name: .file_name, size: .file_size, id: .id}]')
+              echo "$REMOTE" | jq -r '.[] | "  remote: \(.name) (\(.size) bytes)"'
+
+              echo "==> Walk local files"
+              [ -d "$KNOWLEDGE_DIR" ] || { echo "FAIL: $KNOWLEDGE_DIR missing" >&2; exit 1; }
+              UPLOADED=0
+              SKIPPED=0
+              REPLACED=0
+              # Build a list of local file basenames for prune comparison.
+              LOCAL_NAMES=""
+
+              for f in "$KNOWLEDGE_DIR"/*; do
+                [ -f "$f" ] || continue
+                NAME=$(basename "$f")
+                SIZE=$(wc -c < "$f" | tr -d ' ')
+                LOCAL_NAMES="$LOCAL_NAMES $NAME"
+
+                # Find existing file with same name.
+                EXISTING=$(echo "$REMOTE" | jq -c --arg n "$NAME" '.[] | select(.name==$n)')
+                EXISTING_ID=$(echo "$EXISTING" | jq -r '.id // empty')
+                EXISTING_SIZE=$(echo "$EXISTING" | jq -r '.size // empty')
+
+                case "$MODE" in
+                  always)
+                    if [ -n "$EXISTING_ID" ]; then
+                      echo "  delete $NAME ($EXISTING_ID) — mode=always"
+                      curl -fsS -X DELETE -H "$(auth)" \
+                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files/$EXISTING_ID" >/dev/null
+                      REPLACED=$((REPLACED + 1))
+                    fi
+                    UP=upload
+                    ;;
+                  replace)
+                    if [ -z "$EXISTING_ID" ]; then
+                      UP=upload
+                    elif [ "$EXISTING_SIZE" = "$SIZE" ]; then
+                      UP=skip
+                    else
+                      echo "  delete $NAME ($EXISTING_ID) — size differs ($EXISTING_SIZE → $SIZE)"
+                      curl -fsS -X DELETE -H "$(auth)" \
+                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files/$EXISTING_ID" >/dev/null
+                      UP=upload
+                      REPLACED=$((REPLACED + 1))
+                    fi
+                    ;;
+                  skip-existing|*)
+                    if [ -n "$EXISTING_ID" ]; then
+                      UP=skip
+                    else
+                      UP=upload
+                    fi
+                    ;;
+                esac
+
+                if [ "$UP" = "upload" ]; then
+                  echo "  upload $NAME ($SIZE bytes)"
+                  HTTP_OUT=/tmp/upload-resp.txt
+                  HTTP_CODE=$(curl -sS -o "$HTTP_OUT" -w '%{http_code}' \
+                    -X POST -H "$(auth)" \
+                    -F "file=@$f" \
+                    "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files" || echo "curl_error")
+                  if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+                    echo "FAIL: upload $NAME → HTTP $HTTP_CODE" >&2
+                    echo "Response body:" >&2
+                    cat "$HTTP_OUT" >&2
+                    exit 1
+                  fi
+                  UPLOADED=$((UPLOADED + 1))
+                else
+                  echo "  skip   $NAME (exists, size match)"
+                  SKIPPED=$((SKIPPED + 1))
+                fi
+              done
+
+              if [ "$PRUNE" = "true" ]; then
+                echo "==> Prune: delete remote files not in ConfigMap"
+                PRUNED=0
+                echo "$REMOTE" | jq -r '.[] | "\(.name)\t\(.id)"' | while IFS=$'\t' read -r RNAME RID; do
+                  case " $LOCAL_NAMES " in
+                    *" $RNAME "*) ;;
+                    *)
+                      echo "  prune  $RNAME ($RID)"
+                      curl -fsS -X DELETE -H "$(auth)" \
+                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files/$RID" >/dev/null
+                      PRUNED=$((PRUNED + 1))
+                      ;;
+                  esac
+                done
+              fi
+
+              echo "==> Done: uploaded=$UPLOADED skipped=$SKIPPED replaced=$REPLACED"
+          resources:
+            {{- toYaml .Values.knowledgeLoader.resources | nindent 12 }}
+          volumeMounts:
+            - name: knowledge-files
+              mountPath: /etc/bytebrew/knowledge-files
+              readOnly: true
+            {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+      volumes:
+        - name: knowledge-files
+          configMap:
+            name: {{ .Values.knowledgeLoader.existingConfigMap }}
+        {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
+{{- end }}

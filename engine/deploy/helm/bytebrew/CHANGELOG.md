@@ -7,6 +7,58 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-04
+
+### Added
+- **`knowledgeLoader` Job** — declarative Knowledge / RAG file ingest. Pairs
+  with `configApply.config` bundle: declare KB metadata + agent linkage
+  (`knowledge_bases:[{name, embedding_model}]` + `agents:[{knowledge_bases:[name]}]`),
+  put document files in a ConfigMap, and the loader Job uploads each file
+  via `POST /api/v1/knowledge-bases/{id}/files` on every `helm install` /
+  `helm upgrade`. Idempotent across syncs (configurable mode):
+  - `skip-existing` (default) — skip files whose name exists in KB
+  - `replace` — skip if name+size match, else DELETE+POST
+  - `always` — DELETE all KB files + re-upload everything
+  - Optional `prune: true` — delete remote files not in ConfigMap
+
+  Out-of-the-box GitOps for the most common case ("ship 7 markdown files
+  with the chart") that previously required a hand-rolled bash Job in
+  the operator's CI. Helm hook weight 15 — runs after configApply (10).
+  Image: `alpine:3.19` + apk-installed curl + jq (~3s startup).
+
+  See README "Integrations — Knowledge / RAG ingest" for the wiring example.
+
+### Why now (chirp-mono2 dev feedback)
+chirp-mono2 dev integration asked: "we have 7 markdown files, what's the
+canonical way to load them?" Pre-0.5.0 answer was "post-deploy bash with
+~30 lines of REST upload + SHA dedup". That pushes boilerplate to every CE
+operator. 0.5.0 ships the Job natively — declare it in values, files land
+on `helmfile sync`, no bash glue.
+
+### Fixed
+- **`DATA_DIR` env wired when `persistence.knowledge.enabled=true`.** Engine
+  writes uploaded KB files to `{DATA_DIR}/knowledge/{tenant}/{kb}/`. Without
+  `DATA_DIR` set, engine fell back to `os.UserConfigDir()` — empty in
+  containers with no `HOME` — which collapsed to relative `./data` and
+  failed every upload with `HTTP 500: create knowledge directory: mkdir
+  data: permission denied` under `runAsNonRoot=true` (chart default). Chart
+  now pins `DATA_DIR=/etc/bytebrew` so writes land inside the mounted
+  knowledge PVC. **Render-time guard:** `knowledgeLoader.enabled=true`
+  fails fast unless `persistence.knowledge.enabled=true` — pre-0.5.0
+  combinations would render but every upload would 500.
+- **knowledgeLoader Job: `restartPolicy: Never` + `backoffLimit: 0`.**
+  Default `OnFailure + backoffLimit:1` deletes the failed pod after backoff
+  exceeded → operators lose access to the actual error logs. Single-shot
+  with `Never` keeps the failed pod in `Failed` state for `kubectl logs`
+  inspection.
+
+### Future (chart 0.5.x / engine 1.0.4+)
+Engine currently does not expose `file_hash` on `GET /files` (DB has it,
+API response struct doesn't). Once engine 1.0.4 surfaces the hash field,
+loader will switch to content-perfect idempotency (skip if `sha256(local)
+== file_hash(remote)`). Until then, `replace` mode uses `file_size` as a
+proxy for content drift — catches most edits except length-preserving ones.
+
 ## [0.4.4] - 2026-05-04
 
 ### Fixed
