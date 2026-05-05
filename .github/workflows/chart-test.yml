@@ -406,12 +406,14 @@ jobs:
             -f engine/deploy/helm/bytebrew/tests/values/knowledge.yaml \
             --wait --timeout 15m
 
-      - name: Verify knowledgeLoader Job ran
-        run: |
-          set -euo pipefail
-          kubectl wait --for=condition=complete \
-            job/bb-bytebrew-engine-knowledge-loader --timeout=120s
-          kubectl logs job/bb-bytebrew-engine-knowledge-loader --tail=40
+      # NOTE: no explicit `Verify knowledgeLoader Job ran` step. The Job
+      # uses hook-delete-policy=before-hook-creation,hook-succeeded — Helm
+      # reaps successful Jobs immediately, so `kubectl get job/...` 404s
+      # by the time CI runs. `helm install --wait` already gates on hook
+      # success (would fail if the Job didn't complete), and the Smoke
+      # step below asserts end-state via EXPECT_KB_FILE_COUNT. The
+      # Diagnostics-on-failure step at the bottom captures Job logs if
+      # the Job FAILED (failed Jobs persist by design under this policy).
 
       - name: Smoke
         run: |
