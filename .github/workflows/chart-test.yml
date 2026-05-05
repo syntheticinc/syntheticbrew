@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.15.0
 
@@ -184,7 +184,7 @@ jobs:
           # the same self-hosted runner concurrently or a previous run leaked.
           cluster_name: chart-test-${{ matrix.k8s }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.15.0
 
@@ -311,7 +311,7 @@ jobs:
           node_image: kindest/node:v1.30.0
           cluster_name: chart-test-restricted-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.15.0
 
@@ -388,7 +388,7 @@ jobs:
           node_image: kindest/node:v1.30.0
           cluster_name: chart-test-knowledge-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.15.0
 
