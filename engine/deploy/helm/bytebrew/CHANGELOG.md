@@ -66,6 +66,18 @@ on `helmfile sync`, no bash glue.
   this prefix when matching local filenames against remote, so
   `skip-existing` mode actually skips on re-runs instead of re-uploading
   every file on every `helm upgrade` (KB grew linearly per sync before).
+- **Prune loop counter + DELETE error visibility.** Replaced
+  `| while read` (which runs in a busybox-sh subshell — `PRUNED` never
+  escaped, and `set -e` couldn't trip on `curl` failures inside the
+  pipeline) with a tempfile-backed `while; done <` so the prune count
+  surfaces in the summary line and any `DELETE /files/{id}` failure
+  fails the Job loudly instead of silently swallowing.
+- **Failed knowledgeLoader Jobs persist for log inspection.** Hook
+  delete-policy switched from `before-hook-creation` to
+  `before-hook-creation,hook-succeeded`. Successful runs are still
+  reaped (no namespace bloat), but failed Jobs survive past the next
+  `helm upgrade` so operators can run `kubectl logs job/...-knowledge-loader`
+  even after retrying.
 
 ### Future (chart 0.5.x / engine 1.0.4+)
 Engine currently does not expose `file_hash` on `GET /files` (DB has it,

@@ -3,7 +3,7 @@
 {{- fail "knowledgeLoader.enabled=true requires knowledgeLoader.kb (KB name; must exist in configApply bundle as knowledge_bases[].name)" -}}
 {{- end }}
 {{- if not .Values.knowledgeLoader.existingConfigMap }}
-{{- fail "knowledgeLoader.enabled=true requires knowledgeLoader.existingConfigMap (ConfigMap with knowledge files as data keys)" -}}
+{{- fail "knowledgeLoader.enabled=true requires knowledgeLoader.existingConfigMap (ConfigMap with knowledge files as data keys; create with `kubectl create configmap NAME --from-file=./dir/`, or render via helmfile/Kustomize)" -}}
 {{- end }}
 {{- if not .Values.persistence.knowledge.enabled }}
 {{- fail "knowledgeLoader.enabled=true requires persistence.knowledge.enabled=true (engine needs a writable PVC at /etc/bytebrew/knowledge to store uploaded files; without it engine returns 500 'create knowledge directory: permission denied')" -}}
@@ -21,7 +21,13 @@ metadata:
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "15"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    # before-hook-creation,hook-succeeded — failed Jobs persist (so the
+    # operator can `kubectl logs job/...-knowledge-loader` after a red
+    # `helm upgrade`), succeeded Jobs are reaped to keep the namespace
+    # tidy. Plain "before-hook-creation" would only reap on the *next*
+    # upgrade — between the failure and the retry, the operator has
+    # one shot to capture logs before they're gone.
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   activeDeadlineSeconds: {{ .Values.knowledgeLoader.activeDeadlineSeconds }}
   # Single-shot Job: no in-place restart, no extra pod attempts. Failed pod
@@ -256,10 +262,17 @@ spec:
                 fi
               done
 
+              PRUNED=0
               if [ "$PRUNE" = "true" ]; then
                 echo "==> Prune: delete remote files not in ConfigMap"
-                PRUNED=0
-                echo "$REMOTE" | jq -r '.[] | "\(.name)\t\(.id)"' | while IFS=$'\t' read -r RNAME RID; do
+                # Read prune list from a tempfile rather than `| while` —
+                # busybox sh runs `while` in a subshell when piped, so
+                # PRUNED would never escape, and `set -e` doesn't trip on
+                # a curl failure inside the pipeline (exit status of the
+                # pipeline is the right side, which always succeeds).
+                PRUNE_LIST=/tmp/prune-list.txt
+                echo "$REMOTE" | jq -r '.[] | "\(.name)\t\(.id)"' > "$PRUNE_LIST"
+                while IFS="$(printf '\t')" read -r RNAME RID; do
                   case " $LOCAL_NAMES " in
                     *" $RNAME "*) ;;
                     *)
@@ -269,10 +282,10 @@ spec:
                       PRUNED=$((PRUNED + 1))
                       ;;
                   esac
-                done
+                done < "$PRUNE_LIST"
               fi
 
-              echo "==> Done: uploaded=$UPLOADED skipped=$SKIPPED replaced=$REPLACED"
+              echo "==> Done: uploaded=$UPLOADED skipped=$SKIPPED replaced=$REPLACED pruned=$PRUNED"
           resources:
             {{- toYaml .Values.knowledgeLoader.resources | nindent 12 }}
           volumeMounts:
