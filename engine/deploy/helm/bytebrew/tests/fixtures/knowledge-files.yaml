@@ -1,0 +1,23 @@
+---
+# Test fixture: ConfigMap with 2 markdown files for knowledgeLoader scenario.
+# Mounted by the loader Job at /etc/bytebrew/knowledge-files/.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kind-smoke-knowledge-files
+data:
+  policy.md: |
+    # Acceptable Use Policy
+
+    All employees must use company resources responsibly.
+    Consult HR for questions.
+  faq.md: |
+    # FAQ
+
+    ## How do I request time off?
+
+    Submit a request through the HR portal at least two weeks in advance.
+
+    ## Whom do I contact for IT support?
+
+    Email it-help@example.com or call the internal help desk at extension 1234.

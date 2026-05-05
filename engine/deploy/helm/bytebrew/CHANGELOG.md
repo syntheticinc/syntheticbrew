@@ -7,6 +7,85 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-04
+
+### Added
+- **`knowledgeLoader` Job** — declarative Knowledge / RAG file ingest. Pairs
+  with `configApply.config` bundle: declare KB metadata + agent linkage
+  (`knowledge_bases:[{name, embedding_model}]` + `agents:[{knowledge_bases:[name]}]`),
+  put document files in a ConfigMap, and the loader Job uploads each file
+  via `POST /api/v1/knowledge-bases/{id}/files` on every `helm install` /
+  `helm upgrade`. Idempotent across syncs (configurable mode):
+  - `skip-existing` (default) — skip files whose name exists in KB
+  - `replace` — skip if name+size match, else DELETE+POST
+  - `always` — DELETE all KB files + re-upload everything
+  - Optional `prune: true` — delete remote files not in ConfigMap
+
+  Out-of-the-box GitOps for the most common case ("ship 7 markdown files
+  with the chart") that previously required a hand-rolled bash Job in
+  the operator's CI. Helm hook weight 15 — runs after configApply (10).
+  Image: `alpine:3.19` + apk-installed curl + jq (~3s startup).
+
+  See README "Integrations — Knowledge / RAG ingest" for the wiring example.
+
+### Why now (chirp-mono2 dev feedback)
+chirp-mono2 dev integration asked: "we have 7 markdown files, what's the
+canonical way to load them?" Pre-0.5.0 answer was "post-deploy bash with
+~30 lines of REST upload + SHA dedup". That pushes boilerplate to every CE
+operator. 0.5.0 ships the Job natively — declare it in values, files land
+on `helmfile sync`, no bash glue.
+
+### Fixed
+- **`DATA_DIR` env wired when `persistence.knowledge.enabled=true`.** Engine
+  writes uploaded KB files to `{DATA_DIR}/knowledge/{tenant}/{kb}/`. Without
+  `DATA_DIR` set, engine fell back to `os.UserConfigDir()` — empty in
+  containers with no `HOME` — which collapsed to relative `./data` and
+  failed every upload with `HTTP 500: create knowledge directory: mkdir
+  data: permission denied` under `runAsNonRoot=true` (chart default). Chart
+  now pins `DATA_DIR=/etc/bytebrew` so writes land inside the mounted
+  knowledge PVC. **Render-time guard:** `knowledgeLoader.enabled=true`
+  fails fast unless `persistence.knowledge.enabled=true` — pre-0.5.0
+  combinations would render but every upload would 500.
+- **knowledgeLoader Job: `restartPolicy: Never` + `backoffLimit: 0`.**
+  Default `OnFailure + backoffLimit:1` deletes the failed pod after backoff
+  exceeded → operators lose access to the actual error logs. Single-shot
+  with `Never` keeps the failed pod in `Failed` state for `kubectl logs`
+  inspection.
+- **`knowledgeLoader.embeddingModel` workaround for brewctl 0.1.0.**
+  brewctl 0.1.0 resolves `embedding_model: <name>` against pre-apply
+  state when models and `knowledge_bases` are declared in the same
+  bundle — the embedding model is not yet in `current.Models`, so
+  brewctl creates the KB with empty `embedding_model_id` and every
+  `POST /files` call returns `400 no embedding model configured`. The
+  loader now probes the KB after `configApply` runs; if the link is
+  missing, it resolves `knowledgeLoader.embeddingModel` to a model UUID
+  and `PATCH`es the KB. Self-healing — becomes a no-op once brewctl
+  0.1.1+ ships a two-pass apply.
+- **Idempotent file skip with UUID prefix awareness.** Engine stores
+  uploaded files on disk as `<uuid>_<original>`. The loader now strips
+  this prefix when matching local filenames against remote, so
+  `skip-existing` mode actually skips on re-runs instead of re-uploading
+  every file on every `helm upgrade` (KB grew linearly per sync before).
+- **Prune loop counter + DELETE error visibility.** Replaced
+  `| while read` (which runs in a busybox-sh subshell — `PRUNED` never
+  escaped, and `set -e` couldn't trip on `curl` failures inside the
+  pipeline) with a tempfile-backed `while; done <` so the prune count
+  surfaces in the summary line and any `DELETE /files/{id}` failure
+  fails the Job loudly instead of silently swallowing.
+- **Failed knowledgeLoader Jobs persist for log inspection.** Hook
+  delete-policy switched from `before-hook-creation` to
+  `before-hook-creation,hook-succeeded`. Successful runs are still
+  reaped (no namespace bloat), but failed Jobs survive past the next
+  `helm upgrade` so operators can run `kubectl logs job/...-knowledge-loader`
+  even after retrying.
+
+### Future (chart 0.5.x / engine 1.0.4+)
+Engine currently does not expose `file_hash` on `GET /files` (DB has it,
+API response struct doesn't). Once engine 1.0.4 surfaces the hash field,
+loader will switch to content-perfect idempotency (skip if `sha256(local)
+== file_hash(remote)`). Until then, `replace` mode uses `file_size` as a
+proxy for content drift — catches most edits except length-preserving ones.
+
 ## [0.4.4] - 2026-05-04
 
 ### Fixed

@@ -1,0 +1,101 @@
+# Test scenario: end-to-end declarative Knowledge / RAG ingest.
+#
+# Extends single-shot pattern with:
+# - configApply bundle declares an embedding Model + KnowledgeBase + agent
+#   linkage. Engine creates the KB row (no files yet).
+# - knowledgeLoader Job uploads .md files from a ConfigMap into the KB
+#   right after configApply finishes.
+#
+# Smoke (smoke.sh + workflow) asserts /api/v1/knowledge-bases/{id}/files
+# returns the 2 fixture files.
+replicaCount: 1
+
+image:
+  repository: bytebrew/engine
+  tag: "1.0.3"
+  pullPolicy: IfNotPresent
+
+postgresql:
+  external:
+    existingSecret: postgres-credentials
+    existingSecretKey: DATABASE_URL
+
+config:
+  auth:
+    mode: local
+    jwtKeysPath: /var/lib/bytebrew/keys
+
+persistence:
+  keys:
+    enabled: true
+    size: 1Mi
+    storageClass: standard
+  # Required by knowledgeLoader: engine writes uploaded files to
+  # {DATA_DIR=/etc/bytebrew}/knowledge/{tenant}/{kb}/. Without this PVC
+  # engine returns HTTP 500 on every upload.
+  knowledge:
+    enabled: true
+    size: 100Mi
+    storageClass: standard
+    accessMode: ReadWriteOnce
+
+ingress: { enabled: false }
+httpRoute: { enabled: false }
+
+migrations:
+  enabled: true
+  image:
+    repository: bytebrew/engine-migrations
+    tag: "1.0.3"
+
+bootstrapAdminToken:
+  enabled: true
+  existingSecret: postgres-credentials
+  existingSecretKey: token
+
+configApply:
+  enabled: true
+  tokenSecret: postgres-credentials
+  apiKeysSecret: postgres-credentials
+  config: |
+    models:
+      - name: kind-smoke-chat
+        type: openai_compatible
+        model_kind: chat
+        base_url: https://openrouter.ai/api/v1
+        model_name: openai/gpt-4o-mini
+        api_key: ${OPENROUTER_API_KEY}
+        is_default: true
+      - name: kind-smoke-embed
+        type: openai_compatible
+        model_kind: embedding
+        base_url: https://api.openai.com/v1
+        model_name: text-embedding-3-small
+        api_key: ${OPENROUTER_API_KEY}
+        embedding_dim: 1536
+    knowledge_bases:
+      - name: kind-smoke-kb
+        description: "Smoke KB for declarative knowledge ingest"
+        embedding_model: kind-smoke-embed
+    agents:
+      - name: kind-smoke-agent
+        model: kind-smoke-chat
+        knowledge_bases: [kind-smoke-kb]
+        lifecycle: persistent
+        system_prompt: "Smoke test agent."
+    schemas:
+      - name: kind-smoke-schema
+        entry_agent: kind-smoke-agent
+        chat_enabled: true
+
+knowledgeLoader:
+  enabled: true
+  kb: kind-smoke-kb
+  embeddingModel: kind-smoke-embed              # workaround for brewctl 0.1.0
+  existingConfigMap: kind-smoke-knowledge-files
+  # Inherits tokenSecret from configApply.tokenSecret (postgres-credentials).
+  mode: skip-existing
+
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits:   { cpu: 500m, memory: 512Mi }

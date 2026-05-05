@@ -14,6 +14,7 @@ it has been validated. Pick what your environment supports and treat
 | Default install (single-shot)          | **Stable**   | CI gate (kind v1.28/1.30/1.31, install + upgrade + rollback) + chirp-mono2 dev canary |
 | External Postgres + ESO + Vault        | **Stable**   | CI gate + chirp-mono2 dev canary |
 | Bootstrap admin token + configApply    | **Stable**   | CI gate (full single-shot flow) |
+| Declarative Knowledge / RAG ingest (`knowledgeLoader`) | **Stable** | CI gate (kind v1.30 install — asserts loader Job uploaded N files into KB) |
 | Migrations Job (Liquibase)             | **Stable**   | CI gate asserts `databasechangelog` populated |
 | HTTPRoute (Gateway API v1)             | **Stable**   | CI render-validated + chirp-mono2 dev canary against Envoy Gateway |
 | `containerSecurityContext.readOnlyRootFilesystem: true` (auto /tmp emptyDir) | **Stable** | CI render-validated; smoke runs render-only on kind |
@@ -213,3 +214,142 @@ soft seeding (invalid format → WARN log + skip seed). Engine **v1.0.2+** adds
 fail-fast on invalid token format — process exits with a clear cause logged,
 producing CrashLoopBackOff visible in `kubectl describe pod` (chart `appVersion`
 1.0.2 reflects this).
+
+### Declarative Knowledge / RAG ingest (`knowledgeLoader`)
+
+Chart 0.5.0+ ships a post-install Helm hook that uploads files from a
+ConfigMap into a knowledge base declared in your `configApply` bundle —
+no hand-rolled bash on top of `helmfile sync`.
+
+**Pieces:**
+
+1. **Embedding model + KB + agent linkage** in the brewctl bundle:
+
+    ```yaml
+    configApply:
+      enabled: true
+      tokenSecret: bytebrew-config
+      apiKeysSecret: bytebrew-config              # holds OPENROUTER_API_KEY
+      config: |
+        models:
+          - name: chat-default
+            type: openai_compatible
+            model_kind: chat
+            base_url: https://openrouter.ai/api/v1
+            model_name: openai/gpt-4o-mini
+            api_key: ${OPENROUTER_API_KEY}
+            is_default: true
+          - name: embed-default
+            type: openai_compatible
+            model_kind: embedding
+            base_url: https://api.openai.com/v1
+            model_name: text-embedding-3-small
+            api_key: ${OPENROUTER_API_KEY}
+            embedding_dim: 1536
+        knowledge_bases:
+          - name: handbook
+            description: "Company handbook"
+            embedding_model: embed-default
+        agents:
+          - name: support
+            model: chat-default
+            knowledge_bases: [handbook]
+            lifecycle: persistent
+            system_prompt: "Answer using the handbook."
+        schemas:
+          - name: support-chat
+            entry_agent: support
+            chat_enabled: true
+    ```
+
+2. **ConfigMap with the actual document files.** Either render via
+   helmfile/Kustomize, or build it as a CI step before sync:
+
+    ```bash
+    kubectl create configmap handbook-files \
+      --from-file=./knowledge/policy.md \
+      --from-file=./knowledge/faq.md \
+      --dry-run=client -o yaml | kubectl apply -f -
+    ```
+
+3. **Loader values.** Enable the hook + the writable PVC engine needs to
+   store uploaded files:
+
+    ```yaml
+    persistence:
+      knowledge:
+        enabled: true                             # required (engine writes
+        size: 1Gi                                 # to {DATA_DIR}/knowledge/)
+        storageClass: ""                          # cluster default
+
+    knowledgeLoader:
+      enabled: true
+      kb: handbook                                # MUST match knowledge_bases[].name
+      embeddingModel: embed-default               # MUST match models[].name (kind: embedding).
+                                                  # Workaround for brewctl 0.1.0 — see note below.
+      existingConfigMap: handbook-files           # ConfigMap from step 2
+      mode: skip-existing                         # or replace / always (see below)
+      prune: false                                # delete remote files not in CM
+      # tokenSecret/tokenSecretKey default to configApply's
+    ```
+
+    > **Why `embeddingModel` is a separate field.** brewctl 0.1.0 has a
+    > limitation: when models and knowledge_bases are declared in the same
+    > bundle, brewctl resolves `embedding_model: <name>` against pre-apply
+    > state — the embedding model isn't yet in `current.Models`, so the KB
+    > is created with empty `embedding_model_id`. The loader Job probes
+    > the KB after `configApply` runs, and if the link is missing it
+    > resolves `knowledgeLoader.embeddingModel` to a model UUID and
+    > `PATCH`es the KB. Self-healing — becomes a no-op once brewctl 0.1.1+
+    > ships a two-pass apply.
+
+**What runs:**
+
+- `bytebrew-engine-config-apply` (Helm hook weight **10**) — brewctl applies
+  the bundle, creates KB row in DB.
+- `bytebrew-engine-knowledge-loader` (Helm hook weight **15**) — alpine pod
+  installs `curl`+`jq` via apk (~3s), resolves `kb` to UUID, walks
+  `/etc/bytebrew/knowledge-files/`, uploads each file via `POST
+  /api/v1/knowledge-bases/{id}/files`. Idempotent across re-syncs.
+
+**Mode trade-offs:**
+
+| `mode`          | Behavior                                         | Embedding cost on no-op |
+| --------------- | ------------------------------------------------ | ----------------------- |
+| `skip-existing` | Skip if filename already in KB (default)         | $0                      |
+| `replace`       | Skip if name+size match, else DELETE+POST        | $0 on size match        |
+| `always`        | DELETE all KB files + re-upload everything       | full re-embedding       |
+
+Until engine exposes `file_hash` on `GET /files` (planned 1.0.4),
+`replace` mode uses `file_size` as a content-drift proxy. Length-preserving
+edits (typo fixes of identical-length words) won't trigger a re-upload —
+either rename the file or use `mode: always`.
+
+**Prune (default off).** When `prune: true`, the loader DELETEs files in
+the KB that are NOT present in the ConfigMap. Off by default because
+operators may upload files via the Admin UI outside the GitOps loop —
+`prune: true` would silently nuke them. Turn on only when the ConfigMap
+is the single source of truth for the KB.
+
+**Required envelope:**
+
+- `configApply.enabled=true` with a matching `knowledge_bases:` entry
+- `persistence.knowledge.enabled=true` (chart fail-fasts at render
+  otherwise — engine writes to `{DATA_DIR}/knowledge/{tenant}/{kb}/`,
+  no PVC means HTTP 500 on every upload)
+- `configApply.apiKeysSecret` with a real key bound to the embedding
+  model. Embeddings run async after upload — placeholder keys leave
+  files in `status: error` (visible in Admin UI / `GET /files`).
+
+**ConfigMap size limit.** Stock k8s caps a ConfigMap at ~1 MB of total
+data. For larger corpora, switch `existingConfigMap` to a CSI-driver
+projection (S3/GCS-backed) via `extraVolumes` — the loader script just
+walks `/etc/bytebrew/knowledge-files/`, so the volume source is opaque.
+
+**Security note.** The loader Job overrides chart's `runAsNonRoot=true`
+to `runAsUser=0` because alpine `apk add` requires root for
+`/var/cache/apk/`. Job is short-lived (seconds), only talks to the
+in-cluster engine REST API, holds no persistent state. To keep
+non-root, override `knowledgeLoader.image` to a pre-built variant with
+`curl`+`jq` baked in (e.g. `your-registry/kb-loader:tag`) and re-add
+`runAsNonRoot: true`.
