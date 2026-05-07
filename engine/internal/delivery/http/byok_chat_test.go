@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
 )
@@ -45,8 +46,29 @@ func (f *fakeChatService) Chat(ctx context.Context, schemaID, _, userSub, _ stri
 // fakeForwardHeaders returns no header forwarding — focus is BYOK only.
 func fakeForwardHeaders() []string { return nil }
 
-// testSchemaID is a valid UUID used as the route param.
+// testSchemaID is the canonical UUID the test resolver returns when handed
+// the test schema name. The chat service mock asserts this same value to
+// confirm name → UUID resolution flowed through the handler.
 const testSchemaID = "11111111-1111-1111-1111-111111111111"
+
+// testSchemaName is the operator-facing handle the engine 1.1.0 routes carry.
+// The resolver below maps it to testSchemaID; any other name is reported as
+// not found so a typo'd URL surfaces as a 404 instead of leaking through.
+const testSchemaName = "byok-test-schema"
+
+// byokTestSchemaResolver returns a static SchemaNameResolver that maps the
+// test schema name to testSchemaID and otherwise reports record-not-found.
+// Closure variant of fakeSchemaNameResolver from name_resolve_test.go.
+func byokTestSchemaResolver() SchemaNameResolver {
+	return &fakeSchemaNameResolver{
+		fn: func(_ context.Context, name string) (string, error) {
+			if name == testSchemaName {
+				return testSchemaID, nil
+			}
+			return "", gorm.ErrRecordNotFound
+		},
+	}
+}
 
 // chatBody returns a JSON chat request with user_sub fallback so the
 // handler's userSub gate does not 401 in these BYOK-focused tests.
@@ -66,7 +88,7 @@ func chatBody(extra string) *strings.Reader {
 // ad-hoc per-end-user ChatModel.
 func TestChatHandler_BYOKHeaders_ReachServiceContext(t *testing.T) {
 	svc := &fakeChatService{}
-	handler := NewChatHandler(svc, fakeForwardHeaders)
+	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
 
 	mw := NewBYOKMiddleware(BYOKConfig{
 		Enabled:          true,
@@ -77,9 +99,9 @@ func TestChatHandler_BYOKHeaders_ReachServiceContext(t *testing.T) {
 	// AFTER auth (auth is a no-op in this test) and BEFORE the handler.
 	r := chi.NewRouter()
 	r.Use(mw.InjectBYOK)
-	r.Post("/api/v1/schemas/{id}/chat", handler.Chat)
+	r.Post("/api/v1/schemas/{name}/chat", handler.Chat)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaID+"/chat", chatBody(""))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaName+"/chat", chatBody(""))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-BYOK-Provider", "openai_compatible")
 	req.Header.Set("X-BYOK-API-Key", "sk-byok-secret")
@@ -104,7 +126,7 @@ func TestChatHandler_BYOKHeaders_ReachServiceContext(t *testing.T) {
 // the middleware short-circuits before the chat handler ever runs.
 func TestChatHandler_DisallowedProvider_Returns403(t *testing.T) {
 	svc := &fakeChatService{}
-	handler := NewChatHandler(svc, fakeForwardHeaders)
+	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
 	mw := NewBYOKMiddleware(BYOKConfig{
 		Enabled:          true,
 		AllowedProviders: []string{"openai"},
@@ -112,9 +134,9 @@ func TestChatHandler_DisallowedProvider_Returns403(t *testing.T) {
 
 	r := chi.NewRouter()
 	r.Use(mw.InjectBYOK)
-	r.Post("/api/v1/schemas/{id}/chat", handler.Chat)
+	r.Post("/api/v1/schemas/{name}/chat", handler.Chat)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaID+"/chat", chatBody(""))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaName+"/chat", chatBody(""))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-BYOK-Provider", "anthropic")
 	req.Header.Set("X-BYOK-API-Key", "sk-x")
@@ -137,7 +159,7 @@ func TestChatHandler_DisallowedProvider_Returns403(t *testing.T) {
 // (V2 §5.8 "missing key when required").
 func TestChatHandler_MissingKey_Returns400(t *testing.T) {
 	svc := &fakeChatService{}
-	handler := NewChatHandler(svc, fakeForwardHeaders)
+	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
 	mw := NewBYOKMiddleware(BYOKConfig{
 		Enabled:          true,
 		AllowedProviders: []string{"openai"},
@@ -145,9 +167,9 @@ func TestChatHandler_MissingKey_Returns400(t *testing.T) {
 
 	r := chi.NewRouter()
 	r.Use(mw.InjectBYOK)
-	r.Post("/api/v1/schemas/{id}/chat", handler.Chat)
+	r.Post("/api/v1/schemas/{name}/chat", handler.Chat)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaID+"/chat", chatBody(""))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaName+"/chat", chatBody(""))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-BYOK-Provider", "openai")
 	// No X-BYOK-API-Key
@@ -165,14 +187,14 @@ func TestChatHandler_MissingKey_Returns400(t *testing.T) {
 // attached — the tenant-configured model must remain in effect.
 func TestChatHandler_NoBYOK_TenantConfigPath(t *testing.T) {
 	svc := &fakeChatService{}
-	handler := NewChatHandler(svc, fakeForwardHeaders)
+	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
 	mw := NewBYOKMiddleware(BYOKConfig{Enabled: true, AllowedProviders: []string{"openai"}})
 
 	r := chi.NewRouter()
 	r.Use(mw.InjectBYOK)
-	r.Post("/api/v1/schemas/{id}/chat", handler.Chat)
+	r.Post("/api/v1/schemas/{name}/chat", handler.Chat)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaID+"/chat", chatBody(""))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/"+testSchemaName+"/chat", chatBody(""))
 	req.Header.Set("Content-Type", "application/json")
 
 	rec := httptest.NewRecorder()

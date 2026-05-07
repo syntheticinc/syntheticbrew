@@ -20,7 +20,7 @@ export interface SSEMessage {
 export interface UseSSEChatConfig {
   /**
    * Explicit endpoint override. If not set, the hook falls back to
-   * `/api/v1/schemas/{schemaId}/chat` using the `schemaId` field below.
+   * `/api/v1/schemas/{schemaName}/chat` using the `schemaName` field below.
    * Callers that target a different endpoint (e.g. the builder assistant's
    * `/api/v1/admin/assistant/chat`) pass the URL directly here.
    */
@@ -29,7 +29,7 @@ export interface UseSSEChatConfig {
    * Target schema for the chat request. Used to build the default endpoint
    * when `endpoint` is not supplied. May be empty when `endpoint` is set.
    */
-  schemaId?: string;
+  schemaName?: string;
   schemaContext?: string;
   getHeaders?: () => Record<string, string>;
   onToolResult?: (tool: string, output: string) => void;
@@ -206,7 +206,7 @@ function mapEventsToMessages(events: EventResponse[]): SSEMessage[] {
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
-  const { endpoint, schemaId, schemaContext, getHeaders, onToolResult, persistenceKey, fetchMessages, resolveSessionId } = config;
+  const { endpoint, schemaName, schemaContext, getHeaders, onToolResult, persistenceKey, fetchMessages, resolveSessionId } = config;
 
   const [messages, setMessages] = useState<SSEMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -385,7 +385,7 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
       const extraHeaders = getHeaders ? getHeaders() : {};
       const allHeaders = { ...baseHeaders, ...extraHeaders };
 
-      const url = endpoint || (schemaId ? `/api/v1/schemas/${encodeURIComponent(schemaId)}/chat` : '');
+      const url = endpoint || (schemaName ? `/api/v1/schemas/${encodeURIComponent(schemaName)}/chat` : '');
       if (!url) {
         updateAssistantNow({ content: 'Error: chat endpoint not configured', streaming: false });
         setError('chat endpoint not configured');
@@ -545,7 +545,7 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
       setIsStreaming(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStreaming, endpoint, schemaId, getHeaders, persistenceKey]);
+  }, [isStreaming, endpoint, schemaName, getHeaders, persistenceKey]);
 
   const loadSession = useCallback(async (targetSessionId: string) => {
     abortRef.current?.abort();

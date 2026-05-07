@@ -167,7 +167,7 @@ func TestBootstrap_FullStack(t *testing.T) {
 	// ── Шаг 8: связать KB с router-агентом ───────────────────────────────────
 
 	linkResp := do(t, http.MethodPost,
-		"/api/v1/knowledge-bases/"+kb.ID+"/agents/test-router", nil, adminToken)
+		"/api/v1/knowledge-bases/"+kb.Name+"/agents/test-router", nil, adminToken)
 	_ = readBody(t, linkResp)
 	assertStatusAny(t, linkResp,
 		http.StatusOK, http.StatusCreated, http.StatusNoContent)
@@ -197,7 +197,7 @@ func TestBootstrap_FullStack(t *testing.T) {
 	// ── Шаг 10: создание agent-relation (router → worker) ────────────────────
 
 	relResp := do(t, http.MethodPost,
-		"/api/v1/schemas/"+schema.ID+"/agent-relations",
+		"/api/v1/schemas/"+schema.Name+"/agent-relations",
 		mustJSON(map[string]any{
 			"source": "test-router",
 			"target": "test-worker",
@@ -216,7 +216,7 @@ func TestBootstrap_FullStack(t *testing.T) {
 
 	// ── Шаг 11: GET schema — проверить финальное состояние ───────────────────
 
-	getSchemaResp := do(t, http.MethodGet, "/api/v1/schemas/"+schema.ID, nil, adminToken)
+	getSchemaResp := do(t, http.MethodGet, "/api/v1/schemas/"+schema.Name, nil, adminToken)
 	getSchemaBody := readBody(t, getSchemaResp)
 	require.Equal(t, http.StatusOK, getSchemaResp.StatusCode,
 		"step 11: GET schema must return 200: %s", getSchemaBody)
@@ -235,7 +235,7 @@ func TestBootstrap_FullStack(t *testing.T) {
 	// ── Шаг 12: GET schema agents — ровно 2 элемента ─────────────────────────
 
 	agentsResp := do(t, http.MethodGet,
-		"/api/v1/schemas/"+schema.ID+"/agents", nil, adminToken)
+		"/api/v1/schemas/"+schema.Name+"/agents", nil, adminToken)
 	agentsBody := readBody(t, agentsResp)
 	require.Equal(t, http.StatusOK, agentsResp.StatusCode,
 		"step 12: GET schema agents must return 200: %s", agentsBody)
@@ -262,7 +262,7 @@ func TestBootstrap_FullStack(t *testing.T) {
 	// ── Шаг 13: GET agent-relations — ровно 1 элемент ────────────────────────
 
 	relsResp := do(t, http.MethodGet,
-		"/api/v1/schemas/"+schema.ID+"/agent-relations", nil, adminToken)
+		"/api/v1/schemas/"+schema.Name+"/agent-relations", nil, adminToken)
 	relsBody := readBody(t, relsResp)
 	require.Equal(t, http.StatusOK, relsResp.StatusCode,
 		"step 13: GET agent-relations must return 200: %s", relsBody)
@@ -366,7 +366,7 @@ func TestBootstrap_FullStack(t *testing.T) {
 	// ── Шаг 19: повторный POST agent-relation → 409 ──────────────────────────
 
 	dupRelResp := do(t, http.MethodPost,
-		"/api/v1/schemas/"+schema.ID+"/agent-relations",
+		"/api/v1/schemas/"+schema.Name+"/agent-relations",
 		mustJSON(map[string]any{
 			"source": "test-router",
 			"target": "test-worker",
@@ -378,7 +378,7 @@ func TestBootstrap_FullStack(t *testing.T) {
 
 	// Количество relation не должно расти.
 	relsRecheckResp := do(t, http.MethodGet,
-		"/api/v1/schemas/"+schema.ID+"/agent-relations", nil, adminToken)
+		"/api/v1/schemas/"+schema.Name+"/agent-relations", nil, adminToken)
 	relsRecheckBody := readBody(t, relsRecheckResp)
 	require.Equal(t, http.StatusOK, relsRecheckResp.StatusCode,
 		"step 19 recheck: GET relations must return 200: %s", relsRecheckBody)

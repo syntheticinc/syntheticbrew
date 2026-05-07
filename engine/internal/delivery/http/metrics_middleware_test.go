@@ -237,9 +237,14 @@ func TestSanitizePath_CollapsesIDs(t *testing.T) {
 			want: "/metrics",
 		},
 		{
-			name: "schema uuid",
-			path: "/api/v1/schemas/11111111-1111-1111-1111-111111111111",
-			want: "/api/v1/schemas/{id}",
+			name: "schema name (post 1.1.0 — UUIDs no longer accepted in URL)",
+			path: "/api/v1/schemas/support-handbook",
+			want: "/api/v1/schemas/{name}",
+		},
+		{
+			name: "knowledge base name",
+			path: "/api/v1/knowledge-bases/team-docs",
+			want: "/api/v1/knowledge-bases/{name}",
 		},
 		{
 			name: "setting numeric ID",

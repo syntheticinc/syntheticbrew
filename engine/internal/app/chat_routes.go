@@ -36,7 +36,7 @@ func mountChatRoutes(router chi.Router, deps chatRoutesDeps) {
 			if deps.AuthMW != nil {
 				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeChat))
 			}
-			r.Post("/api/v1/schemas/{id}/chat", deps.ChatHandler.Chat)
+			r.Post("/api/v1/schemas/{name}/chat", deps.ChatHandler.Chat)
 		})
 	})
 }

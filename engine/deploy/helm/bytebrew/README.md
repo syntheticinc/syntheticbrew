@@ -11,12 +11,13 @@ it has been validated. Pick what your environment supports and treat
 
 | Feature                                | Tier         | Tested how |
 |----------------------------------------|--------------|------------|
-| Default install (single-shot)          | **Stable**   | CI gate (kind v1.28/1.30/1.31, install + upgrade + rollback) + chirp-mono2 dev canary |
-| External Postgres + ESO + Vault        | **Stable**   | CI gate + chirp-mono2 dev canary |
+| Default install (single-shot)          | **Stable**   | CI gate (kind v1.28/1.30/1.31, install + upgrade + rollback) + production canary |
+| External Postgres + ESO + Vault        | **Stable**   | CI gate + production canary |
 | Bootstrap admin token + configApply    | **Stable**   | CI gate (full single-shot flow) |
+| Schema/KB name-keyed URLs (engine 1.1.0+) | **Stable** | Engine unit + integration suite; chart-test integration-knowledge end-to-end |
 | Declarative Knowledge / RAG ingest (`knowledgeLoader`) | **Stable** | CI gate (kind v1.30 install — asserts loader Job uploaded N files into KB) |
 | Migrations Job (Liquibase)             | **Stable**   | CI gate asserts `databasechangelog` populated |
-| HTTPRoute (Gateway API v1)             | **Stable**   | CI render-validated + chirp-mono2 dev canary against Envoy Gateway |
+| HTTPRoute (Gateway API v1)             | **Stable**   | CI render-validated + production canary against Envoy Gateway |
 | `containerSecurityContext.readOnlyRootFilesystem: true` (auto /tmp emptyDir) | **Stable** | CI render-validated; smoke runs render-only on kind |
 | `replicaCount=1` enforcement (`auth.mode=local`) | **Stable** | CI gate (template `fail` on `replicaCount > 1`) |
 | AWS IRSA annotations                   | **Beta**     | CI render-validated only — no AWS account in CI; community feedback welcome |
@@ -84,7 +85,7 @@ See `values.yaml` for the full list of parameters.
 
 ## Integrations
 
-### Helmfile (chirp-mono2 / similar GitOps stacks)
+### Helmfile (similar GitOps stacks)
 
 ```yaml
 repositories:
@@ -353,3 +354,88 @@ in-cluster engine REST API, holds no persistent state. To keep
 non-root, override `knowledgeLoader.image` to a pre-built variant with
 `curl`+`jq` baked in (e.g. `your-registry/kb-loader:tag`) and re-add
 `runAsNonRoot: true`.
+
+## Rollback runbook
+
+Recovery paths if a 1.1.0 / chart 0.6.0 deploy hits a critical issue
+post-migration. The chart's Liquibase changeset has a clean rollback
+clause; engine is forward-compatible with the CHECK constraint (a 1.0.x
+engine talking to a 1.1.0 schema does not violate the new format on
+inserts/updates of valid names).
+
+### Engine pod CrashLoopBackOff after migration applied
+
+```bash
+# 1) Revert pod to the previous image (pre-1.1.0).
+kubectl rollout undo deployment/<release>-bytebrew-engine
+
+# 2) Drop the CHECK constraint via Liquibase rollback.
+#    The migration changeset has a <rollback> clause documented in
+#    engine/migrations/add-resource-name-format-check.yaml.
+liquibase --changeLogFile=migrations/db.changelog-master.yaml \
+  --url="$DATABASE_URL" rollbackCount 2
+
+# 3) Helm rollback to chart 0.5.x (chart history is preserved by Helm).
+helm rollback <release> <previous-revision>
+```
+
+### Migration pre-flight HALT mid-deploy
+
+The migration's pre-flight changeset asserts every existing
+`schemas.name` and `knowledge_bases.name` matches the new regex
+(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, max 100 chars). If any row violates,
+Liquibase HALTs **before** applying the CHECK constraint — the DB stays
+in pristine state.
+
+```bash
+# Inspect violating rows:
+psql "$DATABASE_URL" <<'SQL'
+SELECT 'schemas' AS table, name FROM schemas
+  WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+UNION ALL
+SELECT 'knowledge_bases', name FROM knowledge_bases
+  WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100;
+SQL
+
+# Normalize OR delete offending rows, then re-run helmfile sync.
+```
+
+### Post-deploy bug discovered in name validation
+
+The DB CHECK constraint can be dropped without data loss — engine HTTP
+layer continues to enforce the same regex (defense-in-depth survives
+single-layer rollback). Hotfix as a 1.1.x patch with the corrected
+validator.
+
+```bash
+psql "$DATABASE_URL" <<'SQL'
+ALTER TABLE schemas DROP CONSTRAINT IF EXISTS chk_schemas_name_format;
+ALTER TABLE knowledge_bases DROP CONSTRAINT IF EXISTS chk_knowledge_bases_name_format;
+SQL
+```
+
+### No-go conditions (DO NOT migrate)
+
+- Existing `schemas` / `knowledge_bases` rows with **uppercase** names,
+  **underscores**, **dots**, or **length > 100** — preflight will HALT
+  with offending names logged. Resolve these before bumping chart
+  0.6.0.
+- Custom EE / Cloud plugin overrides (`bytebrew-ee --mode ee|cloud`)
+  not yet rebuilt against engine 1.1.0 — pin the EE binary's engine
+  dependency to 1.1.0 + redeploy in lockstep. The shared engine binary
+  serves both the chart's CE pod and the EE plugin loader.
+
+### Manual verification checklist (post-deploy)
+
+```text
+[ ] kubectl rollout status deploy/<release>-bytebrew-engine — Available
+[ ] kubectl logs job/<release>-bytebrew-engine-migrations — "Update has been successful"
+[ ] curl /api/v1/health → 200
+[ ] curl /api/v1/schemas/<name>/chat (valid name) → 200 SSE
+[ ] curl /api/v1/schemas/<bogus-name>/chat → 404 {"error":"schema not found"}
+[ ] curl /api/v1/schemas/Bad/Name/chat → 400 (path validation)
+[ ] curl PATCH /api/v1/schemas/<name> {"name":"renamed"} → 409 + body "immutable"
+[ ] Admin SPA loads at /admin/, schema URL paths show names not UUIDs
+[ ] Embed widget on test HTML page with data-schema="<name>" — chat works
+[ ] No client-name / UUID leaks in tracked source: git grep validation clean
+```

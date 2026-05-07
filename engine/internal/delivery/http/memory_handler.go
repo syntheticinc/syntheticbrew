@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
 
@@ -22,17 +21,40 @@ type MemoryClearer interface {
 }
 
 // MemoryHandler handles memory-related HTTP endpoints.
+//
+// Engine 1.1.0 made the URL `{name}` segment a stable operator-facing handle
+// (was UUID in 1.0.x). The handler resolves the schema name to a tenant-scoped
+// UUID via SchemaNameResolver before invoking the underlying memory service.
 type MemoryHandler struct {
-	lister  MemoryLister
-	clearer MemoryClearer
+	lister   MemoryLister
+	clearer  MemoryClearer
+	resolver SchemaNameResolver
 }
 
 // NewMemoryHandler creates a new MemoryHandler.
-func NewMemoryHandler(lister MemoryLister, clearer MemoryClearer) *MemoryHandler {
+//
+// resolver is the tenant-scoped name → UUID resolver — required to translate
+// the URL `{name}` segment into the canonical schema UUID consumed by the
+// memory service.
+func NewMemoryHandler(lister MemoryLister, clearer MemoryClearer, resolver SchemaNameResolver) *MemoryHandler {
 	return &MemoryHandler{
-		lister:  lister,
-		clearer: clearer,
+		lister:   lister,
+		clearer:  clearer,
+		resolver: resolver,
 	}
+}
+
+// resolveSchemaName translates the `{name}` URL param into a tenant-scoped
+// schema UUID. On any error it writes the appropriate HTTP response and
+// returns ("", false); callers must not write further output when ok == false.
+func (h *MemoryHandler) resolveSchemaName(w http.ResponseWriter, r *http.Request) (string, bool) {
+	name := chi.URLParam(r, "name")
+	id, err := resolveSchemaNameToUUID(r.Context(), h.resolver, name)
+	if err != nil {
+		writeNameLookupError(r.Context(), w, "schema", name, err)
+		return "", false
+	}
+	return id, true
 }
 
 // memoryResponse represents a single memory entry in the API response.
@@ -46,11 +68,10 @@ type memoryResponse struct {
 	UpdatedAt time.Time         `json:"updated_at"`
 }
 
-// ListMemories handles GET /api/v1/schemas/{id}/memory
+// ListMemories handles GET /api/v1/schemas/{name}/memory
 func (h *MemoryHandler) ListMemories(w http.ResponseWriter, r *http.Request) {
-	schemaID := chi.URLParam(r, "id")
-	if _, err := uuid.Parse(schemaID); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid schema id: must be a UUID")
+	schemaID, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
@@ -76,11 +97,10 @@ func (h *MemoryHandler) ListMemories(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// ClearMemories handles DELETE /api/v1/schemas/{id}/memory
+// ClearMemories handles DELETE /api/v1/schemas/{name}/memory
 func (h *MemoryHandler) ClearMemories(w http.ResponseWriter, r *http.Request) {
-	schemaID := chi.URLParam(r, "id")
-	if _, err := uuid.Parse(schemaID); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid schema id: must be a UUID")
+	schemaID, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
@@ -92,8 +112,14 @@ func (h *MemoryHandler) ClearMemories(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// DeleteMemory handles DELETE /api/v1/schemas/{id}/memory/{entry_id}
+// DeleteMemory handles DELETE /api/v1/schemas/{name}/memory/{entry_id}.
+// Schema {name} is resolved + validated even though we only delete by entry_id —
+// this keeps the audit trail tied to the schema and prevents probing for
+// memories without a valid schema handle.
 func (h *MemoryHandler) DeleteMemory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.resolveSchemaName(w, r); !ok {
+		return
+	}
 	entryID := chi.URLParam(r, "entry_id")
 	if entryID == "" {
 		writeJSONError(w, http.StatusBadRequest, "memory entry id required")

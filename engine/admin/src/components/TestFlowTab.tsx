@@ -70,7 +70,9 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
 
   const testflowPersistenceKey = schema ? `bb_testflow_${schema.id}` : undefined;
   const sseChat = useSSEChat({
-    schemaId: schema?.id ?? '',
+    // Engine 1.1.0+ chat URL is name-keyed; localStorage keys above keep
+    // schema.id (UUID) — internal SPA state, no operator-facing impact.
+    schemaName: schema?.name ?? '',
     getHeaders,
     persistenceKey: testflowPersistenceKey,
     fetchMessages: (sid) => api.getSessionEvents(sid),

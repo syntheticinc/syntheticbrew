@@ -27,7 +27,7 @@ function sanitizeSchemaName(raw: string): string {
 
 interface TemplatePickerProps {
   onClose: () => void;
-  onForked: (schemaId: string) => void;
+  onForked: (schemaName: string) => void;
 }
 
 function TemplatePicker({ onClose, onForked }: TemplatePickerProps) {
@@ -70,7 +70,9 @@ function TemplatePicker({ onClose, onForked }: TemplatePickerProps) {
     setForkError(null);
     try {
       const resp = await api.forkSchemaTemplate(selected.name, clean);
-      onForked(resp.schema_id);
+      // Engine 1.1.0+: navigate by schema_name (operator-facing handle),
+      // not schema_id (UUID — internal-only after the URL migration).
+      onForked(resp.schema_name);
     } catch (err) {
       setForkError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -174,7 +176,7 @@ function TemplatePicker({ onClose, onForked }: TemplatePickerProps) {
 function SchemaCard({ schema }: { schema: Schema }) {
   return (
     <Link
-      to={`/schemas/${schema.id}`}
+      to={`/schemas/${encodeURIComponent(schema.name)}`}
       className="block bg-brand-dark-surface border border-brand-shade3/15 rounded-card hover:border-brand-shade3/35 transition-all group"
     >
       <div className="px-5 py-4 border-b border-brand-shade3/10">

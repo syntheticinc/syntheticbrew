@@ -9,10 +9,13 @@ import type { Schema, WidgetPosition, WidgetSize, WidgetSnippetConfig } from '..
  * V2: a widget is a *client*, not a domain entity — there is no server-side
  * widgets table (docs/architecture/agent-first-runtime.md §4.3). This page
  * renders a <script> tag that loads the static widget.js bundle with the
- * chosen chat-enabled schema's id and styling baked in as data-* attributes.
+ * chosen chat-enabled schema's name and styling baked in as data-* attributes.
  *
  * The admin picks a schema that has `chat_enabled=true`, configures visual
  * options, and copies the resulting snippet to paste into the host page.
+ *
+ * Engine 1.1.0+: chat URLs are name-keyed (/api/v1/schemas/{name}/chat) and
+ * the widget reads `data-schema` (not `data-schema-id`) — see Phase 5.
  */
 
 const POSITION_OPTIONS = [
@@ -27,7 +30,7 @@ const SIZE_OPTIONS = [
 ];
 
 const DEFAULT_CONFIG: WidgetSnippetConfig = {
-  schemaId: '',
+  schemaName: '',
   primaryColor: '#6366f1',
   position: 'bottom-right',
   size: 'standard',
@@ -52,8 +55,8 @@ export default function WidgetConfigPage() {
       .then((list) => {
         const chatOnly = (Array.isArray(list) ? list : []).filter((s) => s.chat_enabled);
         setSchemas(chatOnly);
-        if (chatOnly.length > 0 && !config.schemaId) {
-          setConfig((c) => ({ ...c, schemaId: chatOnly[0]!.id }));
+        if (chatOnly.length > 0 && !config.schemaName) {
+          setConfig((c) => ({ ...c, schemaName: chatOnly[0]!.name }));
         }
       })
       .catch(() => {})
@@ -62,8 +65,8 @@ export default function WidgetConfigPage() {
   }, []);
 
   const selectedSchema = useMemo(
-    () => schemas.find((s) => s.id === config.schemaId) ?? null,
-    [schemas, config.schemaId],
+    () => schemas.find((s) => s.name === config.schemaName) ?? null,
+    [schemas, config.schemaName],
   );
 
   const snippet = useMemo(() => {
@@ -71,7 +74,7 @@ export default function WidgetConfigPage() {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const attrs = [
       `src="${origin}/widget.js"`,
-      `data-schema-id="${escapeAttr(selectedSchema.id)}"`,
+      `data-schema="${escapeAttr(selectedSchema.name)}"`,
       `data-position="${config.position}"`,
       `data-primary-color="${escapeAttr(config.primaryColor)}"`,
       `data-title="${escapeAttr(config.title)}"`,
@@ -133,13 +136,13 @@ export default function WidgetConfigPage() {
                 <FormField
                   label="Schema"
                   type="select"
-                  value={config.schemaId}
-                  onChange={(v) => update('schemaId', v)}
+                  value={config.schemaName}
+                  onChange={(v) => update('schemaName', v)}
                   options={schemas.map((s) => ({
-                    value: s.id,
+                    value: s.name,
                     label: s.name,
                   }))}
-                  hint="Widget chats are POSTed to /api/v1/schemas/{id}/chat and dispatched to the schema's entry orchestrator."
+                  hint="Widget chats are POSTed to /api/v1/schemas/{name}/chat and dispatched to the schema's entry orchestrator."
                 />
                 {selectedSchema?.entry_agent_name && (
                   <div className="mt-3 text-xs text-brand-shade3 font-mono">

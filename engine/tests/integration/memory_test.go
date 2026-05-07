@@ -50,7 +50,7 @@ func TestMEM07_ListEmpty(t *testing.T) {
 
 	s := createSchemaForTest(t, map[string]any{"name": "tc-mem-07-schema"})
 
-	resp := do(t, http.MethodGet, "/api/v1/schemas/"+s.ID+"/memory", nil, adminToken)
+	resp := do(t, http.MethodGet, "/api/v1/schemas/"+s.Name+"/memory", nil, adminToken)
 	body := readBody(t, resp)
 	if resp.StatusCode == http.StatusNotFound {
 		t.Skip("/memory endpoint not registered in this build")
@@ -65,7 +65,7 @@ func TestMEM08_BulkClear(t *testing.T) {
 
 	s := createSchemaForTest(t, map[string]any{"name": "tc-mem-08-schema"})
 
-	resp := do(t, http.MethodDelete, "/api/v1/schemas/"+s.ID+"/memory", nil, adminToken)
+	resp := do(t, http.MethodDelete, "/api/v1/schemas/"+s.Name+"/memory", nil, adminToken)
 	_ = readBody(t, resp)
 	if resp.StatusCode == http.StatusNotFound {
 		t.Skip("memory bulk-clear not registered in this build")

@@ -501,7 +501,9 @@ export type WidgetPosition = 'bottom-right' | 'bottom-left';
 export type WidgetSize = 'compact' | 'standard' | 'full';
 
 export interface WidgetSnippetConfig {
-  schemaId: string;       // id of a chat-enabled schema
+  // Engine 1.1.0+: schemas are addressed by name (operator-facing handle)
+  // in URLs and the widget's data-schema attribute. UUID is internal-only.
+  schemaName: string;
   primaryColor: string;
   position: WidgetPosition;
   size: WidgetSize;

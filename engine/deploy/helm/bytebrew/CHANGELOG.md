@@ -7,6 +7,47 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-07
+
+### Breaking
+- **Schema and knowledge-base REST URLs are now name-keyed.** Bumps engine
+  `appVersion` to **1.1.0**. All operator-facing endpoints under
+  `/api/v1/schemas/{name}/...` and `/api/v1/knowledge-bases/{name}/...`
+  now use the resource name in the URL segment (was UUID in 0.5.x). UUIDs
+  remain internal storage detail (PK, FK integrity, audit, sessions).
+  See engine/CHANGELOG.md 1.1.0 for the full endpoint list and migration
+  notes.
+- **Schema and knowledge-base names are immutable post-create.** PATCH/PUT
+  with a different `name` field returns `409 Conflict`. The URL segment is
+  now the stable consumer-facing handle for GitOps deploys.
+- **Resource name format enforced at DB layer** via Liquibase CHECK
+  constraint (regex `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, max 100 chars).
+  Migration runs a preflight that HALTs with a loud failure if any
+  existing row violates the new format — operator must rename or delete
+  offending rows before re-running `helmfile sync`. No silent data loss.
+
+### Added
+- **README "Stability matrix"** new row: `Schema/KB name-keyed URLs —
+  Stable`.
+- **Rollback runbook** in chart README documenting the recovery path if
+  a 1.1.0 deploy needs to be rolled back to 1.0.x (kubectl rollout undo
+  + Liquibase rollback + helm rollback semantics).
+
+### Why this matters
+Pre-0.6.0 GitOps consumers had to discover schema/KB UUIDs after each
+`configApply` (UUIDs are auto-generated, env-specific, regenerated on DB
+reset). The chart's `knowledgeLoader` Job already worked around this for
+KBs by resolving name→UUID at runtime; consumers of the chat endpoint
+had no equivalent. Engine 1.1.0 makes the operator-declared name the
+canonical handle everywhere — `helmfile.yaml` references `support`,
+consumers reference `support`, no UUID round-trips.
+
+### Required values change
+None. Existing values files continue to work — chart bundles updated
+admin SPA + widget that use the new URLs internally. Only impact: any
+external consumer hardcoding `/api/v1/schemas/<uuid>/chat` URLs must
+switch to the schema name (declared in `configApply.config`).
+
 ## [0.5.0] - 2026-05-04
 
 ### Added
@@ -28,8 +69,8 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
   See README "Integrations — Knowledge / RAG ingest" for the wiring example.
 
-### Why now (chirp-mono2 dev feedback)
-chirp-mono2 dev integration asked: "we have 7 markdown files, what's the
+### Why now (a production deploy feedback)
+A production deployment asked: "we have 7 markdown files, what's the
 canonical way to load them?" Pre-0.5.0 answer was "post-deploy bash with
 ~30 lines of REST upload + SHA dedup". That pushes boilerplate to every CE
 operator. 0.5.0 ships the Job natively — declare it in values, files land
@@ -96,7 +137,7 @@ proxy for content drift — catches most edits except length-preserving ones.
   creates the new pod *before* deleting the old one — but the new pod
   deadlocks Pending because the old pod still holds the RWO PVC attachment.
   `helm upgrade --atomic` times out and rolls back to the previous chart
-  version. Caught by chirp-mono2 dev when bumping 0.4.2 → 0.4.3 — atomic
+  version. Caught by a production canary when bumping 0.4.2 → 0.4.3 — atomic
   rollback fired ~10 min in.
 - Now defaults to `strategy.type: Recreate` whenever `auth.mode=local`. Old
   pod is killed first → PVC released → new pod attaches and starts.
@@ -130,7 +171,7 @@ proxy for content drift — catches most edits except length-preserving ones.
   ignores top-level files in the dir. The ConfigMap renders the inline
   `configApply.config` value as a single file `bytebrew.yaml` at the dir
   root, so brewctl found zero subdirs → empty desired state → "No changes"
-  → Job Completed → false success. Caught by chirp-mono2 dev canary deploy:
+  → Job Completed → false success. Caught by production canary deploy:
   Job logs said `No changes.` but engine had no smoke model/agent/schema.
   Now points brewctl at `-f /etc/bytebrew/config/bytebrew.yaml` (explicit
   file path).
@@ -152,10 +193,10 @@ proxy for content drift — catches most edits except length-preserving ones.
   `OPENROUTER_API_KEY` so `${OPENROUTER_API_KEY}` substitution in the
   smoke model definition resolves. Smoke does not invoke real LLM.
 
-### Why this matters for chirp-mono2 dev
-The chirp install:dev pipeline reported success (engine 1/1 Running, Job
+### Why this matters for a production deploy
+The production install:dev pipeline reported success (engine 1/1 Running, Job
 Completed), but `/api/v1/models` came back empty — brewctl had silently
-no-op'd. Bumping chirp's `helmfile.yaml.gotmpl` to `version: 0.4.3` and
+no-op'd. Bumping the operator's `helmfile.yaml.gotmpl` to `version: 0.4.3` and
 re-running `helmfile -e dev sync` reconciles via `helm upgrade` →
 configApply Job re-runs with the file path fix → brewctl actually creates
 the smoke bundle.
@@ -234,7 +275,7 @@ filename is tracked for chart v0.5.x.
   `helm package` artefact via `.helmignore`):
   - `tests/values/default.yaml` — vanilla install with in-kind
     postgres-pgvector, no bootstrap token, no configApply
-  - `tests/values/single-shot.yaml` — chirp-mono2-style flow with
+  - `tests/values/single-shot.yaml` — GitOps-style flow with
     bootstrap admin token + configApply Helm hook
   - `tests/fixtures/postgres-pgvector.yaml` — Secret + ConfigMap +
     StatefulSet + Service for an in-kind pgvector Postgres. Init script

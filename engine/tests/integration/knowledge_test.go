@@ -78,7 +78,7 @@ func TestKB02_UploadFile(t *testing.T) {
 	_, _ = fw.Write([]byte("hello knowledge world"))
 	require.NoError(t, mw.Close())
 
-	resp := doHeaders(t, http.MethodPost, "/api/v1/knowledge-bases/"+kb.ID+"/files",
+	resp := doHeaders(t, http.MethodPost, "/api/v1/knowledge-bases/"+kb.Name+"/files",
 		&body,
 		map[string]string{
 			"Content-Type":  mw.FormDataContentType(),
@@ -102,7 +102,7 @@ func TestKB03_ListFiles(t *testing.T) {
 	}
 	require.NotEmpty(t, kb.ID)
 
-	resp := do(t, http.MethodGet, "/api/v1/knowledge-bases/"+kb.ID+"/files", nil, adminToken)
+	resp := do(t, http.MethodGet, "/api/v1/knowledge-bases/"+kb.Name+"/files", nil, adminToken)
 	_ = readBody(t, resp)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
@@ -126,7 +126,7 @@ func TestKB04_DeleteFile(t *testing.T) {
 	_, _ = fw.Write([]byte("bye knowledge"))
 	require.NoError(t, mw.Close())
 
-	upResp := doHeaders(t, http.MethodPost, "/api/v1/knowledge-bases/"+kb.ID+"/files",
+	upResp := doHeaders(t, http.MethodPost, "/api/v1/knowledge-bases/"+kb.Name+"/files",
 		&body,
 		map[string]string{
 			"Content-Type":  mw.FormDataContentType(),
@@ -145,7 +145,7 @@ func TestKB04_DeleteFile(t *testing.T) {
 	}
 
 	delResp := do(t, http.MethodDelete,
-		"/api/v1/knowledge-bases/"+kb.ID+"/files/"+fileResp.ID, nil, adminToken)
+		"/api/v1/knowledge-bases/"+kb.Name+"/files/"+fileResp.ID, nil, adminToken)
 	_ = readBody(t, delResp)
 	assertStatusAny(t, delResp, http.StatusOK, http.StatusNoContent, http.StatusAccepted)
 }
@@ -161,19 +161,22 @@ func TestKB05_DeleteKB(t *testing.T) {
 	}
 	require.NotEmpty(t, kb.ID)
 
-	resp := do(t, http.MethodDelete, "/api/v1/knowledge-bases/"+kb.ID, nil, adminToken)
+	resp := do(t, http.MethodDelete, "/api/v1/knowledge-bases/"+kb.Name, nil, adminToken)
 	_ = readBody(t, resp)
 	assertStatusAny(t, resp, http.StatusOK, http.StatusNoContent)
 }
 
-// TC-KB-06: Unknown KB id → 404.
+// TC-KB-06: Unknown KB name → 404.
+//
+// Engine 1.1.0+: URL is name-keyed. Send a valid-format name that doesn't
+// exist in the tenant — must return 404, not leak existence.
 func TestKB06_UnknownID(t *testing.T) {
 	requireSuite(t)
 
 	resp := do(t, http.MethodGet,
-		"/api/v1/knowledge-bases/00000000-0000-0000-0000-000000000000", nil, adminToken)
+		"/api/v1/knowledge-bases/does-not-exist", nil, adminToken)
 	_ = readBody(t, resp)
-	assertStatusAny(t, resp, http.StatusNotFound, http.StatusBadRequest)
+	assertStatusAny(t, resp, http.StatusNotFound)
 }
 
 // TC-KB-07: GET /knowledge-bases → 200 list.

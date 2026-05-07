@@ -267,6 +267,7 @@ func registerHTTPRoutes(deps routesDeps) {
 			kbHandler := deliveryhttp.NewKnowledgeBaseHandler(
 				&kbStoreAdapter{repo: kbRepo, db: pgDB},
 				&kbFileManagerAdapter{svc: uploadSvc},
+				kbRepo,
 			)
 
 			// Legacy agent-scoped knowledge endpoints
@@ -287,21 +288,21 @@ func registerHTTPRoutes(deps routesDeps) {
 			r.Group(func(r chi.Router) {
 				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAgentsRead))
 				r.Get("/api/v1/knowledge-bases", kbHandler.List)
-				r.Get("/api/v1/knowledge-bases/{id}", kbHandler.Get)
-				r.Get("/api/v1/knowledge-bases/{id}/files", kbHandler.ListFiles)
-				r.Get("/api/v1/knowledge-bases/{id}/files/{file_id}", kbHandler.GetFile)
+				r.Get("/api/v1/knowledge-bases/{name}", kbHandler.Get)
+				r.Get("/api/v1/knowledge-bases/{name}/files", kbHandler.ListFiles)
+				r.Get("/api/v1/knowledge-bases/{name}/files/{file_id}", kbHandler.GetFile)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAgentsWrite))
 				r.Post("/api/v1/knowledge-bases", kbHandler.Create)
-				r.Put("/api/v1/knowledge-bases/{id}", kbHandler.Update)
-				r.Patch("/api/v1/knowledge-bases/{id}", kbHandler.PatchKB)
-				r.Delete("/api/v1/knowledge-bases/{id}", kbHandler.Delete)
-				r.Post("/api/v1/knowledge-bases/{id}/agents/{agent_name}", kbHandler.LinkAgent)
-				r.Delete("/api/v1/knowledge-bases/{id}/agents/{agent_name}", kbHandler.UnlinkAgent)
-				r.Post("/api/v1/knowledge-bases/{id}/files", kbHandler.UploadFile)
-				r.Delete("/api/v1/knowledge-bases/{id}/files/{file_id}", kbHandler.DeleteFile)
-				r.Post("/api/v1/knowledge-bases/{id}/files/{file_id}/reindex", kbHandler.ReindexFile)
+				r.Put("/api/v1/knowledge-bases/{name}", kbHandler.Update)
+				r.Patch("/api/v1/knowledge-bases/{name}", kbHandler.PatchKB)
+				r.Delete("/api/v1/knowledge-bases/{name}", kbHandler.Delete)
+				r.Post("/api/v1/knowledge-bases/{name}/agents/{agent_name}", kbHandler.LinkAgent)
+				r.Delete("/api/v1/knowledge-bases/{name}/agents/{agent_name}", kbHandler.UnlinkAgent)
+				r.Post("/api/v1/knowledge-bases/{name}/files", kbHandler.UploadFile)
+				r.Delete("/api/v1/knowledge-bases/{name}/files/{file_id}", kbHandler.DeleteFile)
+				r.Post("/api/v1/knowledge-bases/{name}/files/{file_id}/reindex", kbHandler.ReindexFile)
 			})
 		}
 
@@ -343,26 +344,27 @@ func registerHTTPRoutes(deps routesDeps) {
 		schemaHandler := deliveryhttp.NewSchemaHandler(
 			&schemaServiceHTTPAdapter{repo: schemaRepo, db: pgDB},
 			&agentRelationServiceHTTPAdapter{repo: agentRelationRepo, agentRepo: agentRepo, schemaRepo: schemaRepo, db: pgDB},
+			schemaRepo,
 		)
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSchemasRead))
 			r.Get("/api/v1/schemas", schemaHandler.ListSchemas)
-			r.Get("/api/v1/schemas/{id}", schemaHandler.GetSchema)
-			r.Get("/api/v1/schemas/{id}/agents", schemaHandler.ListSchemaAgents)
-			r.Get("/api/v1/schemas/{id}/agent-relations", schemaHandler.ListAgentRelations)
-			r.Get("/api/v1/schemas/{id}/agent-relations/{relationId}", schemaHandler.GetAgentRelation)
+			r.Get("/api/v1/schemas/{name}", schemaHandler.GetSchema)
+			r.Get("/api/v1/schemas/{name}/agents", schemaHandler.ListSchemaAgents)
+			r.Get("/api/v1/schemas/{name}/agent-relations", schemaHandler.ListAgentRelations)
+			r.Get("/api/v1/schemas/{name}/agent-relations/{relationId}", schemaHandler.GetAgentRelation)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSchemasWrite))
 			r.Post("/api/v1/schemas", schemaHandler.CreateSchema)
-			r.Put("/api/v1/schemas/{id}", schemaHandler.UpdateSchema)
-			r.Patch("/api/v1/schemas/{id}", schemaHandler.PatchSchema)
-			r.Delete("/api/v1/schemas/{id}", schemaHandler.DeleteSchema)
+			r.Put("/api/v1/schemas/{name}", schemaHandler.UpdateSchema)
+			r.Patch("/api/v1/schemas/{name}", schemaHandler.PatchSchema)
+			r.Delete("/api/v1/schemas/{name}", schemaHandler.DeleteSchema)
 			// Schema membership is derived from agent_relations —
 			// create or remove a delegation relation to add or remove a member.
-			r.Post("/api/v1/schemas/{id}/agent-relations", schemaHandler.CreateAgentRelation)
-			r.Put("/api/v1/schemas/{id}/agent-relations/{relationId}", schemaHandler.UpdateAgentRelation)
-			r.Delete("/api/v1/schemas/{id}/agent-relations/{relationId}", schemaHandler.DeleteAgentRelation)
+			r.Post("/api/v1/schemas/{name}/agent-relations", schemaHandler.CreateAgentRelation)
+			r.Put("/api/v1/schemas/{name}/agent-relations/{relationId}", schemaHandler.UpdateAgentRelation)
+			r.Delete("/api/v1/schemas/{name}/agent-relations/{relationId}", schemaHandler.DeleteAgentRelation)
 		})
 
 		// No /api/v1/widgets routes: the admin UI generates embed snippets client-side.
@@ -410,15 +412,16 @@ func registerHTTPRoutes(deps routesDeps) {
 		memoryHandler := deliveryhttp.NewMemoryHandler(
 			&memoryListerHTTPAdapter{storage: memoryStorage},
 			&memoryClearerHTTPAdapter{storage: memoryStorage},
+			schemaRepo,
 		)
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSchemasRead))
-			r.Get("/api/v1/schemas/{id}/memory", memoryHandler.ListMemories)
+			r.Get("/api/v1/schemas/{name}/memory", memoryHandler.ListMemories)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSchemasWrite))
-			r.Delete("/api/v1/schemas/{id}/memory", memoryHandler.ClearMemories)
-			r.Delete("/api/v1/schemas/{id}/memory/{entry_id}", memoryHandler.DeleteMemory)
+			r.Delete("/api/v1/schemas/{name}/memory", memoryHandler.ClearMemories)
+			r.Delete("/api/v1/schemas/{name}/memory/{entry_id}", memoryHandler.DeleteMemory)
 		})
 
 		// MCP Catalog (read-only) — DB-backed.

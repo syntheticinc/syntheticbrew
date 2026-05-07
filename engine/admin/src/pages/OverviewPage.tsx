@@ -101,10 +101,13 @@ function OverviewPrototype() {
             )}
             {activeSessions.map((s) => {
               const schema = getSchemaById(s.schemaId);
+              // Engine 1.1.0+: schema URLs are name-keyed; UUID-shaped
+              // mock IDs (s.schemaId) are internal-only.
+              const schemaHandle = schema?.name ?? s.schemaId;
               return (
                 <Link
                   key={s.id}
-                  to={`/schemas/${s.schemaId}?session=${s.id}`}
+                  to={`/schemas/${encodeURIComponent(schemaHandle)}?session=${s.id}`}
                   className="flex items-center gap-3 px-5 py-3 hover:bg-brand-shade3/5 transition-colors group"
                 >
                   <span className="font-mono text-[11px] text-brand-shade3 shrink-0">{s.id}</span>
@@ -164,7 +167,7 @@ function OverviewPrototype() {
           {mockSchemas.map((s) => (
             <Link
               key={s.id}
-              to={`/schemas/${s.id}`}
+              to={`/schemas/${encodeURIComponent(s.name)}`}
               className="bg-brand-dark-surface border border-brand-shade3/15 rounded-card px-4 py-3 hover:border-brand-shade3/35 transition-colors"
             >
               <div className="text-[13px] font-semibold text-brand-light truncate">{s.name}</div>
@@ -409,7 +412,7 @@ function OverviewProduction() {
             {schemas.slice(0, 6).map((s) => (
               <Link
                 key={s.id}
-                to={`/schemas/${s.id}`}
+                to={`/schemas/${encodeURIComponent(s.name)}`}
                 className="bg-brand-dark-surface border border-brand-shade3/15 rounded-card px-4 py-3 hover:border-brand-shade3/35 transition-colors"
               >
                 <div className="text-[13px] font-semibold text-brand-light truncate">{s.name}</div>

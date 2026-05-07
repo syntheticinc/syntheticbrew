@@ -64,8 +64,8 @@ export default function App() {
             <Route path="/" element={<OverviewPage />} />
             <Route path="/overview" element={<OverviewPage />} />
             <Route path="/schemas" element={<SchemasPage />} />
-            <Route path="/schemas/:schemaId" element={<SchemaDetailPage />} />
-            <Route path="/schemas/:schema/:agent" element={<AgentDrillInPage />} />
+            <Route path="/schemas/:schemaName" element={<SchemaDetailPage />} />
+            <Route path="/schemas/:schemaName/:agentName" element={<AgentDrillInPage />} />
             <Route path="/mcp" element={<MCPPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/tasks" element={<TasksPage />} />

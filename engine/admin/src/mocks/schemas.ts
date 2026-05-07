@@ -243,10 +243,13 @@ export const mockAgentRelations: TreeRelation[] = [
 // SCHEMAS
 // ============================================================================
 
+// Engine 1.1.0+: schema names are kebab-case operator-facing handles. URL
+// params and lookups go through `name`; `id` (UUID) is internal-only and
+// kept here only for shapes that still surface it (sessions table, etc).
 export const mockSchemas: MockSchema[] = [
   {
-    id: 'schema-support',
-    name: 'Customer Support',
+    id: 'mock-schema-customer-support',
+    name: 'customer-support',
     description: 'Multi-channel customer support with triage and specialist delegation.',
     entryAgentId: 'agent-triage',
     agentIds: ['agent-triage', 'agent-sales', 'agent-tech', 'agent-billing', 'agent-faq', 'agent-escalation'],
@@ -257,8 +260,8 @@ export const mockSchemas: MockSchema[] = [
     updatedAt: '2026-04-14T09:15:00Z',
   },
   {
-    id: 'schema-sales',
-    name: 'Sales Qualification',
+    id: 'mock-schema-sales-qualification',
+    name: 'sales-qualification',
     description: 'Lead qualification flow with research and closing stages.',
     entryAgentId: 'agent-sales-orch',
     agentIds: ['agent-sales-orch', 'agent-lead-researcher', 'agent-closer'],
@@ -269,8 +272,8 @@ export const mockSchemas: MockSchema[] = [
     updatedAt: '2026-04-13T14:00:00Z',
   },
   {
-    id: 'schema-health',
-    name: 'Daily Health Report',
+    id: 'mock-schema-daily-health',
+    name: 'daily-health',
     description: 'Hourly system health checks with automated alerting.',
     entryAgentId: 'agent-health',
     agentIds: ['agent-health', 'agent-alerter'],
@@ -286,10 +289,13 @@ export const mockSchemas: MockSchema[] = [
 // SESSIONS (for overview live panel in prototype mode)
 // ============================================================================
 
+// schemaId here references mockSchemas[].id (UUID-shaped mock prefix). The
+// overview events panel uses these for cross-references; selectors that
+// surface the canonical operator handle look up by name via getSchemaById.
 export const mockSessions: MockSession[] = [
   {
     id: 'sess-a7f2',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
     triggerId: 'trg-support-chat-main',
     title: 'Customer asking about enterprise pricing',
     status: 'active',
@@ -299,7 +305,7 @@ export const mockSessions: MockSession[] = [
   },
   {
     id: 'sess-b3d1',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
     triggerId: 'trg-support-chat-main',
     title: 'Billing dispute — refund request',
     status: 'active',
@@ -309,7 +315,7 @@ export const mockSessions: MockSession[] = [
   },
   {
     id: 'sess-c9e4',
-    schemaId: 'schema-sales',
+    schemaId: 'mock-schema-sales-qualification',
     triggerId: 'trg-sales-webhook',
     title: 'Lead qualification: Acme Corp',
     status: 'active',
@@ -328,67 +334,67 @@ export const mockOverviewEvents: OverviewEvent[] = [
     timestamp: '2026-04-15T12:34:22Z',
     kind: 'session_completed',
     summary: 'Triage finalized response for enterprise pricing inquiry.',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
     sessionId: 'sess-a7f2',
   },
   {
     timestamp: '2026-04-15T12:34:19Z',
     kind: 'delegation',
     summary: 'FAQ returned result to Sales Specialist.',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
     sessionId: 'sess-a7f2',
   },
   {
     timestamp: '2026-04-15T12:34:10Z',
     kind: 'delegation',
     summary: 'Triage delegated to Sales Specialist (SSO pricing inquiry).',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
     sessionId: 'sess-a7f2',
   },
   {
     timestamp: '2026-04-15T12:34:05Z',
     kind: 'trigger_fired',
     summary: 'Support Widget trigger fired → Triage.',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
   },
   {
     timestamp: '2026-04-15T12:33:47Z',
     kind: 'delegation',
     summary: 'Billing Agent received duplicate-charge lookup result.',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
     sessionId: 'sess-b3d1',
   },
   {
     timestamp: '2026-04-15T12:33:40Z',
     kind: 'trigger_fired',
     summary: 'Chat Endpoint fired → Triage (billing dispute).',
-    schemaId: 'schema-support',
+    schemaId: 'mock-schema-customer-support',
   },
   {
     timestamp: '2026-04-15T12:30:02Z',
     kind: 'delegation',
     summary: 'Sales Qualification Orch delegated to Lead Researcher.',
-    schemaId: 'schema-sales',
+    schemaId: 'mock-schema-sales-qualification',
     sessionId: 'sess-c9e4',
   },
   {
     timestamp: '2026-04-15T12:30:00Z',
     kind: 'flow_entered',
     summary: 'Sales Qualification Orch entered "Deep Qualification Interview".',
-    schemaId: 'schema-sales',
+    schemaId: 'mock-schema-sales-qualification',
     sessionId: 'sess-c9e4',
   },
   {
     timestamp: '2026-04-15T12:00:03Z',
     kind: 'session_completed',
     summary: 'Health Monitor completed hourly check (all green).',
-    schemaId: 'schema-health',
+    schemaId: 'mock-schema-daily-health',
   },
   {
     timestamp: '2026-04-15T12:00:00Z',
     kind: 'trigger_fired',
     summary: 'Hourly cron fired → Health Monitor.',
-    schemaId: 'schema-health',
+    schemaId: 'mock-schema-daily-health',
   },
 ];
 

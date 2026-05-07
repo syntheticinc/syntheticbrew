@@ -235,7 +235,7 @@ func (s *ForkService) forkInTx(tx *gorm.DB, tenantID string, tmpl *domain.Schema
 	// 6. Enable chat on the forked schema. Templates are authored to be
 	//    chat-facing; a forked schema always has chat_enabled=true and a
 	//    resolved entry_agent_id. Schedulers (cron/webhook) are tenant-owned
-	//    and call POST /api/v1/schemas/{id}/chat directly.
+	//    and call POST /api/v1/schemas/{name}/chat directly (engine 1.1.0+).
 	if err := tx.Model(&models.SchemaModel{}).Where("id = ?", schema.ID).
 		Update("chat_enabled", true).Error; err != nil {
 		return ForkedSchema{}, fmt.Errorf("enable chat on forked schema: %w", err)

@@ -165,8 +165,8 @@ spec:
                 echo "  PATCH KB embedding_model_id=$EMB_ID"
                 curl -fsS -X PATCH -H "$(auth)" -H "Content-Type: application/json" \
                   -d "{\"embedding_model_id\":\"$EMB_ID\"}" \
-                  "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID" >/dev/null
-                EMB_ID_NEW=$(curl -fsS -H "$(auth)" "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID" | jq -r '.embedding_model_id // empty')
+                  "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME" >/dev/null
+                EMB_ID_NEW=$(curl -fsS -H "$(auth)" "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME" | jq -r '.embedding_model_id // empty')
                 if [ -z "$EMB_ID_NEW" ]; then
                   echo "FAIL: PATCH did not persist embedding_model_id" >&2
                   exit 1
@@ -187,7 +187,7 @@ spec:
               # "<uuid>_faq.md". Without this the loader re-uploads on every
               # sync and the KB grows linearly across runs.
               REMOTE=$(curl -fsS -H "$(auth)" \
-                "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files" \
+                "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME/files" \
                 | jq -c '[.[] | {name: (.file_name | sub("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_"; "")), size: .file_size, id: .id}]')
               echo "$REMOTE" | jq -r '.[] | "  remote: \(.name) (\(.size) bytes)"'
 
@@ -215,7 +215,7 @@ spec:
                     if [ -n "$EXISTING_ID" ]; then
                       echo "  delete $NAME ($EXISTING_ID) — mode=always"
                       curl -fsS -X DELETE -H "$(auth)" \
-                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files/$EXISTING_ID" >/dev/null
+                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME/files/$EXISTING_ID" >/dev/null
                       REPLACED=$((REPLACED + 1))
                     fi
                     UP=upload
@@ -228,7 +228,7 @@ spec:
                     else
                       echo "  delete $NAME ($EXISTING_ID) — size differs ($EXISTING_SIZE → $SIZE)"
                       curl -fsS -X DELETE -H "$(auth)" \
-                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files/$EXISTING_ID" >/dev/null
+                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME/files/$EXISTING_ID" >/dev/null
                       UP=upload
                       REPLACED=$((REPLACED + 1))
                     fi
@@ -248,7 +248,7 @@ spec:
                   HTTP_CODE=$(curl -sS -o "$HTTP_OUT" -w '%{http_code}' \
                     -X POST -H "$(auth)" \
                     -F "file=@$f" \
-                    "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files" || echo "curl_error")
+                    "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME/files" || echo "curl_error")
                   if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
                     echo "FAIL: upload $NAME → HTTP $HTTP_CODE" >&2
                     echo "Response body:" >&2
@@ -278,7 +278,7 @@ spec:
                     *)
                       echo "  prune  $RNAME ($RID)"
                       curl -fsS -X DELETE -H "$(auth)" \
-                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files/$RID" >/dev/null
+                        "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME/files/$RID" >/dev/null
                       PRUNED=$((PRUNED + 1))
                       ;;
                   esac

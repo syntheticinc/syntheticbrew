@@ -62,7 +62,7 @@ func TestSCH02_ChatEnabled(t *testing.T) {
 		"chat_enabled": true,
 	})
 
-	getResp := do(t, http.MethodGet, "/api/v1/schemas/"+s.ID, nil, adminToken)
+	getResp := do(t, http.MethodGet, "/api/v1/schemas/"+s.Name, nil, adminToken)
 	body := readBody(t, getResp)
 	require.Equal(t, http.StatusOK, getResp.StatusCode)
 	assert.Contains(t, string(body), `"chat_enabled":true`,
@@ -76,28 +76,40 @@ func TestSCH03_GetSchema(t *testing.T) {
 
 	s := createSchemaForTest(t, map[string]any{"name": "tc-sch-03-schema"})
 
-	resp := do(t, http.MethodGet, "/api/v1/schemas/"+s.ID, nil, adminToken)
+	resp := do(t, http.MethodGet, "/api/v1/schemas/"+s.Name, nil, adminToken)
 	_ = readBody(t, resp)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-// TC-SCH-04: PUT /schemas/{id} updates the schema name.
+// TC-SCH-04: PUT /schemas/{name} with a different `name` field → 409 Conflict.
+//
+// Engine 1.1.0+: schema names are immutable post-create. The URL segment is
+// the canonical operator-facing handle for GitOps consumers; mutating it via
+// PATCH/PUT would silently break consumers' name-based bookmarks. Operators
+// must recreate + migrate. Description / chat_enabled / entry_agent_id
+// remain mutable.
 func TestSCH04_UpdateSchema(t *testing.T) {
 	requireSuite(t)
 	t.Cleanup(func() { truncateTables(t) })
 
 	s := createSchemaForTest(t, map[string]any{"name": "tc-sch-04-schema"})
 
-	newName := "tc-sch-04-schema-renamed"
-	updResp := do(t, http.MethodPut, "/api/v1/schemas/"+s.ID,
-		mustJSON(map[string]any{"name": newName}), adminToken)
-	_ = readBody(t, updResp)
-	assertStatusAny(t, updResp, http.StatusOK, http.StatusNoContent)
+	// Same-name PUT — idempotent, must succeed.
+	idempResp := do(t, http.MethodPut, "/api/v1/schemas/"+s.Name,
+		mustJSON(map[string]any{"name": s.Name}), adminToken)
+	_ = readBody(t, idempResp)
+	assertStatusAny(t, idempResp, http.StatusOK, http.StatusNoContent)
 
-	getResp := do(t, http.MethodGet, "/api/v1/schemas/"+s.ID, nil, adminToken)
-	body := readBody(t, getResp)
+	// Different-name PUT — must reject as immutable.
+	renameResp := do(t, http.MethodPut, "/api/v1/schemas/"+s.Name,
+		mustJSON(map[string]any{"name": "tc-sch-04-schema-renamed"}), adminToken)
+	body := readBody(t, renameResp)
+	assert.Equal(t, http.StatusConflict, renameResp.StatusCode, "body=%s", body)
+	assert.Contains(t, string(body), "immutable")
+
+	// Original name still resolves.
+	getResp := do(t, http.MethodGet, "/api/v1/schemas/"+s.Name, nil, adminToken)
 	assert.Equal(t, http.StatusOK, getResp.StatusCode)
-	assert.Contains(t, string(body), newName)
 }
 
 // TC-SCH-05: DELETE /schemas/{id} removes the schema.
@@ -107,11 +119,11 @@ func TestSCH05_DeleteSchema(t *testing.T) {
 
 	s := createSchemaForTest(t, map[string]any{"name": "tc-sch-05-schema"})
 
-	delResp := do(t, http.MethodDelete, "/api/v1/schemas/"+s.ID, nil, adminToken)
+	delResp := do(t, http.MethodDelete, "/api/v1/schemas/"+s.Name, nil, adminToken)
 	_ = readBody(t, delResp)
 	assertStatusAny(t, delResp, http.StatusOK, http.StatusNoContent)
 
-	getResp := do(t, http.MethodGet, "/api/v1/schemas/"+s.ID, nil, adminToken)
+	getResp := do(t, http.MethodGet, "/api/v1/schemas/"+s.Name, nil, adminToken)
 	_ = readBody(t, getResp)
 	assert.Equal(t, http.StatusNotFound, getResp.StatusCode)
 }
@@ -131,7 +143,7 @@ func TestSCH06_EntryAgentRelation(t *testing.T) {
 	_ = createAgentForTest(t, "tc-sch-06-target")
 	s := createSchemaForTest(t, map[string]any{"name": "tc-sch-06-schema"})
 
-	resp := do(t, http.MethodPost, "/api/v1/schemas/"+s.ID+"/agent-relations",
+	resp := do(t, http.MethodPost, "/api/v1/schemas/"+s.Name+"/agent-relations",
 		mustJSON(map[string]any{
 			"source": "tc-sch-06-entry",
 			"target": "tc-sch-06-target",
@@ -149,7 +161,7 @@ func TestSCH07_TransferEdge(t *testing.T) {
 	_ = createAgentForTest(t, "tc-sch-07-b")
 	s := createSchemaForTest(t, map[string]any{"name": "tc-sch-07-schema"})
 
-	resp := do(t, http.MethodPost, "/api/v1/schemas/"+s.ID+"/agent-relations",
+	resp := do(t, http.MethodPost, "/api/v1/schemas/"+s.Name+"/agent-relations",
 		mustJSON(map[string]any{
 			"source": "tc-sch-07-a",
 			"target": "tc-sch-07-b",
@@ -167,7 +179,7 @@ func TestSCH09_DuplicateRelation(t *testing.T) {
 	_ = createAgentForTest(t, "tc-sch-09-b")
 	s := createSchemaForTest(t, map[string]any{"name": "tc-sch-09-schema"})
 
-	first := do(t, http.MethodPost, "/api/v1/schemas/"+s.ID+"/agent-relations",
+	first := do(t, http.MethodPost, "/api/v1/schemas/"+s.Name+"/agent-relations",
 		mustJSON(map[string]any{
 			"source": "tc-sch-09-a",
 			"target": "tc-sch-09-b",
@@ -175,7 +187,7 @@ func TestSCH09_DuplicateRelation(t *testing.T) {
 	_ = readBody(t, first)
 	assertStatusAny(t, first, http.StatusOK, http.StatusCreated)
 
-	second := do(t, http.MethodPost, "/api/v1/schemas/"+s.ID+"/agent-relations",
+	second := do(t, http.MethodPost, "/api/v1/schemas/"+s.Name+"/agent-relations",
 		mustJSON(map[string]any{
 			"source": "tc-sch-09-a",
 			"target": "tc-sch-09-b",
@@ -193,7 +205,7 @@ func TestSCH08_DeleteRelation(t *testing.T) {
 	_ = createAgentForTest(t, "tc-sch-08-b")
 	s := createSchemaForTest(t, map[string]any{"name": "tc-sch-08-schema"})
 
-	createResp := do(t, http.MethodPost, "/api/v1/schemas/"+s.ID+"/agent-relations",
+	createResp := do(t, http.MethodPost, "/api/v1/schemas/"+s.Name+"/agent-relations",
 		mustJSON(map[string]any{
 			"source": "tc-sch-08-a",
 			"target": "tc-sch-08-b",
@@ -210,7 +222,7 @@ func TestSCH08_DeleteRelation(t *testing.T) {
 	}
 
 	delResp := do(t, http.MethodDelete,
-		"/api/v1/schemas/"+s.ID+"/agent-relations/"+parsed.ID, nil, adminToken)
+		"/api/v1/schemas/"+s.Name+"/agent-relations/"+parsed.ID, nil, adminToken)
 	_ = readBody(t, delResp)
 	assertStatusAny(t, delResp, http.StatusOK, http.StatusNoContent)
 }

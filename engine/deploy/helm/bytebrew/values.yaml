@@ -139,7 +139,7 @@ httpRoute:
   # Tested with Envoy Gateway, Cilium Gateway API, and Istio Gateway.
   enabled: false
   routes: []
-  # Example (Envoy Gateway / chirp-mono2 pattern):
+  # Example (Envoy Gateway pattern):
   # routes:
   #   - nameSuffix: api
   #     hostnames:
@@ -247,8 +247,11 @@ configApply:
 
   image:
     # brewctl Docker image. Pin to specific version for reproducibility.
+    # 0.2.0+ required for engine 1.1.0 — earlier brewctl builds URLs with
+    # UUIDs from the API list response and the new name-keyed engine
+    # rejects UUID-shaped strings as `{name}` URL params (chk_invalid_name).
     repository: ghcr.io/syntheticinc/brewctl
-    tag: "0.1.0"
+    tag: "0.2.0"
     pullPolicy: IfNotPresent
 
   # Inline bytebrew.yaml content. Format: bundle YAML with top-level
