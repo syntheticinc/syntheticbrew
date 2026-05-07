@@ -438,9 +438,9 @@ class APIClient {
     return this.request<Schema[]>('GET', '/schemas');
   }
 
-  getSchema(schemaId: string) {
+  getSchema(schemaName: string) {
     if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.id === schemaId) ?? mockSchemas[0]!;
+      const s = mockSchemas.find((x) => x.name === schemaName) ?? mockSchemas[0]!;
       return this.mock<Schema>({
         id: s.id,
         name: s.name,
@@ -451,23 +451,25 @@ class APIClient {
         chat_enabled: true,
       });
     }
-    return this.request<Schema>('GET', `/schemas/${schemaId}`);
+    return this.request<Schema>('GET', `/schemas/${encodeURIComponent(schemaName)}`);
   }
 
   createSchema(data: { name: string; description?: string }) {
-    if (this.isPrototype) return this.mock({ id: String(Date.now()), name: data.name, description: data.description, agents_count: 0, created_at: new Date().toISOString(), chat_enabled: false } as Schema);
+    if (this.isPrototype) return this.mock({ id: `mock-schema-${Date.now()}`, name: data.name, description: data.description, agents_count: 0, created_at: new Date().toISOString(), chat_enabled: false } as Schema);
     return this.request<Schema>('POST', '/schemas', data);
   }
 
-  // updateSchema persists editable schema fields (name, description,
-  // chat_enabled). Used by SchemaDetailPage's Settings tab to flip the
-  // chat_enabled toggle — matches backend `PUT /api/v1/schemas/{id}`.
-  updateSchema(schemaId: string, data: { name?: string; description?: string; chat_enabled?: boolean; entry_agent_id?: string }) {
+  // updateSchema persists editable schema fields (description, chat_enabled,
+  // entry_agent_id). Used by SchemaDetailPage's Settings tab to flip the
+  // chat_enabled toggle — matches backend `PATCH /api/v1/schemas/{name}`.
+  // Engine 1.1.0+: schema name is immutable; PATCH with a different `name`
+  // returns 409 Conflict. The Name input in Settings is readOnly.
+  updateSchema(schemaName: string, data: { name?: string; description?: string; chat_enabled?: boolean; entry_agent_id?: string }) {
     if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.id === schemaId);
+      const s = mockSchemas.find((x) => x.name === schemaName);
       return this.mock<Schema>({
-        id: schemaId,
-        name: data.name ?? s?.name ?? 'schema',
+        id: s?.id ?? `mock-schema-${schemaName}`,
+        name: schemaName,
         description: data.description ?? s?.description,
         agents_count: s?.agentIds.length ?? 0,
         entry_agent_name: s?.entryAgentId,
@@ -475,20 +477,20 @@ class APIClient {
         chat_enabled: data.chat_enabled ?? true,
       });
     }
-    return this.request<Schema>('PATCH', `/schemas/${schemaId}`, data);
+    return this.request<Schema>('PATCH', `/schemas/${encodeURIComponent(schemaName)}`, data);
   }
 
-  deleteSchema(schemaId: string) {
+  deleteSchema(schemaName: string) {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('DELETE', `/schemas/${schemaId}`);
+    return this.request<void>('DELETE', `/schemas/${encodeURIComponent(schemaName)}`);
   }
 
-  // chatWithSchema returns the chat URL for a schema. Chat is SSE-streamed
+  // chatUrlForSchema returns the chat URL for a schema. Chat is SSE-streamed
   // from the backend (see useSSEChat hook), so this helper simply computes
   // the canonical endpoint — callers pass the URL to useSSEChat via the
   // `endpoint` config. Kept here for consistency with other API helpers.
-  chatUrlForSchema(schemaId: string): string {
-    return `${BASE_URL}/schemas/${encodeURIComponent(schemaId)}/chat`;
+  chatUrlForSchema(schemaName: string): string {
+    return `${BASE_URL}/schemas/${encodeURIComponent(schemaName)}/chat`;
   }
 
   // V2: schema membership is derived from agent_relations
@@ -496,12 +498,12 @@ class APIClient {
   // read-only; mutation goes through the agent-relations endpoints below —
   // creating a relation adds both endpoints as implicit members; deleting
   // the last relation that referenced an agent removes it from the schema.
-  listSchemaAgents(schemaId: string) {
+  listSchemaAgents(schemaName: string) {
     if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.id === schemaId);
+      const s = mockSchemas.find((x) => x.name === schemaName);
       return this.mock<string[]>([...(s?.agentIds ?? [])]);
     }
-    return this.request<string[]>('GET', `/schemas/${schemaId}/agents`);
+    return this.request<string[]>('GET', `/schemas/${encodeURIComponent(schemaName)}/agents`);
   }
 
   // ─── Schema Templates (V2 Commit Group L, §2.2) ──────────────────────────
@@ -547,23 +549,23 @@ class APIClient {
     return this.request<SchemaTemplate>('GET', `/schema-templates/${encodeURIComponent(name)}`);
   }
 
-  forkSchemaTemplate(name: string, schemaName: string) {
+  forkSchemaTemplate(templateName: string, schemaName: string) {
     if (this.isPrototype) {
-      const t = MOCK_SCHEMA_TEMPLATES.find((x) => x.name === name);
+      const t = MOCK_SCHEMA_TEMPLATES.find((x) => x.name === templateName);
       if (!t) throw new Error('template not found');
       const agentIds: Record<string, string> = {};
       for (const a of t.definition.agents) {
         agentIds[a.name] = `mock-${schemaName}-${a.name}`;
       }
       return this.mock<ForkTemplateResponse>({
-        schema_id: `mock-schema-${Date.now()}`,
+        schema_id: `mock-schema-${schemaName}`,
         schema_name: schemaName,
         agent_ids: agentIds,
       });
     }
     return this.request<ForkTemplateResponse>(
       'POST',
-      `/schema-templates/${encodeURIComponent(name)}/fork`,
+      `/schema-templates/${encodeURIComponent(templateName)}/fork`,
       { schema_name: schemaName },
     );
   }
@@ -576,41 +578,41 @@ class APIClient {
   // (typically the entry agent / the parent in the delegation tree) to the
   // new agent.
 
-  listAgentRelations(schemaId: string) {
+  listAgentRelations(schemaName: string) {
     if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.id === schemaId);
+      const s = mockSchemas.find((x) => x.name === schemaName);
       const members = new Set(s?.agentIds ?? []);
       const rels = mockAgentRelations
         .filter((r) => members.has(r.sourceAgentId) && members.has(r.targetAgentId))
-        .map((r) => ({ id: r.id, schema_id: schemaId, source: r.sourceAgentId, target: r.targetAgentId }));
+        .map((r) => ({ id: r.id, schema_id: s?.id ?? schemaName, source: r.sourceAgentId, target: r.targetAgentId }));
       return this.mock<{ id: string; schema_id: string; source: string; target: string }[]>(rels);
     }
     return this.request<{ id: string; schema_id: string; source: string; target: string }[]>(
-      'GET', `/schemas/${schemaId}/agent-relations`,
+      'GET', `/schemas/${encodeURIComponent(schemaName)}/agent-relations`,
     );
   }
 
-  createAgentRelation(schemaId: string, source: string, target: string) {
+  createAgentRelation(schemaName: string, source: string, target: string) {
     if (this.isPrototype) {
       const id = `rel-${Date.now()}`;
       mockAgentRelations.push({ id, sourceAgentId: source, targetAgentId: target });
-      const schema = mockSchemas.find((s) => s.id === schemaId);
+      const schema = mockSchemas.find((s) => s.name === schemaName);
       if (schema && !schema.agentIds.includes(target)) {
         schema.agentIds.push(target);
       }
-      return this.mock({ id, schema_id: schemaId, source, target });
+      return this.mock({ id, schema_id: schema?.id ?? schemaName, source, target });
     }
     return this.request<{ id: string; schema_id: string; source: string; target: string }>(
-      'POST', `/schemas/${schemaId}/agent-relations`, { source, target },
+      'POST', `/schemas/${encodeURIComponent(schemaName)}/agent-relations`, { source, target },
     );
   }
 
-  deleteAgentRelation(schemaId: string, relationId: string) {
+  deleteAgentRelation(schemaName: string, relationId: string) {
     if (this.isPrototype) {
       const idx = mockAgentRelations.findIndex((r) => r.id === relationId);
       if (idx >= 0) {
         const [removed] = mockAgentRelations.splice(idx, 1);
-        const schema = mockSchemas.find((s) => s.id === schemaId);
+        const schema = mockSchemas.find((s) => s.name === schemaName);
         if (schema && removed && removed.targetAgentId !== schema.entryAgentId) {
           const stillReferenced = mockAgentRelations.some(
             (r) => r.sourceAgentId === removed.targetAgentId || r.targetAgentId === removed.targetAgentId,
@@ -622,7 +624,7 @@ class APIClient {
       }
       return this.mock(undefined as unknown as void);
     }
-    return this.request<void>('DELETE', `/schemas/${schemaId}/agent-relations/${relationId}`);
+    return this.request<void>('DELETE', `/schemas/${encodeURIComponent(schemaName)}/agent-relations/${relationId}`);
   }
 
   // ─── Sessions / Inspect ──────────────────────────────────────────────────────
@@ -884,40 +886,42 @@ class APIClient {
     return this.request<KnowledgeBase[]>('GET', '/knowledge-bases');
   }
 
-  async getKnowledgeBase(id: string): Promise<KnowledgeBase> {
-    if (this.isPrototype) return this.mock<KnowledgeBase>({ id, name: 'Mock KB', file_count: 0, linked_agents: [], created_at: '', updated_at: '' });
-    return this.request<KnowledgeBase>('GET', `/knowledge-bases/${encodeURIComponent(id)}`);
+  async getKnowledgeBase(name: string): Promise<KnowledgeBase> {
+    if (this.isPrototype) return this.mock<KnowledgeBase>({ id: `mock-${name}`, name, file_count: 0, linked_agents: [], created_at: '', updated_at: '' });
+    return this.request<KnowledgeBase>('GET', `/knowledge-bases/${encodeURIComponent(name)}`);
   }
 
   async createKnowledgeBase(data: CreateKnowledgeBaseRequest): Promise<KnowledgeBase> {
-    if (this.isPrototype) return this.mock<KnowledgeBase>({ id: 'kb-new', ...data, file_count: 0, linked_agents: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    if (this.isPrototype) return this.mock<KnowledgeBase>({ id: `mock-${data.name}`, ...data, file_count: 0, linked_agents: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
     return this.request<KnowledgeBase>('POST', '/knowledge-bases', data);
   }
 
-  async updateKnowledgeBase(id: string, data: CreateKnowledgeBaseRequest): Promise<KnowledgeBase> {
-    if (this.isPrototype) return this.mock<KnowledgeBase>({ id, ...data, file_count: 0, linked_agents: [], created_at: '', updated_at: new Date().toISOString() });
-    return this.request<KnowledgeBase>('PATCH', `/knowledge-bases/${encodeURIComponent(id)}`, data);
+  // Engine 1.1.0+: KB name is immutable; PATCH with a different `name`
+  // returns 409 Conflict. The Name input in the edit form is disabled.
+  async updateKnowledgeBase(name: string, data: CreateKnowledgeBaseRequest): Promise<KnowledgeBase> {
+    if (this.isPrototype) return this.mock<KnowledgeBase>({ id: `mock-${name}`, ...data, file_count: 0, linked_agents: [], created_at: '', updated_at: new Date().toISOString() });
+    return this.request<KnowledgeBase>('PATCH', `/knowledge-bases/${encodeURIComponent(name)}`, data);
   }
 
-  async deleteKnowledgeBase(id: string): Promise<void> {
+  async deleteKnowledgeBase(name: string): Promise<void> {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(id)}`);
+    return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(name)}`);
   }
 
-  async linkAgentToKB(kbId: string, agentName: string): Promise<void> {
+  async linkAgentToKB(kbName: string, agentName: string): Promise<void> {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('POST', `/knowledge-bases/${encodeURIComponent(kbId)}/agents/${encodeURIComponent(agentName)}`);
+    return this.request<void>('POST', `/knowledge-bases/${encodeURIComponent(kbName)}/agents/${encodeURIComponent(agentName)}`);
   }
 
-  async unlinkAgentFromKB(kbId: string, agentName: string): Promise<void> {
+  async unlinkAgentFromKB(kbName: string, agentName: string): Promise<void> {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(kbId)}/agents/${encodeURIComponent(agentName)}`);
+    return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(kbName)}/agents/${encodeURIComponent(agentName)}`);
   }
 
-  async listKBFiles(kbId: string): Promise<KnowledgeFile[]> {
+  async listKBFiles(kbName: string): Promise<KnowledgeFile[]> {
     if (this.isPrototype) return this.mock<KnowledgeFile[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await this.request<any[]>('GET', `/knowledge-bases/${encodeURIComponent(kbId)}/files`);
+    const raw = await this.request<any[]>('GET', `/knowledge-bases/${encodeURIComponent(kbName)}/files`);
     return (raw ?? []).map((r) => ({
       id: r.id,
       knowledge_base_id: r.knowledge_base_id,
@@ -931,7 +935,7 @@ class APIClient {
     } as KnowledgeFile));
   }
 
-  async uploadKBFile(kbId: string, file: File): Promise<KnowledgeFile> {
+  async uploadKBFile(kbName: string, file: File): Promise<KnowledgeFile> {
     if (this.isPrototype) {
       return this.mock<KnowledgeFile>({
         name: file.name,
@@ -947,7 +951,7 @@ class APIClient {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
-    const res = await fetch(`${BASE_URL}/knowledge-bases/${encodeURIComponent(kbId)}/files`, {
+    const res = await fetch(`${BASE_URL}/knowledge-bases/${encodeURIComponent(kbName)}/files`, {
       method: 'POST',
       headers,
       body: formData,
@@ -980,14 +984,14 @@ class APIClient {
     } as KnowledgeFile;
   }
 
-  async deleteKBFile(kbId: string, fileId: string): Promise<void> {
+  async deleteKBFile(kbName: string, fileId: string): Promise<void> {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(kbId)}/files/${encodeURIComponent(fileId)}`);
+    return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(kbName)}/files/${encodeURIComponent(fileId)}`);
   }
 
-  async reindexKBFile(kbId: string, fileId: string): Promise<void> {
+  async reindexKBFile(kbName: string, fileId: string): Promise<void> {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('POST', `/knowledge-bases/${encodeURIComponent(kbId)}/files/${encodeURIComponent(fileId)}/reindex`);
+    return this.request<void>('POST', `/knowledge-bases/${encodeURIComponent(kbName)}/files/${encodeURIComponent(fileId)}/reindex`);
   }
 
   // ─── Resilience ──────────────────────────────────────────────────────────────

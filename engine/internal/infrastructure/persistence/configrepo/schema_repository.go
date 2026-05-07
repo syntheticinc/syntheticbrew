@@ -96,6 +96,25 @@ func (r *GORMSchemaRepository) GetByID(ctx context.Context, id string) (*SchemaR
 	}, nil
 }
 
+// GetSchemaIDByName resolves a schema name to its UUID within the caller's tenant.
+//
+// Used by the chat endpoint resolver when the URL `{id}` parameter is not a
+// UUID — GitOps/declarative-config clients reference schemas by stable name
+// because UUIDs are environment-specific (auto-generated on configApply,
+// regenerated on DB reset). Returns gorm.ErrRecordNotFound when no row matches.
+func (r *GORMSchemaRepository) GetSchemaIDByName(ctx context.Context, name string) (string, error) {
+	var id string
+	if err := r.db.WithContext(ctx).
+		Raw("SELECT id FROM schemas WHERE name = ? AND tenant_id = ?", name, tenantIDFromCtx(ctx)).
+		Scan(&id).Error; err != nil {
+		return "", fmt.Errorf("get schema id by name %q: %w", name, err)
+	}
+	if id == "" {
+		return "", gorm.ErrRecordNotFound
+	}
+	return id, nil
+}
+
 // GetModelByID returns the raw SchemaModel row (chat dispatcher path).
 // Kept separate from GetByID so callers that need entry_agent_id + chat_enabled
 // don't pay the cost of deriving AgentNames from agent_relations.

@@ -1,7 +1,7 @@
 # Test scenario: Gateway API HTTPRoute (Envoy / Cilium / Istio Gateway).
 # Render-validated ONLY — kind ships no Gateway API controller by default,
 # so attaching a real HTTPRoute requires extra setup out of scope here.
-# Stays in "Stable" tier (chirp-mono2 dev canary actually exercises this
+# Stays in "Stable" tier (production canary actually exercises this
 # path against Envoy Gateway in production-like environment).
 replicaCount: 1
 

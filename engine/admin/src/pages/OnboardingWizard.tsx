@@ -442,20 +442,21 @@ function Step1ConnectLLM({
 function Step2Template({
   onDone,
 }: {
-  onDone: (schemaId?: string) => void;
+  onDone: (schemaName?: string) => void;
 }) {
   const [selected, setSelected] = useState<TemplateId | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Backend fork endpoint creates schema+agents+relations+capabilities in
-  // a single transaction and sets entry_agent_id + chat_enabled.
+  // a single transaction and sets entry_agent_id + chat_enabled. Returns
+  // both schema_id (UUID) and schema_name; engine 1.1.0+ URLs are name-keyed.
   async function createFromCatalog(template: Template): Promise<string> {
     if (!template.catalogName) {
       throw new Error(`template ${template.id} has no catalogName`);
     }
     const forked = await api.forkSchemaTemplate(template.catalogName, template.schemaName);
-    return forked.schema_id;
+    return forked.schema_name;
   }
 
   // Blank-canvas path: schema + entry agent + PATCH entry_agent_id (the
@@ -487,19 +488,19 @@ function Step2Template({
       if (!benign) throw err;
     }
 
-    await api.updateSchema(schema.id, { entry_agent_id: template.agentName });
+    await api.updateSchema(schema.name, { entry_agent_id: template.agentName });
 
-    return schema.id;
+    return schema.name;
   }
 
   async function createFromTemplate(template: Template) {
     setCreating(true);
     setError(null);
     try {
-      const schemaId = template.catalogName
+      const schemaName = template.catalogName
         ? await createFromCatalog(template)
         : await createBlankSchema(template);
-      onDone(schemaId);
+      onDone(schemaName);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create template.');
     } finally {
@@ -616,11 +617,11 @@ export default function OnboardingWizard() {
   const [step, setStep] = useState<1 | 2>(1);
   const navigate = useNavigate();
 
-  // Drop into the new schema's canvas when we know its id; fall back to
-  // the schemas list (Skip path).
-  const finish = (schemaId?: string) => {
-    if (schemaId) {
-      navigate(`/schemas/${schemaId}`);
+  // Drop into the new schema's canvas when we know its name; fall back to
+  // the schemas list (Skip path). Engine 1.1.0+ URLs are name-keyed.
+  const finish = (schemaName?: string) => {
+    if (schemaName) {
+      navigate(`/schemas/${encodeURIComponent(schemaName)}`);
       return;
     }
     navigate('/schemas');

@@ -12,6 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
 
@@ -40,12 +42,27 @@ func (m *mockMemoryClearer) DeleteOne(ctx context.Context, id string) error {
 	return m.err
 }
 
+// memTestSchemaName / memTestSchemaUUID — fixture pair: routes accept the name,
+// resolver translates to UUID before reaching the service mocks.
+const (
+	memTestSchemaName = "test-schema"
+	memTestSchemaUUID = "10000000-0000-0000-0000-000000000001"
+)
+
 func setupMemoryRouter(lister MemoryLister, clearer MemoryClearer) *chi.Mux {
-	handler := NewMemoryHandler(lister, clearer)
+	resolver := &fakeSchemaNameResolver{
+		fn: func(_ context.Context, name string) (string, error) {
+			if name == memTestSchemaName {
+				return memTestSchemaUUID, nil
+			}
+			return "", gorm.ErrRecordNotFound
+		},
+	}
+	handler := NewMemoryHandler(lister, clearer, resolver)
 	r := chi.NewRouter()
-	r.Get("/api/v1/schemas/{id}/memory", handler.ListMemories)
-	r.Delete("/api/v1/schemas/{id}/memory", handler.ClearMemories)
-	r.Delete("/api/v1/schemas/{id}/memory/{entry_id}", handler.DeleteMemory)
+	r.Get("/api/v1/schemas/{name}/memory", handler.ListMemories)
+	r.Delete("/api/v1/schemas/{name}/memory", handler.ClearMemories)
+	r.Delete("/api/v1/schemas/{name}/memory/{entry_id}", handler.DeleteMemory)
 	return r
 }
 
@@ -58,7 +75,7 @@ func TestMemoryHandler_ListMemories(t *testing.T) {
 	}
 	r := setupMemoryRouter(lister, &mockMemoryClearer{})
 
-	req := httptest.NewRequest("GET", "/api/v1/schemas/10000000-0000-0000-0000-000000000001/memory", nil)
+	req := httptest.NewRequest("GET", "/api/v1/schemas/test-schema/memory", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -74,7 +91,7 @@ func TestMemoryHandler_ListMemories_Empty(t *testing.T) {
 	lister := &mockMemoryLister{memories: []*domain.Memory{}}
 	r := setupMemoryRouter(lister, &mockMemoryClearer{})
 
-	req := httptest.NewRequest("GET", "/api/v1/schemas/10000000-0000-0000-0000-000000000001/memory", nil)
+	req := httptest.NewRequest("GET", "/api/v1/schemas/test-schema/memory", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -89,7 +106,7 @@ func TestMemoryHandler_ClearMemories(t *testing.T) {
 	clearer := &mockMemoryClearer{deletedCount: 5}
 	r := setupMemoryRouter(&mockMemoryLister{}, clearer)
 
-	req := httptest.NewRequest("DELETE", "/api/v1/schemas/10000000-0000-0000-0000-000000000001/memory", nil)
+	req := httptest.NewRequest("DELETE", "/api/v1/schemas/test-schema/memory", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -100,7 +117,7 @@ func TestMemoryHandler_DeleteMemory(t *testing.T) {
 	clearer := &mockMemoryClearer{}
 	r := setupMemoryRouter(&mockMemoryLister{}, clearer)
 
-	req := httptest.NewRequest("DELETE", "/api/v1/schemas/10000000-0000-0000-0000-000000000001/memory/42", nil)
+	req := httptest.NewRequest("DELETE", "/api/v1/schemas/test-schema/memory/42", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -111,7 +128,7 @@ func TestMemoryHandler_DeleteMemory_Error(t *testing.T) {
 	clearer := &mockMemoryClearer{err: fmt.Errorf("memory not found: 999")}
 	r := setupMemoryRouter(&mockMemoryLister{}, clearer)
 
-	req := httptest.NewRequest("DELETE", "/api/v1/schemas/10000000-0000-0000-0000-000000000001/memory/999", nil)
+	req := httptest.NewRequest("DELETE", "/api/v1/schemas/test-schema/memory/999", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

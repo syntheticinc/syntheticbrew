@@ -39,15 +39,19 @@ var numericPattern = regexp.MustCompile(`^[0-9]+$`)
 //
 // Known API patterns (from server.go routes):
 //
-//	/api/v1/agents/{name}/chat      -> /api/v1/agents/{name}/chat
-//	/api/v1/agents/{name}           -> /api/v1/agents/{name}
-//	/api/v1/sessions/{id}/respond   -> /api/v1/sessions/{id}/respond
-//	/api/v1/tasks/{id}/input        -> /api/v1/tasks/{id}/input
-//	/api/v1/auth/tokens/{id}        -> /api/v1/auth/tokens/{id}
-//	/api/v1/webhooks/{path}         -> /api/v1/webhooks/{path}
+//	/api/v1/agents/{name}/chat              -> /api/v1/agents/{name}/chat
+//	/api/v1/agents/{name}                   -> /api/v1/agents/{name}
+//	/api/v1/schemas/{name}                  -> /api/v1/schemas/{name}
+//	/api/v1/schemas/{name}/chat             -> /api/v1/schemas/{name}/chat
+//	/api/v1/knowledge-bases/{name}          -> /api/v1/knowledge-bases/{name}
+//	/api/v1/sessions/{id}/respond           -> /api/v1/sessions/{id}/respond
+//	/api/v1/tasks/{id}/input                -> /api/v1/tasks/{id}/input
+//	/api/v1/auth/tokens/{id}                -> /api/v1/auth/tokens/{id}
+//	/api/v1/webhooks/{path}                 -> /api/v1/webhooks/{path}
 //
 // The function replaces UUIDs with {id} and numeric IDs with {id}.
-// Agent/webhook names that are neither UUID nor numeric are replaced with {name}.
+// Agent / schema / KB / webhook names that are neither UUID nor numeric
+// collapse to the resource-appropriate placeholder.
 func sanitizePath(path string) string {
 	// Replace UUIDs first (before segment-level analysis).
 	path = uuidPattern.ReplaceAllString(path, "{id}")
@@ -59,7 +63,8 @@ func sanitizePath(path string) string {
 		placeholder string
 	}{
 		{"/api/v1/agents/", "{name}"},
-		{"/api/v1/schemas/", "{id}"},
+		{"/api/v1/knowledge-bases/", "{name}"},
+		{"/api/v1/schemas/", "{name}"},
 		{"/api/v1/sessions/", "{id}"},
 		{"/api/v1/tasks/", "{id}"},
 		{"/api/v1/auth/tokens/", "{id}"},

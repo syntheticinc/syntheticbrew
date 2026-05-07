@@ -8,3 +8,6 @@ databaseChangeLog:
   - include:
       file: add-models-is-default.yaml
       relativeToChangelogFile: true
+  - include:
+      file: add-resource-name-format-check.yaml
+      relativeToChangelogFile: true

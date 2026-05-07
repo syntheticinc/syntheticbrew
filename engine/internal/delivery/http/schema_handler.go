@@ -104,14 +104,24 @@ type AgentSchemaLister interface {
 // --- Handler ---
 
 // SchemaHandler serves /api/v1/schemas endpoints.
+//
+// Engine 1.1.0 made the URL `{name}` segment a stable operator-facing handle
+// (was UUID in 1.0.x). The handler resolves the name to a tenant-scoped UUID
+// via SchemaNameResolver before invoking the underlying service. Internal
+// IDs (relationId, FK references, audit resource_id) remain UUID.
 type SchemaHandler struct {
 	schemas        SchemaService
 	agentRelations AgentRelationService
+	resolver       SchemaNameResolver
 }
 
 // NewSchemaHandler creates a SchemaHandler.
-func NewSchemaHandler(schemas SchemaService, agentRelations AgentRelationService) *SchemaHandler {
-	return &SchemaHandler{schemas: schemas, agentRelations: agentRelations}
+//
+// resolver is the tenant-scoped name → UUID resolver — required to translate
+// the URL `{name}` segment into the canonical schema UUID consumed by the
+// underlying SchemaService and AgentRelationService.
+func NewSchemaHandler(schemas SchemaService, agentRelations AgentRelationService, resolver SchemaNameResolver) *SchemaHandler {
+	return &SchemaHandler{schemas: schemas, agentRelations: agentRelations, resolver: resolver}
 }
 
 // Routes returns a chi router with all schema and agent-relation endpoints.
@@ -121,24 +131,38 @@ func (h *SchemaHandler) Routes() http.Handler {
 	// Schema CRUD
 	r.Get("/", h.ListSchemas)
 	r.Post("/", h.CreateSchema)
-	r.Get("/{id}", h.GetSchema)
-	r.Put("/{id}", h.UpdateSchema)
-	r.Patch("/{id}", h.PatchSchema)
-	r.Delete("/{id}", h.DeleteSchema)
+	r.Get("/{name}", h.GetSchema)
+	r.Put("/{name}", h.UpdateSchema)
+	r.Patch("/{name}", h.PatchSchema)
+	r.Delete("/{name}", h.DeleteSchema)
 
 	// Schema-Agent membership (read-only — derived from agent_relations).
 	// Mutation is done via the agent-relations endpoints below
 	// (docs/architecture/agent-first-runtime.md §2.1).
-	r.Get("/{id}/agents", h.ListSchemaAgents)
+	r.Get("/{name}/agents", h.ListSchemaAgents)
 
-	// Agent relations (per-schema)
-	r.Get("/{id}/agent-relations", h.ListAgentRelations)
-	r.Post("/{id}/agent-relations", h.CreateAgentRelation)
-	r.Get("/{id}/agent-relations/{relationId}", h.GetAgentRelation)
-	r.Put("/{id}/agent-relations/{relationId}", h.UpdateAgentRelation)
-	r.Delete("/{id}/agent-relations/{relationId}", h.DeleteAgentRelation)
+	// Agent relations (per-schema). relationId remains UUID — internal
+	// FK to agent_relations.id, never operator-facing.
+	r.Get("/{name}/agent-relations", h.ListAgentRelations)
+	r.Post("/{name}/agent-relations", h.CreateAgentRelation)
+	r.Get("/{name}/agent-relations/{relationId}", h.GetAgentRelation)
+	r.Put("/{name}/agent-relations/{relationId}", h.UpdateAgentRelation)
+	r.Delete("/{name}/agent-relations/{relationId}", h.DeleteAgentRelation)
 
 	return r
+}
+
+// resolveSchemaName translates the `{name}` URL param into a tenant-scoped
+// UUID. On any error it writes the appropriate HTTP response and returns
+// ("", false); callers must not write further output when ok == false.
+func (h *SchemaHandler) resolveSchemaName(w http.ResponseWriter, r *http.Request) (string, bool) {
+	name := chi.URLParam(r, "name")
+	id, err := resolveSchemaNameToUUID(r.Context(), h.resolver, name)
+	if err != nil {
+		writeNameLookupError(r.Context(), w, "schema", name, err)
+		return "", false
+	}
+	return id, true
 }
 
 // --- Schema endpoints ---
@@ -153,9 +177,8 @@ func (h *SchemaHandler) ListSchemas(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SchemaHandler) GetSchema(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDStringParam(r, "id")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	id, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
@@ -177,6 +200,10 @@ func (h *SchemaHandler) CreateSchema(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	if err := ValidateResourceName(req.Name); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid schema name: "+err.Error())
+		return
+	}
 
 	schema, err := h.schemas.CreateSchema(r.Context(), req)
 	if err != nil {
@@ -186,13 +213,14 @@ func (h *SchemaHandler) CreateSchema(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, schema)
 }
 
-// UpdateSchema handles PUT /api/v1/schemas/{id}.
+// UpdateSchema handles PUT /api/v1/schemas/{name}.
 // PUT is a full-replace: name is required; missing required fields return 400.
-// Use PATCH for partial updates.
+// Renaming is forbidden — supplying a name that differs from the URL handle
+// returns 409 Conflict (immutability gate). Use PATCH for partial updates.
 func (h *SchemaHandler) UpdateSchema(w http.ResponseWriter, r *http.Request) {
-	id, err := parseStringParam(r, "id")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	currentName := chi.URLParam(r, "name")
+	id, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
@@ -208,6 +236,16 @@ func (h *SchemaHandler) UpdateSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Names are immutable post-create — rejecting the rename here keeps audit
+	// resource_id (UUID) stable and prevents GitOps consumers' stable-handle
+	// references from silently breaking. Operators recreate + migrate.
+	if *req.Name != currentName {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "name is immutable; recreate with new name and migrate consumers",
+		})
+		return
+	}
+
 	if err := h.schemas.UpdateSchema(r.Context(), id, req); err != nil {
 		writeDomainError(w, err)
 		return
@@ -215,18 +253,27 @@ func (h *SchemaHandler) UpdateSchema(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// PatchSchema handles PATCH /api/v1/schemas/{id}.
+// PatchSchema handles PATCH /api/v1/schemas/{name}.
 // Only non-nil fields are applied; all others preserve their current value.
+// Supplying `name` is allowed only when it equals the current URL handle —
+// any rename returns 409 Conflict (immutability gate).
 func (h *SchemaHandler) PatchSchema(w http.ResponseWriter, r *http.Request) {
-	id, err := parseStringParam(r, "id")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	currentName := chi.URLParam(r, "name")
+	id, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
 	var req UpdateSchemaRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %s", err.Error()))
+		return
+	}
+
+	if req.Name != nil && *req.Name != currentName {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "name is immutable; recreate with new name and migrate consumers",
+		})
 		return
 	}
 
@@ -238,9 +285,8 @@ func (h *SchemaHandler) PatchSchema(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SchemaHandler) DeleteSchema(w http.ResponseWriter, r *http.Request) {
-	id, err := parseStringParam(r, "id")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	id, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
@@ -254,9 +300,8 @@ func (h *SchemaHandler) DeleteSchema(w http.ResponseWriter, r *http.Request) {
 // --- Schema-Agent ref endpoints ---
 
 func (h *SchemaHandler) ListSchemaAgents(w http.ResponseWriter, r *http.Request) {
-	id, err := parseStringParam(r, "id")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	id, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
@@ -271,9 +316,8 @@ func (h *SchemaHandler) ListSchemaAgents(w http.ResponseWriter, r *http.Request)
 // --- AgentRelation endpoints ---
 
 func (h *SchemaHandler) ListAgentRelations(w http.ResponseWriter, r *http.Request) {
-	schemaID, err := parseStringParam(r, "id")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	schemaID, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 
@@ -301,9 +345,8 @@ func (h *SchemaHandler) GetAgentRelation(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SchemaHandler) CreateAgentRelation(w http.ResponseWriter, r *http.Request) {
-	schemaID, err := parseStringParam(r, "id")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	schemaID, ok := h.resolveSchemaName(w, r)
+	if !ok {
 		return
 	}
 

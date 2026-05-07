@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
 
@@ -73,14 +72,24 @@ type KBFileManager interface {
 }
 
 // KnowledgeBaseHandler serves /api/v1/knowledge-bases endpoints.
+//
+// Engine 1.1.0 made the URL `{name}` segment a stable operator-facing handle
+// (was UUID in 1.0.x). The handler resolves the name to a tenant-scoped UUID
+// via KBNameResolver before invoking the underlying store. Internal IDs
+// (file_id) remain UUID.
 type KnowledgeBaseHandler struct {
 	store       KBStore
 	fileManager KBFileManager
+	resolver    KBNameResolver
 }
 
 // NewKnowledgeBaseHandler creates a new handler.
-func NewKnowledgeBaseHandler(store KBStore, fileManager KBFileManager) *KnowledgeBaseHandler {
-	return &KnowledgeBaseHandler{store: store, fileManager: fileManager}
+//
+// resolver is the tenant-scoped name → UUID resolver — required to translate
+// the URL `{name}` segment into the canonical KB UUID consumed by the
+// underlying KBStore and KBFileManager.
+func NewKnowledgeBaseHandler(store KBStore, fileManager KBFileManager, resolver KBNameResolver) *KnowledgeBaseHandler {
+	return &KnowledgeBaseHandler{store: store, fileManager: fileManager, resolver: resolver}
 }
 
 // List handles GET /api/v1/knowledge-bases.
@@ -96,10 +105,14 @@ func (h *KnowledgeBaseHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, kbs)
 }
 
-func parseKBID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	id := chi.URLParam(r, "id")
-	if _, err := uuid.Parse(id); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid knowledge base id: must be a UUID")
+// resolveKBName translates the `{name}` URL param into a tenant-scoped UUID.
+// On any error it writes the appropriate HTTP response and returns ("", false);
+// callers must not write further output when ok == false.
+func (h *KnowledgeBaseHandler) resolveKBName(w http.ResponseWriter, r *http.Request) (string, bool) {
+	name := chi.URLParam(r, "name")
+	id, err := resolveKBNameToUUID(r.Context(), h.resolver, name)
+	if err != nil {
+		writeNameLookupError(r.Context(), w, "knowledge base", name, err)
 		return "", false
 	}
 	return id, true
@@ -107,7 +120,7 @@ func parseKBID(w http.ResponseWriter, r *http.Request) (string, bool) {
 
 // Get handles GET /api/v1/knowledge-bases/{id}.
 func (h *KnowledgeBaseHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseKBID(w, r)
+	id, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -134,6 +147,10 @@ func (h *KnowledgeBaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	if err := ValidateResourceName(req.Name); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid knowledge base name: "+err.Error())
+		return
+	}
 
 	tenantID := domain.TenantIDFromContext(r.Context())
 	if tenantID == "" {
@@ -148,11 +165,13 @@ func (h *KnowledgeBaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, kb)
 }
 
-// Update handles PUT /api/v1/knowledge-bases/{id}.
+// Update handles PUT /api/v1/knowledge-bases/{name}.
 // PUT is a full-replace: name is required; missing required fields return 400.
-// Use PATCH for partial updates.
+// Renaming is forbidden — supplying a name that differs from the URL handle
+// returns 409 Conflict (immutability gate). Use PATCH for partial updates.
 func (h *KnowledgeBaseHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseKBID(w, r)
+	currentName := chi.URLParam(r, "name")
+	id, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -163,6 +182,12 @@ func (h *KnowledgeBaseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name == "" {
 		writeJSONError(w, http.StatusBadRequest, "name is required for PUT (full replace); use PATCH for partial updates")
+		return
+	}
+	if req.Name != currentName {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "name is immutable; recreate with new name and migrate consumers",
+		})
 		return
 	}
 
@@ -178,16 +203,25 @@ func (h *KnowledgeBaseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, kb)
 }
 
-// PatchKB handles PATCH /api/v1/knowledge-bases/{id}.
+// PatchKB handles PATCH /api/v1/knowledge-bases/{name}.
 // Only non-nil fields are applied; all others preserve their current value.
+// Supplying `name` is allowed only when it equals the current URL handle —
+// any rename returns 409 Conflict (immutability gate).
 func (h *KnowledgeBaseHandler) PatchKB(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseKBID(w, r)
+	currentName := chi.URLParam(r, "name")
+	id, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
 	var req PatchKBRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name != nil && *req.Name != currentName {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "name is immutable; recreate with new name and migrate consumers",
+		})
 		return
 	}
 
@@ -205,7 +239,7 @@ func (h *KnowledgeBaseHandler) PatchKB(w http.ResponseWriter, r *http.Request) {
 
 // Delete handles DELETE /api/v1/knowledge-bases/{id}.
 func (h *KnowledgeBaseHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseKBID(w, r)
+	id, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -237,7 +271,7 @@ func (h *KnowledgeBaseHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // LinkAgent handles POST /api/v1/knowledge-bases/{id}/agents/{agent_name}.
 func (h *KnowledgeBaseHandler) LinkAgent(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := parseKBID(w, r)
+	kbID, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -255,7 +289,7 @@ func (h *KnowledgeBaseHandler) LinkAgent(w http.ResponseWriter, r *http.Request)
 
 // UnlinkAgent handles DELETE /api/v1/knowledge-bases/{id}/agents/{agent_name}.
 func (h *KnowledgeBaseHandler) UnlinkAgent(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := parseKBID(w, r)
+	kbID, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -273,7 +307,7 @@ func (h *KnowledgeBaseHandler) UnlinkAgent(w http.ResponseWriter, r *http.Reques
 
 // GetFile handles GET /api/v1/knowledge-bases/{id}/files/{file_id}.
 func (h *KnowledgeBaseHandler) GetFile(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := parseKBID(w, r)
+	kbID, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -300,7 +334,7 @@ func (h *KnowledgeBaseHandler) GetFile(w http.ResponseWriter, r *http.Request) {
 
 // ListFiles handles GET /api/v1/knowledge-bases/{id}/files.
 func (h *KnowledgeBaseHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := parseKBID(w, r)
+	kbID, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -332,7 +366,7 @@ func (h *KnowledgeBaseHandler) ListFiles(w http.ResponseWriter, r *http.Request)
 
 // UploadFile handles POST /api/v1/knowledge-bases/{id}/files.
 func (h *KnowledgeBaseHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := parseKBID(w, r)
+	kbID, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -414,7 +448,7 @@ func (h *KnowledgeBaseHandler) UploadFile(w http.ResponseWriter, r *http.Request
 
 // DeleteFile handles DELETE /api/v1/knowledge-bases/{id}/files/{file_id}.
 func (h *KnowledgeBaseHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := parseKBID(w, r)
+	kbID, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}
@@ -441,7 +475,7 @@ func (h *KnowledgeBaseHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 
 // ReindexFile handles POST /api/v1/knowledge-bases/{id}/files/{file_id}/reindex.
 func (h *KnowledgeBaseHandler) ReindexFile(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := parseKBID(w, r)
+	kbID, ok := h.resolveKBName(w, r)
 	if !ok {
 		return
 	}

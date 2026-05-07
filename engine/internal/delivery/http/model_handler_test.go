@@ -432,7 +432,7 @@ func TestModelHandler_Create_OpenRouterPreset(t *testing.T) {
 }
 
 // TestModelHandler_Patch_NormalizesAlias guards against the regression caught
-// by chirp-mono2 dev canary: brewctl reconcile after engine canonicalized
+// by production canary: brewctl reconcile after engine canonicalized
 // `type: openrouter` → `openai_compatible` on Create. Bundle reapply then
 // PATCHed with `type: openrouter` (the desired form), but Patch handler did
 // not re-run the same alias normalization Create does. Result: type=openrouter

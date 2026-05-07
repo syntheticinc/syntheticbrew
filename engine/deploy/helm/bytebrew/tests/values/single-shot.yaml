@@ -1,4 +1,4 @@
-# Test scenario: chirp-mono2-style single-shot deploy.
+# Test scenario: GitOps-style single-shot deploy.
 # bootstrapAdminToken seeds admin token at engine boot.
 # configApply Job runs as post-install hook with same token + applies smoke YAML.
 # Validates the full helmfile-equivalent flow.
@@ -45,7 +45,7 @@ bootstrapAdminToken:
 # brewctl applies a real smoke bundle right after engine becomes healthy.
 # Validates that brewctl actually creates resources (was caught as a v0.4.2
 # false-positive: empty `models: []` would let brewctl say "No changes" even
-# if the chart-side ConfigMap mount path was broken — see chirp-mono2 deploy).
+# if the chart-side ConfigMap mount path was broken — see 0.4.3 release notes).
 # apiKeysSecret needed because models[].api_key references ${OPENROUTER_API_KEY}.
 configApply:
   enabled: true

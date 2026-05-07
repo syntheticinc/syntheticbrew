@@ -31,14 +31,28 @@ func TestCHAT01_SSEEvents(t *testing.T) {
 	llmRequired(t)
 	t.Cleanup(func() { truncateTables(t) })
 
+	// Schema must have an entry_agent_id — chat dispatcher needs an agent to
+	// route the message. Pre-1.1.0 this test omitted entry_agent and the
+	// engine 400'd at chat_http_adapter.go (ErrNoEntryAgent). Seed an agent
+	// then point the schema's entry_agent_id at it. agent.id is a UUID FK,
+	// not a route param, so engine 1.1.0 name-keyed migration does not
+	// affect this field.
+	agentBody := createAgentForTest(t, "tc-chat-01-agent")
+	var agent struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(agentBody, &agent))
+	require.NotEmpty(t, agent.ID)
+
 	s := createSchemaForTest(t, map[string]any{
-		"name":         "tc-chat-01-schema",
-		"chat_enabled": true,
+		"name":           "tc-chat-01-schema",
+		"chat_enabled":   true,
+		"entry_agent_id": agent.ID,
 	})
 
 	body := mustJSONBytes(map[string]any{"message": "Hello"})
 	req, err := http.NewRequest(http.MethodPost,
-		baseURL+"/api/v1/schemas/"+s.ID+"/chat",
+		baseURL+"/api/v1/schemas/"+s.Name+"/chat",
 		bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
@@ -70,7 +84,7 @@ func TestCHAT02_ChatDisabledSchema(t *testing.T) {
 		"chat_enabled": false,
 	})
 
-	resp := do(t, http.MethodPost, "/api/v1/schemas/"+s.ID+"/chat",
+	resp := do(t, http.MethodPost, "/api/v1/schemas/"+s.Name+"/chat",
 		mustJSON(map[string]any{"message": "hi"}), adminToken)
 	_ = readBody(t, resp)
 	// Expect a 4xx, never 5xx.
@@ -80,13 +94,16 @@ func TestCHAT02_ChatDisabledSchema(t *testing.T) {
 }
 
 // TC-CHAT-03: Chat on a nonexistent schema → 404.
+//
+// Engine 1.1.0+: URL is name-keyed. Sends a valid-format name that simply
+// doesn't exist in the tenant — must return 404 without leaking existence.
 func TestCHAT03_UnknownSchema(t *testing.T) {
 	requireSuite(t)
 
-	resp := do(t, http.MethodPost, "/api/v1/schemas/00000000-0000-0000-0000-000000000000/chat",
+	resp := do(t, http.MethodPost, "/api/v1/schemas/does-not-exist/chat",
 		mustJSON(map[string]any{"message": "hi"}), adminToken)
 	_ = readBody(t, resp)
-	assertStatusAny(t, resp, http.StatusNotFound, http.StatusBadRequest)
+	assertStatusAny(t, resp, http.StatusNotFound)
 }
 
 // TC-CHAT-04: After a successful chat, session appears in GET /sessions.
@@ -104,7 +121,7 @@ func TestCHAT04_SessionAppears(t *testing.T) {
 	// Fire a chat — short read so we don't block the whole test.
 	body := mustJSONBytes(map[string]any{"message": "Hi"})
 	req, _ := http.NewRequest(http.MethodPost,
-		baseURL+"/api/v1/schemas/"+s.ID+"/chat", bytes.NewReader(body))
+		baseURL+"/api/v1/schemas/"+s.Name+"/chat", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	chatResp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)

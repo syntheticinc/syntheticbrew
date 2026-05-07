@@ -390,7 +390,14 @@ func (m *mockAgentRelationServiceNoop) DeleteAgentRelation(_ context.Context, _ 
 }
 
 func newSchemaRouter(svc SchemaService) http.Handler {
-	h := NewSchemaHandler(svc, &mockAgentRelationServiceNoop{})
+	// Permissive resolver — these tests exercise PUT/PATCH body handling, not
+	// name resolution. Any name maps to a stable test UUID.
+	resolver := &fakeSchemaNameResolver{
+		fn: func(_ context.Context, _ string) (string, error) {
+			return "00000000-0000-0000-0000-000000000001", nil
+		},
+	}
+	h := NewSchemaHandler(svc, &mockAgentRelationServiceNoop{}, resolver)
 	r := chi.NewRouter()
 	r.Mount("/schemas", h.Routes())
 	return r
@@ -439,16 +446,36 @@ func TestSchemaHandler_Patch_WithoutName_Succeeds(t *testing.T) {
 	assert.True(t, *capturedReq.ChatEnabled)
 }
 
-func TestSchemaHandler_Put_WithName_Succeeds(t *testing.T) {
+func TestSchemaHandler_Put_NameMatchesURL_Succeeds(t *testing.T) {
 	svc := &mockSchemaServiceWithPatch{}
 	r := newSchemaRouter(svc)
 
+	// Name in body equals URL segment — no rename, just an idempotent PUT.
 	name := "my-schema"
 	body, _ := json.Marshal(UpdateSchemaRequest{Name: &name})
-	req := httptest.NewRequest(http.MethodPut, "/schemas/some-uuid", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/schemas/my-schema", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestSchemaHandler_Put_RenameAttempt_Returns409(t *testing.T) {
+	svc := &mockSchemaServiceWithPatch{}
+	r := newSchemaRouter(svc)
+
+	// URL says my-schema, body says different — engine 1.1.0 makes name
+	// immutable post-create. Must reject with 409 Conflict.
+	newName := "renamed-schema"
+	body, _ := json.Marshal(UpdateSchemaRequest{Name: &newName})
+	req := httptest.NewRequest(http.MethodPut, "/schemas/my-schema", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	var errResp map[string]string
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Contains(t, errResp["error"], "immutable")
 }

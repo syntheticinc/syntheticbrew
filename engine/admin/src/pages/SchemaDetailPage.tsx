@@ -119,9 +119,9 @@ function AddAgentPanel({
 
 // ─── Chat endpoint info panel ────────────────────────────────────────────────
 
-function ChatEndpointPanel({ schemaId }: { schemaId: string }) {
+function ChatEndpointPanel({ schemaName }: { schemaName: string }) {
   const [copied, setCopied] = useState(false);
-  const url = `POST /api/v1/schemas/${schemaId}/chat`;
+  const url = `POST /api/v1/schemas/${schemaName}/chat`;
 
   function copy() {
     navigator.clipboard
@@ -158,7 +158,7 @@ function ChatEndpointPanel({ schemaId }: { schemaId: string }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function SchemaDetailPage() {
-  const { schemaId = '' } = useParams<{ schemaId: string }>();
+  const { schemaName = '' } = useParams<{ schemaName: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const validTabs: TabKey[] = ['canvas', 'settings'];
@@ -171,18 +171,18 @@ export default function SchemaDetailPage() {
 
   // ─── Data fetching ───────────────────────────────────────────────────────────
   const { data: schema, loading: schemaLoading, refetch: refetchSchema } = useApi(
-    () => api.getSchema(schemaId),
-    [schemaId],
+    () => api.getSchema(schemaName),
+    [schemaName],
   );
 
   const { data: agentNames, loading: agentNamesLoading, refetch: refetchAgentNames } = useApi(
-    () => api.listSchemaAgents(schemaId),
-    [schemaId],
+    () => api.listSchemaAgents(schemaName),
+    [schemaName],
   );
 
   const { data: rawRelations, loading: relationsLoading, refetch: refetchRelations } = useApi(
-    () => api.listAgentRelations(schemaId),
-    [schemaId],
+    () => api.listAgentRelations(schemaName),
+    [schemaName],
   );
 
   // Local optimistic state for chat_enabled toggle
@@ -306,7 +306,7 @@ export default function SchemaDetailPage() {
       if (!parent) {
         // Empty schema: no entry agent yet — set this agent as the entry orchestrator.
         try {
-          await api.updateSchema(schemaId, { entry_agent_id: agentName });
+          await api.updateSchema(schemaName, { entry_agent_id: agentName });
           refetchSchema();
           refetchAgentNames();
         } catch {
@@ -317,7 +317,7 @@ export default function SchemaDetailPage() {
         return;
       }
       try {
-        await api.createAgentRelation(schemaId, parent, agentName);
+        await api.createAgentRelation(schemaName, parent, agentName);
         refetchRelations();
         refetchAgentNames();
       } catch {
@@ -326,7 +326,7 @@ export default function SchemaDetailPage() {
       setShowAddAgent(false);
       setAddChildParentName(null);
     },
-    [schemaId, addChildParentName, entryAgentId, refetchRelations, refetchAgentNames, refetchSchema],
+    [schemaName, addChildParentName, entryAgentId, refetchRelations, refetchAgentNames, refetchSchema],
   );
 
   const handleRemoveDelegation = useCallback(
@@ -335,14 +335,14 @@ export default function SchemaDetailPage() {
       // Find all relations involving this agent as target and delete them
       const toDelete = (rawRelations ?? []).filter((r) => r.target === agentId);
       try {
-        await Promise.all(toDelete.map((r) => api.deleteAgentRelation(schemaId, r.id)));
+        await Promise.all(toDelete.map((r) => api.deleteAgentRelation(schemaName, r.id)));
         refetchRelations();
         refetchAgentNames();
       } catch {
         // silently ignore
       }
     },
-    [schemaId, entryAgentId, rawRelations, refetchRelations, refetchAgentNames],
+    [schemaName, entryAgentId, rawRelations, refetchRelations, refetchAgentNames],
   );
 
   const handleToggleChatEnabled = useCallback(
@@ -352,7 +352,7 @@ export default function SchemaDetailPage() {
       setChatEnabledSaving(true);
       setChatEnabledError(null);
       try {
-        await api.updateSchema(schemaId, { chat_enabled: next });
+        await api.updateSchema(schemaName, { chat_enabled: next });
         refetchSchema();
       } catch (err) {
         // Revert on error
@@ -362,7 +362,7 @@ export default function SchemaDetailPage() {
         setChatEnabledSaving(false);
       }
     },
-    [schema, schemaId, chatEnabledSaving, refetchSchema],
+    [schema, schemaName, chatEnabledSaving, refetchSchema],
   );
 
   // ─── Render guards ───────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ export default function SchemaDetailPage() {
         </Link>
         <div className="flex items-center gap-3 mt-2">
           <h1 className="text-xl font-semibold text-brand-light">
-            {schema?.name ?? schemaId}
+            {schema?.name ?? schemaName}
           </h1>
           {schema?.is_system && (
             <span className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider bg-brand-shade3/10 text-brand-shade3 border border-brand-shade3/25 font-mono">
@@ -486,7 +486,7 @@ export default function SchemaDetailPage() {
                         key={name}
                         onClick={async () => {
                           try {
-                            await api.updateSchema(schemaId, { entry_agent_id: name });
+                            await api.updateSchema(schemaName, { entry_agent_id: name });
                             refetchSchema();
                           } catch {
                             // silently ignore — user sees stale state
@@ -549,7 +549,9 @@ export default function SchemaDetailPage() {
 
         {tab === 'settings' && (
           <div className="p-6 max-w-[720px] mx-auto space-y-5">
-            {/* Basic fields (read-only for now — editing name/description handled elsewhere) */}
+            {/* Engine 1.1.0+: schema name is the operator-facing canonical
+                handle (URL param, GitOps key) — immutable post-create.
+                A PATCH that changes name returns 409 Conflict. */}
             <div>
               <label className="block text-[11px] uppercase tracking-wider text-brand-shade3 mb-1.5">Name</label>
               <input
@@ -557,6 +559,10 @@ export default function SchemaDetailPage() {
                 value={schema?.name ?? ''}
                 className="w-full bg-brand-dark border border-brand-shade3/20 rounded-btn px-3 py-2 text-[13px] text-brand-light"
               />
+              <p className="text-xs text-brand-shade3 mt-1">
+                Schema name is immutable post-create — recreate with a new name and migrate
+                consumers if a rename is needed (engine 1.1.0+).
+              </p>
             </div>
             <div>
               <label className="block text-[11px] uppercase tracking-wider text-brand-shade3 mb-1.5">
@@ -606,7 +612,7 @@ export default function SchemaDetailPage() {
                     Accept chat requests
                   </div>
                   <p className="text-[11px] text-brand-shade3 leading-relaxed mt-1">
-                    When enabled, this schema accepts <code className="text-brand-shade2">POST /api/v1/schemas/{schemaId}/chat</code> requests.
+                    When enabled, this schema accepts <code className="text-brand-shade2">POST /api/v1/schemas/{schemaName}/chat</code> requests.
                   </p>
                   {chatEnabledError && (
                     <div className="mt-2 text-[11px] text-rose-400">Failed to save: {chatEnabledError}</div>
@@ -616,7 +622,7 @@ export default function SchemaDetailPage() {
 
               {chatEnabled && (
                 <div className="mt-4">
-                  <ChatEndpointPanel schemaId={schemaId} />
+                  <ChatEndpointPanel schemaName={schemaName} />
                 </div>
               )}
             </div>

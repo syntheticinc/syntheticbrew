@@ -5,71 +5,109 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // resolveAuditAction maps an HTTP method + path to a semantic audit action
 // token ("agent.create", "auth.fail", etc.). Unknown combinations fall back
 // to "api_call" so the audit log is never silently empty. Compliance auditors
 // query by action, so this mapping is part of the audit contract.
-func resolveAuditAction(method, path string, status int) string {
+//
+// pathOrPattern is preferred to be the chi-matched route pattern (e.g.
+// "/api/v1/schemas/{name}/agent-relations") rather than the raw URL path.
+// Pattern dispatch sidesteps substring collisions — for engine 1.1.0+ a
+// schema named "agent-relations" or "chat" would otherwise shadow the
+// nested endpoints when path-based matching is used. Falls back gracefully
+// when called with a raw path (no chi context, or routes that don't go
+// through chi at all — e.g. health/metrics).
+func resolveAuditAction(method, pathOrPattern string, status int) string {
 	switch {
 	// Auth endpoints — status-dependent semantics.
-	case method == "POST" && strings.HasPrefix(path, "/api/v1/auth/local-session"):
+	case method == "POST" && strings.HasPrefix(pathOrPattern, "/api/v1/auth/local-session"):
 		if status >= 400 {
 			return "auth.fail"
 		}
 		return "auth.success"
-	case method == "POST" && path == "/api/v1/auth/tokens":
+	case method == "POST" && pathOrPattern == "/api/v1/auth/tokens":
 		return "token.create"
-	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/auth/tokens/"):
+	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/auth/tokens/"):
 		return "token.revoke"
 
 	// Agent CRUD.
-	case method == "POST" && path == "/api/v1/agents":
+	case method == "POST" && pathOrPattern == "/api/v1/agents":
 		return "agent.create"
-	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(path, "/api/v1/agents/"):
+	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(pathOrPattern, "/api/v1/agents/"):
 		return "agent.update"
-	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/agents/"):
+	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/agents/"):
 		return "agent.delete"
 
-	// Schema CRUD. Note: /schemas/{id}/chat and /schemas/{id}/agent-relations
-	// are handled as their own actions below.
-	case method == "POST" && strings.Contains(path, "/agent-relations"):
+	// Schema agent-relations — match before generic schema CRUD so the
+	// nested mutations get their own action. HasSuffix on the route pattern
+	// distinguishes the collection (`/agent-relations`) from a single
+	// relation (`/agent-relations/{relationId}`); both map to mutations
+	// scoped to the relation domain regardless of the schema name in the
+	// URL.
+	case method == "POST" && strings.HasSuffix(pathOrPattern, "/agent-relations"):
 		return "agent_relation.create"
-	case method == "DELETE" && strings.Contains(path, "/agent-relations/"):
+	case method == "DELETE" && strings.HasSuffix(pathOrPattern, "/agent-relations/{relationId}"):
 		return "agent_relation.delete"
-	case method == "POST" && strings.HasSuffix(path, "/chat") && strings.HasPrefix(path, "/api/v1/schemas/"):
+	// Fallback for raw paths (legacy callers / non-chi tests) — keep the
+	// substring-based detection so pre-1.1.0 audit-log fixtures stay
+	// resolvable. New callers always pass the chi route pattern.
+	case method == "DELETE" && strings.Contains(pathOrPattern, "/agent-relations/"):
+		return "agent_relation.delete"
+	case method == "POST" && strings.HasSuffix(pathOrPattern, "/chat") && strings.HasPrefix(pathOrPattern, "/api/v1/schemas/"):
 		return "chat.message"
-	case method == "POST" && path == "/api/v1/schemas":
+
+	// Schema CRUD.
+	case method == "POST" && pathOrPattern == "/api/v1/schemas":
 		return "schema.create"
-	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(path, "/api/v1/schemas/"):
+	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(pathOrPattern, "/api/v1/schemas/"):
 		return "schema.update"
-	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/schemas/"):
+	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/schemas/"):
 		return "schema.delete"
 
 	// Model / MCP / KB / Settings CRUD.
-	case method == "POST" && path == "/api/v1/models":
+	case method == "POST" && pathOrPattern == "/api/v1/models":
 		return "model.create"
-	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(path, "/api/v1/models/"):
+	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(pathOrPattern, "/api/v1/models/"):
 		return "model.update"
-	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/models/"):
+	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/models/"):
 		return "model.delete"
-	case method == "POST" && path == "/api/v1/mcp-servers":
+	case method == "POST" && pathOrPattern == "/api/v1/mcp-servers":
 		return "mcp.create"
-	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/mcp-servers/"):
+	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/mcp-servers/"):
 		return "mcp.delete"
-	case method == "POST" && path == "/api/v1/knowledge-bases":
+	case method == "POST" && pathOrPattern == "/api/v1/knowledge-bases":
 		return "kb.create"
-	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/knowledge-bases/"):
+	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/knowledge-bases/"):
 		return "kb.delete"
-	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(path, "/api/v1/settings/"):
+	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(pathOrPattern, "/api/v1/settings/"):
 		return "setting.update"
 
 	// Session CRUD.
-	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/sessions/"):
+	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/sessions/"):
 		return "session.delete"
 	}
 	return "api_call"
+}
+
+// auditDispatchPath returns the chi-matched route pattern for r when
+// available (post-routing context), falling back to the raw URL path. The
+// pattern form is templated (`/api/v1/schemas/{name}/agent-relations`) so
+// substring checks in resolveAuditAction can't collide with operator-chosen
+// resource names — a schema named "agent-relations" never reaches the same
+// switch arm as an actual relation endpoint because reserved-name validation
+// rejects it at create time AND the routing layer matches by literal path
+// segment.
+func auditDispatchPath(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if pattern := rc.RoutePattern(); pattern != "" {
+			return pattern
+		}
+	}
+	return r.URL.Path
 }
 
 // AuditLogger is used by the audit middleware to record API calls.
@@ -89,6 +127,11 @@ type AuditEntry struct {
 }
 
 // AuditMiddleware returns middleware that logs all API calls to the audit log.
+//
+// Action resolution uses chi's matched route pattern (post-routing) rather
+// than the raw URL path so that operator-chosen resource names — schema
+// names, KB names — can't shadow nested route segments. The audit `Resource`
+// field still records the raw method+path for forensics.
 func AuditMiddleware(logger AuditLogger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +145,7 @@ func AuditMiddleware(logger AuditLogger) func(http.Handler) http.Handler {
 				Timestamp: time.Now(),
 				ActorType: actorType,
 				ActorID:   actorID,
-				Action:    resolveAuditAction(r.Method, r.URL.Path, sw.status),
+				Action:    resolveAuditAction(r.Method, auditDispatchPath(r), sw.status),
 				Resource:  r.Method + " " + r.URL.Path,
 				Details: map[string]interface{}{
 					"method":      r.Method,

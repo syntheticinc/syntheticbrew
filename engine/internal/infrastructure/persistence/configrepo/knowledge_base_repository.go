@@ -78,6 +78,26 @@ func (r *GORMKnowledgeBaseRepository) GetByID(ctx context.Context, id string) (*
 	return &kb, nil
 }
 
+// GetKBIDByName resolves a KB name to its UUID within the caller's tenant.
+//
+// Used by handlers backing `/api/v1/knowledge-bases/{name}/...` routes —
+// engine 1.1.0 migrated KB URLs from UUID-keyed to name-keyed for GitOps
+// consumers. Returns gorm.ErrRecordNotFound when no row matches; resolver
+// upstream maps that to ErrRefNotFound → handler returns 404. Method name
+// matches the existing KBRefRepo consumer-side interface in resolvers.go.
+func (r *GORMKnowledgeBaseRepository) GetKBIDByName(ctx context.Context, name string) (string, error) {
+	var id string
+	if err := r.db.WithContext(ctx).
+		Raw("SELECT id FROM knowledge_bases WHERE name = ? AND tenant_id = ?", name, tenantIDFromCtx(ctx)).
+		Scan(&id).Error; err != nil {
+		return "", fmt.Errorf("get knowledge base id by name %q: %w", name, err)
+	}
+	if id == "" {
+		return "", gorm.ErrRecordNotFound
+	}
+	return id, nil
+}
+
 // List returns all knowledge bases for the current tenant.
 func (r *GORMKnowledgeBaseRepository) List(ctx context.Context) ([]models.KnowledgeBase, error) {
 	var kbs []models.KnowledgeBase

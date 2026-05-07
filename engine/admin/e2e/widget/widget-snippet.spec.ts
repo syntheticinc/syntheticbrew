@@ -45,27 +45,28 @@ test.describe('Widget — snippet copy', () => {
     expect(bodyText).toMatch(/widget|snippet|embed|schema|position|color/i);
   });
 
-  test('snippet contains data-schema-id attribute pattern', async ({ authenticatedAdmin, request, adminToken }) => {
+  test('snippet contains data-schema attribute pattern', async ({ authenticatedAdmin, request, adminToken }) => {
     const page = authenticatedAdmin;
     await seedModel(page);
 
-    // Create a schema to select
-    const schemaName = `widget-schema-${Date.now()}`;
+    // Engine 1.1.0+: schemas are name-keyed; widget snippet renders
+    // `data-schema="<name>"` (was `data-schema-id="<uuid>"` pre-1.1.0).
+    // Use lowercase name with hyphens — matches the validation regex.
+    const schemaName = `widget-schema-${Date.now()}`.toLowerCase();
     const createRes = await apiFetch(request, '/schemas', {
       method: 'POST',
       token: adminToken,
       body: { name: schemaName, chat_enabled: true },
     });
     const created = await createRes.json();
-    const schemaId = created.id;
 
     await page.goto('/admin/widget');
     await page.waitForLoadState('networkidle');
 
-    // Try selecting the schema
+    // Try selecting the schema — option value is now name, not id.
     const schemaSelect = page.locator('select, [data-testid="schema-select"]').first();
     if (await schemaSelect.count() > 0) {
-      await schemaSelect.selectOption({ value: schemaId });
+      await schemaSelect.selectOption({ value: created.name });
       await page.waitForTimeout(500);
     }
 

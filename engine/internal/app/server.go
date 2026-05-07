@@ -793,7 +793,7 @@ func Run(sc ServerConfig) error {
 			chatService.schemas = schemaRepoForChat
 			chatService.sessions = configrepo.NewGORMSessionRepository(pgDB)
 		}
-		chatHandler := deliveryhttp.NewChatHandler(chatService, func() []string {
+		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, func() []string {
 			return forwardHeadersStore.Load().([]string)
 		})
 

@@ -1,0 +1,64 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-resource-name-format-check-preflight
+      author: bytebrew
+      comment: |
+        Pre-flight gate for the resource-name CHECK constraint applied in the
+        next changeset. Engine 1.1.0 migrates schemas/knowledge_bases REST
+        URLs from UUID-keyed to name-keyed; the validation regex
+        `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` (max 100 chars) is enforced at the
+        DB layer for defense-in-depth. This pre-flight halts the migration
+        with a loud failure if any existing row violates the new format —
+        operator must rename or delete offending rows before re-running. No
+        silent data loss.
+      preConditions:
+        - onFail: HALT
+        - onFailMessage: |
+            Found schemas or knowledge_bases rows with names violating the new
+            format (regex ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$, max 100 chars).
+            Migration aborted to prevent silent data loss. Inspect:
+              SELECT 'schemas' AS table, name FROM schemas
+                WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+              UNION ALL
+              SELECT 'knowledge_bases', name FROM knowledge_bases
+                WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100;
+            Rename or delete offending rows and re-run helmfile sync.
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT COUNT(*) FROM (
+                SELECT name FROM schemas
+                  WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+                UNION ALL
+                SELECT name FROM knowledge_bases
+                  WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+              ) AS violations
+      changes:
+        - sql:
+            sql: SELECT 1 -- preflight passed; constraint applied in next changeset
+
+  - changeSet:
+      id: add-resource-name-format-check-constraint
+      author: bytebrew
+      comment: |
+        Add CHECK constraint on schemas.name and knowledge_bases.name. Engine
+        HTTP layer (ValidateResourceName) enforces the same regex; this DB
+        constraint is defense-in-depth so a bad insert via raw SQL or future
+        bug cannot land an invalid name. Length cap matches Go-side
+        MaxResourceNameLength constant. Rollback drops the constraint
+        cleanly without data loss.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE schemas
+                ADD CONSTRAINT chk_schemas_name_format
+                CHECK (name ~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' AND length(name) <= 100);
+
+              ALTER TABLE knowledge_bases
+                ADD CONSTRAINT chk_knowledge_bases_name_format
+                CHECK (name ~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' AND length(name) <= 100);
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE schemas DROP CONSTRAINT IF EXISTS chk_schemas_name_format;
+              ALTER TABLE knowledge_bases DROP CONSTRAINT IF EXISTS chk_knowledge_bases_name_format;

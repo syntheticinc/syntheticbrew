@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
@@ -43,17 +42,26 @@ type ChatService interface {
 	Chat(ctx context.Context, schemaID, message, userSub, sessionID string) (<-chan SSEEvent, error)
 }
 
-// ChatHandler serves POST /api/v1/schemas/{id}/chat with SSE streaming.
+// ChatHandler serves POST /api/v1/schemas/{name}/chat with SSE streaming.
+//
+// Engine 1.1.0 made the URL `{name}` segment a stable operator-facing handle
+// (was UUID in 1.0.x). The handler resolves the name to a tenant-scoped UUID
+// via SchemaNameResolver before invoking the chat dispatcher.
 type ChatHandler struct {
 	service          ChatService
+	schemas          SchemaNameResolver
 	forwardHeadersFn func() []string // dynamic — returns current forward headers
 }
 
 // NewChatHandler creates a new ChatHandler.
-// forwardHeadersFn returns the current union of all forward_headers across MCP server configs.
-// It is called on every request so that config reloads take effect immediately.
-func NewChatHandler(service ChatService, forwardHeadersFn func() []string) *ChatHandler {
-	return &ChatHandler{service: service, forwardHeadersFn: forwardHeadersFn}
+//
+// schemas is the tenant-scoped name → UUID resolver — required to translate
+// the URL `{name}` segment into the canonical schema UUID consumed by the
+// chat dispatcher. forwardHeadersFn returns the current union of all
+// forward_headers across MCP server configs (called per request so that
+// config reloads take effect immediately).
+func NewChatHandler(service ChatService, schemas SchemaNameResolver, forwardHeadersFn func() []string) *ChatHandler {
+	return &ChatHandler{service: service, schemas: schemas, forwardHeadersFn: forwardHeadersFn}
 }
 
 type chatRequest struct {
@@ -79,14 +87,15 @@ type toolCallEntry struct {
 }
 
 // Chat handles SSE streaming or non-streaming chat.
+//
+// URL `{name}` is the operator-declared schema name (engine 1.1.0+).
+// Resolved to UUID via tenant-scoped lookup; non-existent or invalid names
+// return 404 (does not leak existence across tenants).
 func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
-	schemaID := chi.URLParam(r, "id")
-	if schemaID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "schema id required"})
-		return
-	}
-	if _, err := uuid.Parse(schemaID); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "schema id must be a valid UUID"})
+	name := chi.URLParam(r, "name")
+	schemaID, err := resolveSchemaNameToUUID(r.Context(), h.schemas, name)
+	if err != nil {
+		writeNameLookupError(r.Context(), w, "schema", name, err)
 		return
 	}
 

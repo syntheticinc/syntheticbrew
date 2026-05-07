@@ -7,7 +7,7 @@
 #   CNI does NOT enforce NetworkPolicy, so install succeeds but actual
 #   ingress/egress restrictions are not exercised here. Real enforcement
 #   happens on Calico / Cilium / Weave clusters (out of scope for CI).
-# Everything else mirrors single-shot.yaml (chirp-mono2-style flow).
+# Everything else mirrors single-shot.yaml (GitOps-style flow).
 replicaCount: 1
 
 image:

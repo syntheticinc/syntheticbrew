@@ -1,5 +1,77 @@
 # Changelog
 
+## [1.1.0] — 2026-05-06
+
+### Breaking
+- **Schema and knowledge-base REST URLs are now name-keyed.** All
+  `/api/v1/schemas/{id}/...` and `/api/v1/knowledge-bases/{id}/...`
+  endpoints now use the resource `name` in the URL segment. UUIDs remain
+  internal storage detail (PK, FK integrity, audit, sessions). Endpoint
+  list:
+  - `POST /api/v1/schemas/{name}/chat`
+  - `GET|PUT|PATCH|DELETE /api/v1/schemas/{name}`
+  - `GET /api/v1/schemas/{name}/agents`
+  - `GET|POST|DELETE /api/v1/schemas/{name}/agent-relations`,
+    `GET|PUT|DELETE /api/v1/schemas/{name}/agent-relations/{relationId}`
+    (relationId stays UUID — internal join-table key)
+  - `GET|DELETE /api/v1/schemas/{name}/memory`,
+    `DELETE /api/v1/schemas/{name}/memory/{entry_id}` (entry_id stays UUID)
+  - `GET|PATCH|DELETE /api/v1/knowledge-bases/{name}`
+  - `GET|POST /api/v1/knowledge-bases/{name}/files`,
+    `GET|DELETE /api/v1/knowledge-bases/{name}/files/{file_id}`,
+    `POST /api/v1/knowledge-bases/{name}/files/{file_id}/reindex`
+    (file_id stays UUID)
+  - `POST|DELETE /api/v1/knowledge-bases/{name}/agents/{agent_name}`
+- **Schema and knowledge-base names are immutable post-create.** PUT/PATCH
+  with a different `name` field returns `409 Conflict`
+  (`name is immutable; recreate with new name and migrate consumers`).
+  Other fields (`description`, `entry_agent_id`, `chat_enabled`,
+  `embedding_model_id`) remain mutable. This is required for the
+  GitOps-friendly URL contract — operator-declared names are the stable
+  consumer-facing handle.
+
+### Added
+- **Resource name validation** at HTTP layer: regex
+  `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, max 100 chars, reject UUID-shaped
+  strings, reject reserved tokens (`chat`, `agents`, `agent-relations`,
+  `memory`, `files`, `health`, `auth`, `tasks`, `models`,
+  `knowledge-bases`, `schemas`, `mcp-servers`, `tokens`, `sessions`,
+  `metrics`). Reserved list prevents URL-segment collision with route
+  patterns. Applied at CREATE request body and at every `{name}` URL
+  param.
+- **Liquibase CHECK constraint** on `schemas.name` and
+  `knowledge_bases.name` — defense-in-depth so a bad insert via raw SQL
+  cannot land an invalid name. Migration includes preflight gate that
+  HALTs with a loud failure if any existing row violates the new format
+  (no silent data loss).
+- **Audit middleware route-pattern dispatch.** Audit action resolution
+  now reads chi's matched route pattern (e.g.
+  `/api/v1/schemas/{name}/agent-relations`) instead of the raw request
+  path. A schema named `agent-relations-test` no longer shadows the
+  `schema.agent_relation.delete` action — defense-in-depth alongside
+  reserved-name validation.
+
+### Internal-only (unchanged)
+- `sessions.schema_id` FK → `schemas.id` (UUID)
+- `memories.schema_id` FK → `schemas.id` (UUID)
+- `audit_logs.resource_id` (UUID)
+- `agent_relations.relation_id` (UUID — exposed in URL segment as inner
+  param)
+- `kb_files.file_id` (UUID — exposed in URL segment as inner param)
+
+### Migration notes
+- Operators upgrading from 1.0.x: the Liquibase preflight will HALT if
+  any existing schema/KB has a name violating the new regex (uppercase,
+  underscores, dots, length > 100). Inspect via:
+  ```sql
+  SELECT 'schemas' AS table, name FROM schemas
+    WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+  UNION ALL
+  SELECT 'knowledge_bases', name FROM knowledge_bases
+    WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100;
+  ```
+  Rename or delete violating rows before re-running `helmfile sync`.
+
 ## [Unreleased] — 2026-04-28
 
 ### Added
