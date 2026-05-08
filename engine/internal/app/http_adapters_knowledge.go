@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
@@ -13,8 +14,22 @@ import (
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
 	svcknowledge "github.com/syntheticinc/bytebrew/engine/internal/service/knowledge"
+	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
 	"gorm.io/gorm"
 )
+
+// isDuplicateKeyErr matches Postgres / GORM duplicate-key + unique-constraint
+// error strings without depending on driver-specific types. Mirrors the schema
+// adapter check at http_adapters_schema.go.
+func isDuplicateKeyErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "UNIQUE constraint")
+}
 
 // --- Legacy agent-scoped adapters (kept for backward compatibility) ---
 
@@ -115,6 +130,13 @@ func (a *kbStoreAdapter) Create(ctx context.Context, name, description, embeddin
 		kb.EmbeddingModelID = &embeddingModelID
 	}
 	if err := a.repo.Create(ctx, kb); err != nil {
+		// Map Postgres unique-constraint / duplicate-key errors to a typed
+		// AlreadyExists DomainError so writeDomainError returns 409 Conflict
+		// with a stable, user-facing message instead of 500 + raw SQL string.
+		// Mirrors the pattern used by schemaServiceHTTPAdapter.CreateSchema.
+		if isDuplicateKeyErr(err) {
+			return nil, pkgerrors.AlreadyExists(fmt.Sprintf("knowledge base with name %q already exists", name))
+		}
 		return nil, err
 	}
 	return a.toInfo(ctx, kb)
