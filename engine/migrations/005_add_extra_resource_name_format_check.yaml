@@ -1,0 +1,80 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-extra-resource-name-format-check-preflight
+      author: bytebrew
+      comment: |
+        Pre-flight gate for the second wave of resource-name CHECK constraints.
+        Engine 1.1.0 added DNS-label validation + CHECK on schemas/knowledge_bases
+        but missed the other name-keyed resources: models, agents, mcp_servers
+        also live under `/api/v1/{models|agents|mcp-servers}/{name}/...` and
+        their `name` column must satisfy the same regex
+        `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` (max 100 chars). Without the CHECK
+        a Display Name like `qwen/qwen3-coder-next` would silently pass through
+        the persistence layer and the row becomes unreachable via name-keyed
+        URL — chi's router cannot round-trip `/` (`%2F`) inside a path segment.
+
+        Halts the migration with a loud failure if any existing row violates
+        the new format — operator must rename or delete offending rows before
+        re-running. No silent data loss.
+      preConditions:
+        - onFail: HALT
+        - onFailMessage: |
+            Found models / agents / mcp_servers rows with names violating the
+            new format (regex ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$, max 100 chars).
+            Migration aborted to prevent silent data loss. Inspect:
+              SELECT 'models' AS table, name FROM models
+                WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+              UNION ALL
+              SELECT 'agents', name FROM agents
+                WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+              UNION ALL
+              SELECT 'mcp_servers', name FROM mcp_servers
+                WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100;
+            Rename or delete offending rows and re-run helmfile sync.
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT COUNT(*) FROM (
+                SELECT name FROM models
+                  WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+                UNION ALL
+                SELECT name FROM agents
+                  WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+                UNION ALL
+                SELECT name FROM mcp_servers
+                  WHERE name !~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' OR length(name) > 100
+              ) AS violations
+      changes:
+        - sql:
+            sql: SELECT 1 -- preflight passed; constraints applied in next changeset
+
+  - changeSet:
+      id: add-extra-resource-name-format-check-constraint
+      author: bytebrew
+      comment: |
+        Add CHECK constraint on models.name, agents.name, mcp_servers.name.
+        Engine HTTP layer (ValidateResourceName, applied at POST in 1.1.x) is
+        the primary gate; this DB constraint is defense-in-depth so a bad
+        insert via raw SQL, GORM AutoMigrate, or a future bug cannot land an
+        invalid name. Length cap matches Go-side MaxResourceNameLength
+        constant. Rollback drops the constraints cleanly without data loss.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE models
+                ADD CONSTRAINT chk_models_name_format
+                CHECK (name ~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' AND length(name) <= 100);
+
+              ALTER TABLE agents
+                ADD CONSTRAINT chk_agents_name_format
+                CHECK (name ~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' AND length(name) <= 100);
+
+              ALTER TABLE mcp_servers
+                ADD CONSTRAINT chk_mcp_servers_name_format
+                CHECK (name ~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' AND length(name) <= 100);
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE models DROP CONSTRAINT IF EXISTS chk_models_name_format;
+              ALTER TABLE agents DROP CONSTRAINT IF EXISTS chk_agents_name_format;
+              ALTER TABLE mcp_servers DROP CONSTRAINT IF EXISTS chk_mcp_servers_name_format;
