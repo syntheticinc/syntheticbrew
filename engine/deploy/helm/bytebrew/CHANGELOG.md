@@ -7,6 +7,17 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-08
+
+### Fixed
+- Bumps `appVersion` to **1.1.1** with the engine hotfix for tenant
+  provisioning. Engine 1.1.0 ships a CHECK constraint that the engine's
+  own `SeedTenant` violates by hardcoding `"My Workspace"` as the default
+  schema name — every signup returned 500 from EE provisioning and left
+  the user without a default workspace. Pulling chart 0.6.1 with
+  `image.tag` floating to `latest` (or pinned to `1.1.1`) is required
+  for a working signup flow on Cloud / EE deployments.
+
 ## [0.6.0] - 2026-05-07
 
 ### Breaking
