@@ -118,9 +118,55 @@ interface ToastContainerProps {
 }
 
 function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
+  // The container uses the HTML popover API so it renders in the browser
+  // top-layer. Without this, native <dialog>.showModal() (used by Modal.tsx)
+  // promotes the dialog above any z-index — toasts shown while a modal is
+  // open would be hidden behind the dialog backdrop. Popovers and modal
+  // dialogs share the same top-layer; the most recently promoted element
+  // wins, so a toast opened *after* a dialog floats correctly above it.
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Feature detection — fall back to plain z-index on older browsers.
+    if (typeof el.showPopover !== 'function') return;
+    if (toasts.length > 0) {
+      try {
+        el.showPopover();
+      } catch {
+        // Already shown — ignore. Browsers throw if calling showPopover()
+        // on an already-open popover.
+      }
+    } else {
+      try {
+        el.hidePopover();
+      } catch {
+        // Not open — ignore.
+      }
+    }
+  }, [toasts.length]);
+
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 items-end pointer-events-none">
+    <div
+      ref={ref}
+      // `popover="manual"` puts this in the top-layer when showPopover() is
+      // called and disables Escape-to-close (we have explicit dismiss
+      // buttons + auto-dismiss). Inline style overrides the default
+      // popover centering so the toasts stay anchored bottom-right.
+      // eslint-disable-next-line react/no-unknown-property
+      popover="manual"
+      style={{
+        position: 'fixed',
+        inset: 'auto 1rem 1rem auto',
+        margin: 0,
+        padding: 0,
+        background: 'transparent',
+        border: 'none',
+      }}
+      className="z-[9999] flex flex-col gap-2 items-end pointer-events-none"
+    >
       {toasts.map((t) => (
         <div key={t.id} className="pointer-events-auto">
           <ToastItem toast={t} onDismiss={onDismiss} />
