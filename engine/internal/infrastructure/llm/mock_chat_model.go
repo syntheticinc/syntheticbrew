@@ -33,7 +33,7 @@ func (m *MockChatModel) Generate(ctx context.Context, input []*schema.Message, o
 		if hasToolResult {
 			return textMessage("Task operation complete."), nil
 		}
-		return toolCallMessage("manage_subtasks", `{"action":"list","task_id":"test-1"}`), nil
+		return toolCallMessage("manage_tasks", `{"action":"list_subtasks","parent_task_id":"test-1"}`), nil
 
 	case "reasoning":
 		return reasoningMessage("Let me think...", "The answer is 42."), nil

@@ -79,6 +79,12 @@ if kubectl -n "$NAMESPACE" get \
       exit 1
     fi
     echo "OK: brewctl created kind-smoke-* (models=$models agents=$agents schemas=$schemas)"
+    # Note: schema.entry_agent_name regression assertion deferred to a
+    # follow-up PR. It requires fixtures pinned to engine 1.1.3 + brewctl
+    # 0.2.3 (the paired fix); current fixtures stay on the last published
+    # 1.1.1 + 0.2.2 to keep chart-test runnable until those binaries land.
+    # Coverage at the API layer is provided by integration test
+    # TestSCH10_CreateSchemaWithEntryAgentName.
   fi
 fi
 

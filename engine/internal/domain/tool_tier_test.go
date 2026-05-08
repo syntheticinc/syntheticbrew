@@ -9,13 +9,19 @@ func TestClassifyToolTier(t *testing.T) {
 		toolName string
 		expected ToolTier
 	}{
-		// Tier 1 — Core
+		// Tier 1 — Core (must mirror builtin_factories.RegisterAllBuiltins +
+		// runtime-registered spawn_agent).
 		{"show_structured_output", ToolTierCore},
 		{"manage_tasks", ToolTierCore},
-		{"manage_subtasks", ToolTierCore},
-		{"wait", ToolTierCore},
 		{"spawn_agent", ToolTierCore},
-		{"spawn_researcher", ToolTierCore},
+		{"spawn_researcher", ToolTierCore}, // spawn_* prefix → Core via fallthrough
+
+		// Regression guard: manage_subtasks was unified into manage_tasks
+		// (parent_task_id) and wait became spawn_agent.action="wait". Neither
+		// is registered as a builtin; they must NOT classify as Core.
+		// See chirp 1.1.2 bug #2.
+		{"manage_subtasks", ToolTierMCP},
+		{"wait", ToolTierMCP},
 
 		// Tier 2 — Capability
 		{"memory_recall", ToolTierCapability},

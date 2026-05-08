@@ -14,7 +14,6 @@ flows:
       - get_project_tree
       - execute_command
       - manage_tasks
-      - manage_subtasks
       - spawn_agent
       - show_structured_output
     max_steps: 0

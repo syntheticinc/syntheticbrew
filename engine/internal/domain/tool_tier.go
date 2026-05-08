@@ -6,7 +6,11 @@ import "strings"
 type ToolTier int
 
 const (
-	// ToolTierCore (Tier 1) — always available: show_structured_output, spawn_*, manage_tasks, wait
+	// ToolTierCore (Tier 1) — always available: manage_tasks, show_structured_output, spawn_agent.
+	// Note: subtasks are unified into manage_tasks via parent_task_id (no separate
+	// manage_subtasks tool). The wait flow is exposed as spawn_agent.action="wait"
+	// (no separate wait tool). See `infrastructure/tools/builtin_factories.go` for
+	// the actual registry — CoreToolNames() must mirror it.
 	ToolTierCore ToolTier = 1
 
 	// ToolTierCapability (Tier 2) — auto-injected by capabilities: memory_recall, memory_store, knowledge_search
@@ -20,12 +24,20 @@ const (
 )
 
 // CoreToolNames returns the Tier 1 tool names that are always available.
+//
+// MUST mirror what `infrastructure/tools/builtin_factories.RegisterAllBuiltins`
+// registers plus the runtime-registered `spawn_agent`. Drift between this list
+// and the actual registry surfaces to operators as `unknown builtin tool` at
+// agent runtime (lying CoreToolNames was the chirp 1.1.2 bug #2).
+//
+// `manage_subtasks` was unified into `manage_tasks` via parent_task_id — use
+// `manage_tasks(action=create_subtask|list_subtasks|get_ready, parent_task_id=…)`.
+// `wait` was folded into `spawn_agent` action="wait".
 func CoreToolNames() []string {
 	return []string{
-		"show_structured_output",
 		"manage_tasks",
-		"manage_subtasks",
-		"wait",
+		"show_structured_output",
+		"spawn_agent",
 	}
 }
 

@@ -7,6 +7,41 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-05-08
+
+### Fixed
+- Bumps `appVersion` to **1.1.3** + raises the bundled
+  `configApply.image.tag` default from `0.2.1` to `0.2.3`. Pairs the
+  engine-side fix for `CreateSchema` (now resolves `entry_agent_id`
+  UUID-or-name, mirroring `UpdateSchema`) with the brewctl-side fix that
+  passes the agent NAME on the wire instead of pre-resolving from a
+  potentially empty `current.Agents` snapshot. Without the pair, a
+  fresh-DB single `helm install` left `schemas.entry_agent_id` NULL and
+  chat returned `INVALID_INPUT: schema has no entry agent`. Operators
+  worked around it by re-running `configApply` once after install.
+- Same fix shape applied to `agents[].model_id`: brewctl now sends the
+  model NAME, engine `resolveAgentModel` / `PatchAgent` resolve. Catches
+  the latent "agent silently inherits tenant default" path that didn't
+  surface as a chat failure but produced wrong-model behaviour.
+- Engine 1.1.3 also corrects `tool_tier.go.CoreToolNames()` to mirror the
+  actual builtin registry (`manage_tasks`, `show_structured_output`,
+  `spawn_agent`). `manage_subtasks` is a synonym for
+  `manage_tasks(action=create_subtask, parent_task_id=...)`; `wait` is
+  exposed as `spawn_agent(action="wait")`. Operators no longer see
+  `unknown builtin tool` at agent runtime when listing the legacy names.
+
+### Tests
+- Engine integration test `TestSCH10_CreateSchemaWithEntryAgentName`
+  (engine repo) covers the regression at the API layer — fresh-DB single
+  apply with the agent NAME in `entry_agent_id` must populate the FK.
+- chart-test fixtures (`tests/values/single-shot.yaml`,
+  `knowledge.yaml`) pinned to `image.tag: "1.1.1"` +
+  `configApply.image.tag: "0.2.2"` (last published pair) so the chart-test
+  workflow runs without the chicken-and-egg of pulling unpublished
+  binaries. A follow-up PR will bump both fixtures to 1.1.3 + 0.2.3 once
+  those are pullable, and at that time the `smoke.sh` `entry_agent_name`
+  assertion will be re-introduced as a second-layer guard.
+
 ## [0.6.2] - 2026-05-08
 
 ### Fixed

@@ -9,7 +9,7 @@ export const MOCK_AGENTS: Record<string, AgentDetail> = {
     model_id: '1',
     system_prompt:
       'You are a classifier agent. Route incoming support requests to the appropriate specialist agent based on the query topic and complexity.',
-    tools: ['ask_user', 'show_structured_output', 'manage_tasks', 'manage_subtasks', 'wait'],
+    tools: ['ask_user', 'show_structured_output', 'manage_tasks', 'spawn_agent'],
     can_spawn: [],
     lifecycle: 'persistent',
     tool_execution: 'sequential',
@@ -31,7 +31,7 @@ export const MOCK_AGENTS: Record<string, AgentDetail> = {
     model_id: '2',
     system_prompt:
       'You are a helpful support agent for ByteBrew. Your role is to assist users with billing, account, and subscription questions. Always be professional and empathetic. Use available tools to look up account information before responding.',
-    tools: ['ask_user', 'show_structured_output', 'manage_tasks', 'manage_subtasks', 'wait'],
+    tools: ['ask_user', 'show_structured_output', 'manage_tasks', 'spawn_agent'],
     can_spawn: ['escalation'],
     lifecycle: 'persistent',
     tool_execution: 'sequential',
@@ -53,7 +53,7 @@ export const MOCK_AGENTS: Record<string, AgentDetail> = {
     model_id: '3',
     system_prompt:
       'You handle escalated support cases that require deeper analysis. You have access to admin tools and can make account changes.',
-    tools: ['ask_user', 'show_structured_output', 'manage_tasks', 'manage_subtasks', 'wait'],
+    tools: ['ask_user', 'show_structured_output', 'manage_tasks', 'spawn_agent'],
     can_spawn: [],
     lifecycle: 'spawn',
     tool_execution: 'sequential',
@@ -85,7 +85,7 @@ function makeV2StubAgents(): Record<string, AgentDetail> {
     has_knowledge: hasKnowledge,
     model_id: modelId,
     system_prompt: `You are ${name}. ${description}`,
-    tools: ['ask_user', 'show_structured_output', 'wait'],
+    tools: ['ask_user', 'show_structured_output', 'spawn_agent'],
     can_spawn: [],
     lifecycle,
     tool_execution: 'sequential',

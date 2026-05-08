@@ -29,7 +29,7 @@ func TestTierEnforcer_Cloud_BlocksTier3(t *testing.T) {
 func TestTierEnforcer_Cloud_AllowsTier1(t *testing.T) {
 	enforcer := NewTierEnforcer(DeploymentModeCloud)
 
-	allowed := []string{"show_structured_output", "manage_tasks", "wait", "spawn_agent"}
+	allowed := []string{"show_structured_output", "manage_tasks", "spawn_agent"}
 	for _, tool := range allowed {
 		if err := enforcer.IsAllowed(tool); err != nil {
 			t.Errorf("Cloud mode should allow Tier 1 %q, got: %v", tool, err)

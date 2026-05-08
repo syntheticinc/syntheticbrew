@@ -147,7 +147,6 @@ func TestGetContentRiskLevel_AllTools(t *testing.T) {
 	}{
 		// Internal coordination tools — no wrapping needed.
 		{"manage_tasks", RiskNone},
-		{"manage_subtasks", RiskNone},
 		{"spawn_agent", RiskNone},
 		{"show_structured_output", RiskNone},
 		// Capability / MCP tools — default to high so their content is wrapped.

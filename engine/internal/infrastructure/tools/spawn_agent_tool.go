@@ -131,7 +131,7 @@ func (t *SpawnAgentTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	if args.Action == "" {
 		return `[ERROR] "action" field is empty. You MUST specify an action.
 Valid actions: spawn, wait, status, list, stop, restart.
-Typical workflow: manage_subtasks(action=create) → spawn_agent(action=spawn, subtask_id=<ID from create response>).
+Typical workflow: manage_tasks(action=create_subtask, parent_task_id=<parent>) → spawn_agent(action=spawn, subtask_id=<ID from create_subtask response>).
 Example: {"action": "spawn", "subtask_id": "abc123"}`, nil
 	}
 
@@ -173,8 +173,8 @@ Example: {"action": "spawn", "subtask_id": "abc123"}`, nil
 			}
 			if agentType == "coder" {
 				return fmt.Sprintf("[ERROR] %v. "+
-					"subtask_id MUST be the exact ID returned by manage_subtasks(action=create), e.g. \"a1b2c3d4\". "+
-					"Do NOT invent IDs. Use manage_subtasks(action=get_ready, task_id=...) to list available subtask IDs.", err), nil
+					"subtask_id MUST be the exact ID returned by manage_tasks(action=create_subtask, parent_task_id=...), e.g. \"a1b2c3d4\". "+
+					"Do NOT invent IDs. Use manage_tasks(action=get_ready, parent_task_id=...) to list available subtask IDs.", err), nil
 			}
 			return fmt.Sprintf("[ERROR] %v", err), nil
 		}

@@ -253,8 +253,12 @@ configApply:
     # 0.2.1 fixes the loader so it skips is_system schemas (e.g. the engine-
     # seeded builder-schema) — without it the post-install Job 404s on the
     # system-schema relations fetch and BackoffLimitExceeded.
+    # 0.2.2 reconciles agents[].tools on UPDATE (not only CREATE).
+    # 0.2.3 (paired with engine 1.1.3): sends NAME instead of pre-resolved
+    # UUID for schemas[].entry_agent_id and agents[].model_id, so a fresh-DB
+    # single apply leaves no NULL FK or silent tenant-default fallback.
     repository: ghcr.io/syntheticinc/brewctl
-    tag: "0.2.1"
+    tag: "0.2.3"
     pullPolicy: IfNotPresent
 
   # Inline bytebrew.yaml content. Format: bundle YAML with top-level

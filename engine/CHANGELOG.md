@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.1.3] — 2026-05-08
+
+### Fixed
+- **`POST /api/v1/schemas` now resolves `entry_agent_id` UUID-or-name on
+  CREATE.** Previously only `PATCH /api/v1/schemas/{name}` ran the resolver
+  (`resolveEntryAgentRef`); the CREATE path stored the raw value, so a
+  fresh-DB single-apply that sent the agent NAME (or empty string from a
+  pre-resolution miss) wrote `entry_agent_id = NULL` and chat-time validation
+  later returned `INVALID_INPUT: schema has no entry agent`. Engine 1.1.3
+  CreateSchema mirrors UpdateSchema's call to `resolveEntryAgentRef`, so the
+  same UUID-or-name semantics apply to both. New integration test
+  `TestSCH10_CreateSchemaWithEntryAgentName` is the regression guard; the
+  matching brewctl 0.2.3 release switches to name-passthrough on the wire.
+- **`tool_tier.go.CoreToolNames()` now mirrors the actual builtin registry.**
+  The function previously listed `manage_subtasks` and `wait`, neither of
+  which is registered (subtasks were unified into `manage_tasks` via
+  `parent_task_id`; `wait` became `spawn_agent` action="wait"). Operators who
+  put either name into an agent's `tools` field saw the engine accept the
+  config but emit `resolve tools: unknown builtin tool` at agent runtime.
+  After 1.1.3 the truth is `manage_tasks`, `show_structured_output`,
+  `spawn_agent`. Stale references purged from `tool_metadata`, `classifier`,
+  `content_risk_classifier`, `result_summarizer`, embedded + testdata
+  `flows.yaml`, and admin-SPA mocks.
+
 ## [1.1.2] — 2026-05-08
 
 ### Fixed

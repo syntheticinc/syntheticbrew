@@ -23,8 +23,6 @@ func SummarizeToolResult(toolName, result string) string {
 		return summarizeSmartSearch(result)
 	case "manage_tasks":
 		return firstLine(result)
-	case "manage_subtasks":
-		return firstLine(result)
 	case "spawn_agent":
 		return firstLine(result)
 	case "lsp":
