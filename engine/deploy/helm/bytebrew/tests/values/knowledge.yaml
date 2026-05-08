@@ -55,6 +55,12 @@ bootstrapAdminToken:
 
 configApply:
   enabled: true
+  # Pin to brewctl 0.2.2 — last published version compatible with the engine
+  # 1.1.1 fixture above. Chart 0.6.3 default is 0.2.3 (paired with engine
+  # 1.1.3 entry_agent_id name resolution); follow-up PR bumps both fixtures
+  # together once 1.1.3 + 0.2.3 publish.
+  image:
+    tag: "0.2.2"
   tokenSecret: postgres-credentials
   apiKeysSecret: postgres-credentials
   config: |

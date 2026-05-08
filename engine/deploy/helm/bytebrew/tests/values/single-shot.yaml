@@ -49,6 +49,14 @@ bootstrapAdminToken:
 # apiKeysSecret needed because models[].api_key references ${OPENROUTER_API_KEY}.
 configApply:
   enabled: true
+  # Pin to the last published brewctl compatible with engine 1.1.1 fixture
+  # above. Chart 0.6.3 default is 0.2.3 (paired with engine 1.1.3 for the
+  # CreateSchema entry_agent_id name resolution), but the published 1.1.3
+  # binaries only land after this PR merges. Follow-up PR bumps both fixtures
+  # together (engine 1.1.3 + brewctl 0.2.3) and re-enables the smoke.sh
+  # entry_agent_name assertion that was deferred along with this pin.
+  image:
+    tag: "0.2.2"
   tokenSecret: postgres-credentials
   apiKeysSecret: postgres-credentials
   config: |

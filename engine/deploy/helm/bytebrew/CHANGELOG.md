@@ -31,11 +31,16 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `unknown builtin tool` at agent runtime when listing the legacy names.
 
 ### Tests
-- `tests/scripts/smoke.sh` now asserts `schemas.entry_agent_name` is
-  non-empty post-apply on the single-shot scenario (regression guard for
-  the 1.1.2 NULL bug). Pairs with engine integration test
-  `TestSCH10_CreateSchemaWithEntryAgentName` for the same coverage at
-  the API layer.
+- Engine integration test `TestSCH10_CreateSchemaWithEntryAgentName`
+  (engine repo) covers the regression at the API layer — fresh-DB single
+  apply with the agent NAME in `entry_agent_id` must populate the FK.
+- chart-test fixtures (`tests/values/single-shot.yaml`,
+  `knowledge.yaml`) pinned to `image.tag: "1.1.1"` +
+  `configApply.image.tag: "0.2.2"` (last published pair) so the chart-test
+  workflow runs without the chicken-and-egg of pulling unpublished
+  binaries. A follow-up PR will bump both fixtures to 1.1.3 + 0.2.3 once
+  those are pullable, and at that time the `smoke.sh` `entry_agent_name`
+  assertion will be re-introduced as a second-layer guard.
 
 ## [0.6.2] - 2026-05-08
 
