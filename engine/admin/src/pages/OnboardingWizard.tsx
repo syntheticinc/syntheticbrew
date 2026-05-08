@@ -6,6 +6,13 @@ import type { CreateModelRequest } from '../types';
 // Mandatory BYOK wizard. Full-page route (not modal) because the admin
 // surface is blocked until a model is configured — see OnboardingGate.
 
+// Mirror of engine's ValidateResourceName regex (DNS-label format, max 100
+// chars). Engine rejects POST /api/v1/models with HTTP 400 on mismatch since
+// 1.1.0 — name-keyed URLs require a slug-shaped identifier. We block the
+// wizard's "Next" button on invalid input so the user gets an inline error
+// instead of a 400 round-trip with the toast hidden behind the modal.
+const SLUG_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+
 type Provider = {
   id: string;
   label: string;
@@ -249,6 +256,14 @@ function Step1ConnectLLM({
       setStatus({ kind: 'error', message: 'Display name is required.' });
       return;
     }
+    if (!SLUG_RE.test(displayName.trim()) || displayName.trim().length > 100) {
+      setStatus({
+        kind: 'error',
+        message:
+          'Display name must be a URL slug: lowercase letters, digits, hyphens (e.g. "default", "glm-4"). The provider model identifier goes in "Model name" below.',
+      });
+      return;
+    }
 
     setStatus({ kind: 'testing' });
 
@@ -271,7 +286,11 @@ function Step1ConnectLLM({
       // group changes (/onboarding wrapper vs /* wrapper); a read-after-write
       // race against POST /models would otherwise return an empty list and
       // bounce the user back into the wizard.
-      try { sessionStorage.setItem('bb_onboarded', '1'); } catch { /* no-op */ }
+      // Timestamped value (`1:<unix_ms>`) is the new gate-cache contract —
+      // OnboardingGate honors it for ~5s to bridge the read-after-write
+      // race; outside that window the API is the source of truth, so a
+      // tenant that lost all models recovers via the wizard automatically.
+      try { sessionStorage.setItem('bb_onboarded', `1:${Date.now()}`); } catch { /* no-op */ }
       setStatus({ kind: 'success', modelName: payload.name });
       onSuccess();
     } catch (err) {
@@ -279,7 +298,11 @@ function Step1ConnectLLM({
       // Treat ALREADY_EXISTS as success — re-entering onboarding (e.g. after
       // Skip) must not force users to invent a new display name.
       if (/already exists|ALREADY_EXISTS/i.test(message)) {
-        try { sessionStorage.setItem('bb_onboarded', '1'); } catch { /* no-op */ }
+        // Timestamped value (`1:<unix_ms>`) is the new gate-cache contract —
+      // OnboardingGate honors it for ~5s to bridge the read-after-write
+      // race; outside that window the API is the source of truth, so a
+      // tenant that lost all models recovers via the wizard automatically.
+      try { sessionStorage.setItem('bb_onboarded', `1:${Date.now()}`); } catch { /* no-op */ }
         setStatus({ kind: 'success', modelName: payload.name });
         onSuccess();
         return;
@@ -326,7 +349,9 @@ function Step1ConnectLLM({
       {/* Credentials */}
       <div className="bg-brand-dark-alt rounded-card border border-brand-shade3/15 p-5 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-brand-light mb-1">Display name</label>
+          <label className="block text-sm font-medium text-brand-light mb-1">
+            Display name <span className="text-brand-shade3 font-normal">(URL slug)</span>
+          </label>
           <input
             type="text"
             value={displayName}
@@ -335,9 +360,22 @@ function Step1ConnectLLM({
               setStatus({ kind: 'idle' });
             }}
             placeholder="default"
-            className="w-full px-3 py-2 bg-brand-dark border border-brand-shade3/30 rounded-btn text-sm text-brand-light focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent"
+            className={`w-full px-3 py-2 bg-brand-dark border rounded-btn text-sm text-brand-light focus:outline-none focus:ring-1 ${
+              displayName.trim() && !SLUG_RE.test(displayName.trim())
+                ? 'border-red-500/50 focus:border-red-500 focus:ring-red-500'
+                : 'border-brand-shade3/30 focus:border-brand-accent focus:ring-brand-accent'
+            }`}
           />
-          <p className="mt-1 text-xs text-brand-shade3">Internal label for this model connection.</p>
+          {displayName.trim() && !SLUG_RE.test(displayName.trim()) ? (
+            <p className="mt-1 text-xs text-red-400">
+              Use lowercase letters, digits, hyphens (e.g. <code>default</code>, <code>glm-4</code>).
+              No slashes or spaces — that's why your model identifier goes in <em>Model name</em> below.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-brand-shade3">
+              URL-safe identifier. Lowercase letters, digits, hyphens. The model identifier (with <code>/</code>) goes in <em>Model name</em>.
+            </p>
+          )}
         </div>
 
         <div>
