@@ -7,6 +7,18 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-08
+
+### Fixed
+- Bumps `appVersion` to **1.1.2** with the engine name-validation gap
+  closure for `models`, `agents`, `mcp_servers`. Engine 1.1.0 added
+  `ValidateResourceName` + CHECK constraints to `schemas` +
+  `knowledge_bases` but missed the other name-keyed tables — POST
+  accepted invalid names, and the resulting rows were unreachable via
+  the canonical URL once chi met `%2F`. Same preflight HALT semantics
+  apply: operator must rename or delete violating rows before the new
+  migration applies, no silent data loss.
+
 ## [0.6.1] - 2026-05-08
 
 ### Fixed

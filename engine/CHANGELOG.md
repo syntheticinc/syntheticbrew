@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.1.2] — 2026-05-08
+
+### Fixed
+- **Closed the 1.1.0 name-keyed validation gap on `models`, `agents`,
+  `mcp_servers`.** These three tables already serve URL-keyed routes
+  (`/api/v1/{models|agents|mcp-servers}/{name}/...`) but the original
+  1.1.0 migration only added `ValidateResourceName` + the
+  `chk_*_name_format` CHECK constraint to `schemas` + `knowledge_bases`.
+  POST on the missed handlers accepted any string, so a Display Name
+  like `qwen/qwen3-coder-next` (slash + space + uppercase) could be
+  persisted and the row became unreachable through the canonical
+  name-keyed URL — chi's router can't round-trip `/` (`%2F`) inside a
+  path segment, and `DELETE /api/v1/models/qwen%2Fqwen3-coder-next`
+  404'd with no recovery path through the UI.
+
+  Mirrors the schemas/KB pattern exactly:
+  - HTTP layer: `ValidateResourceName(req.Name)` at the top of `Create`
+    on `model_handler.go`, `agent_handler.go`, `mcp_handler.go`.
+  - DB layer: new Liquibase migration `add-extra-resource-name-format-check`
+    with the same preflight HALT semantics — operator must rename or
+    delete violating rows before the migration applies, no silent data
+    loss. Defense-in-depth so a raw INSERT / GORM AutoMigrate / future
+    bug cannot land an invalid name.
+  - No compat shim: rejected an admin-side fallback `DELETE
+    /api/v1/models/by-id/{id}` because it would lock a transient
+    legacy-data condition into the API surface forever. Existing bad
+    rows are surfaced by the preflight, the operator cleans them up
+    once.
+
 ## [1.1.1] — 2026-05-08
 
 ### Fixed

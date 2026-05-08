@@ -148,6 +148,14 @@ func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	// Models live under name-keyed URLs (`/api/v1/models/{name}`). The
+	// validator enforces the same DNS-label format that schemas + KBs use,
+	// so PATCH/DELETE/Verify on the model can round-trip the name through
+	// the URL without depending on `%2F` / `%20` decoding behavior.
+	if err := ValidateResourceName(req.Name); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid model name: "+err.Error())
+		return
+	}
 	if req.Type == "" {
 		writeJSONError(w, http.StatusBadRequest, "type is required")
 		return

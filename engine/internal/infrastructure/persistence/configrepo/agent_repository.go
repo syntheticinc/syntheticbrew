@@ -358,10 +358,18 @@ func (r *GORMAgentRepository) toAgentModelWithDB(db *gorm.DB, rec *AgentRecord) 
 		agent.StopSequences = &s
 	}
 
-	// Resolve model name -> ID
+	// Resolve model name -> ID. MUST be tenant-scoped: model names are
+	// unique within a tenant (idx_models_tenant_name), but the same name
+	// across tenants is legal — every fresh signup goes through the
+	// onboarding wizard and lands a `glm-default` (or similar) into its
+	// own row. Without the tenant filter the global FIRST match wins, so
+	// backfillTenantAgentsToDefault binds the new tenant's agent to a
+	// stranger tenant's model UUID — a cross-tenant leak.
 	if rec.ModelName != "" {
 		var model models.LLMProviderModel
-		if err := db.Where("name = ?", rec.ModelName).First(&model).Error; err != nil {
+		if err := db.Scopes(tenantScope(db.Statement.Context)).
+			Where("name = ?", rec.ModelName).
+			First(&model).Error; err != nil {
 			return models.AgentModel{}, fmt.Errorf("resolve model %q: %w", rec.ModelName, err)
 		}
 		agent.ModelID = &model.ID

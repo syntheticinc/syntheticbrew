@@ -11,3 +11,6 @@ databaseChangeLog:
   - include:
       file: add-resource-name-format-check.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 005_add_extra_resource_name_format_check.yaml
+      relativeToChangelogFile: true
