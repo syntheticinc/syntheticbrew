@@ -16,9 +16,8 @@ func NewToolClassifier() *DefaultToolClassifier {
 	return &DefaultToolClassifier{
 		proxiedTools: map[string]bool{},
 		serverSideTools: map[string]bool{
-			"manage_tasks":    true,
-			"manage_subtasks": true,
-			"spawn_agent":     true,
+			"manage_tasks": true,
+			"spawn_agent":  true,
 		},
 	}
 }

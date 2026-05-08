@@ -26,27 +26,17 @@ var toolMetadataRegistry = map[string]ToolMetadata{
 	// === SAFE ZONE — coordination and capability tools ===
 	"manage_tasks": {
 		Name:         "manage_tasks",
-		Description:  "Creates, updates, and manages work tasks. The agent uses this to plan work, track progress, and organize subtasks for delegation to other agents.",
-		SecurityZone: ZoneSafe,
-	},
-	"manage_subtasks": {
-		Name:         "manage_subtasks",
-		Description:  "Manages subtasks within a parent task — create, update status, mark complete. Used for granular progress tracking.",
+		Description:  "Creates, updates, and manages work tasks (and subtasks via parent_task_id). The agent uses this to plan work, track progress, and organize delegation to other agents.",
 		SecurityZone: ZoneSafe,
 	},
 	"spawn_agent": {
 		Name:         "spawn_agent",
-		Description:  "Spawns a specialized sub-agent (e.g. code-agent, reviewer) to handle a specific subtask. The sub-agent works independently and returns a summary when done.",
+		Description:  "Spawns a specialized sub-agent (e.g. code-agent, reviewer) to handle a specific subtask. Also exposes action=\"wait\" to pause the orchestrator until spawned agents finish or the user interrupts.",
 		SecurityZone: ZoneSafe,
 	},
 	"show_structured_output": {
 		Name:         "show_structured_output",
 		Description:  "Displays a structured output block (table, action buttons) to the user during a conversation.",
-		SecurityZone: ZoneSafe,
-	},
-	"wait": {
-		Name:         "wait",
-		Description:  "Pauses the agent for a defined duration. Used for pacing, polling, or scheduled follow-ups.",
 		SecurityZone: ZoneSafe,
 	},
 	"memory_recall": {

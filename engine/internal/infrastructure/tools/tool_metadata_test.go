@@ -14,10 +14,8 @@ func TestGetToolMetadata_KnownTool(t *testing.T) {
 		wantZone SecurityZone
 	}{
 		{"manage_tasks", "manage_tasks", ZoneSafe},
-		{"manage_subtasks", "manage_subtasks", ZoneSafe},
 		{"spawn_agent", "spawn_agent", ZoneSafe},
 		{"show_structured_output", "show_structured_output", ZoneSafe},
-		{"wait", "wait", ZoneSafe},
 		{"memory_recall", "memory_recall", ZoneSafe},
 		{"memory_store", "memory_store", ZoneSafe},
 		{"knowledge_search", "knowledge_search", ZoneSafe},

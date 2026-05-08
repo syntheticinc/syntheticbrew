@@ -98,33 +98,6 @@ Additional details...`,
 	}
 }
 
-func TestSummarizeToolResult_ManageSubtasks(t *testing.T) {
-	tests := []struct {
-		name     string
-		result   string
-		expected string
-	}{
-		{
-			name: "subtask created",
-			result: `Subtask created successfully.
-Additional information...`,
-			expected: "Subtask created successfully.",
-		},
-		{
-			name:     "empty result",
-			result:   "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := SummarizeToolResult("manage_subtasks", tt.result)
-			assert.Equal(t, tt.expected, got)
-		})
-	}
-}
-
 func TestSummarizeToolResult_SpawnCodeAgent(t *testing.T) {
 	tests := []struct {
 		name     string

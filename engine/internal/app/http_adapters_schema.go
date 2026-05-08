@@ -98,6 +98,13 @@ func (a *schemaServiceHTTPAdapter) CreateSchema(ctx context.Context, req deliver
 	if entryAgentID != nil && *entryAgentID == "" {
 		entryAgentID = nil
 	}
+	if entryAgentID != nil {
+		resolved, err := a.resolveEntryAgentRef(ctx, *entryAgentID)
+		if err != nil {
+			return nil, err
+		}
+		entryAgentID = &resolved
+	}
 
 	chatEnabled := false
 	if req.ChatEnabled != nil {

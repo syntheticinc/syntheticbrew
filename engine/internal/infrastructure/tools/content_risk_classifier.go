@@ -22,7 +22,7 @@ const (
 func GetContentRiskLevel(toolName string) ContentRiskLevel {
 	switch toolName {
 	// Internal tools that don't return untrusted content.
-	case "manage_tasks", "manage_subtasks", "spawn_agent", "show_structured_output":
+	case "manage_tasks", "spawn_agent", "show_structured_output":
 		return RiskNone
 	default:
 		return RiskHigh
