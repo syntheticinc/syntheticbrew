@@ -137,6 +137,13 @@ func (h *MCPHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	// MCP servers are name-keyed in URLs. Enforce the same DNS-label format
+	// the rest of the surface uses so PATCH/DELETE on `{name}` round-trips
+	// without depending on `%2F` / `%20` decoding.
+	if err := ValidateResourceName(req.Name); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid mcp server name: "+err.Error())
+		return
+	}
 	if req.Type == "" {
 		writeJSONError(w, http.StatusBadRequest, "type is required")
 		return

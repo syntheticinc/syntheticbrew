@@ -213,6 +213,13 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	// Agents are name-keyed in URLs (`/api/v1/agents/{name}/...`). Enforce
+	// the same DNS-label format the schemas/KBs/models layer uses so PATCH/
+	// DELETE round-trip the name without depending on `%2F` / `%20` decoding.
+	if err := ValidateResourceName(req.Name); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid agent name: "+err.Error())
+		return
+	}
 	if err := validateAgentName(req.Name); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
