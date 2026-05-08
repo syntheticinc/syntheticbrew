@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.1] — 2026-05-08
+
+### Fixed
+- **Tenant provisioning regression on fresh signups.** `SeedTenant` hardcoded
+  `"My Workspace"` as the default schema name, which violates the new name
+  format CHECK constraint shipped in 1.1.0 (`chk_schemas_name_format` —
+  `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`). Every new tenant signup against engine
+  1.1.0 returned 500 from EE provisioning and left the user without a default
+  workspace, surfacing as "builder schema not ready" in the admin UI. Default
+  name normalised to `my-workspace`. Added a guard test that round-trips the
+  seeded name through `ValidateResourceName` so any future CHECK addition
+  surfaces locally instead of breaking signups in prod.
+
 ## [1.1.0] — 2026-05-06
 
 ### Breaking

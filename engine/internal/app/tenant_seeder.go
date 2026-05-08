@@ -18,7 +18,7 @@ import (
 // tenant scoping, validation, timestamps, etc. remain consistent.
 //
 // Seeds per-tenant:
-//   1. "My Workspace" default schema (chat disabled until the user configures it)
+//   1. "my-workspace" default schema (chat disabled until the user configures it)
 //   2. builder-assistant system agent (editable by the user — deleting and
 //      re-seeding via POST /admin/builder-assistant/restore is supported).
 //      Model assignment is deferred: if no models exist yet the agent is
@@ -49,7 +49,7 @@ func (s *engineTenantSeeder) SeedTenant(ctx context.Context, tenantID, plan stri
 	ctx = domain.WithTenantID(ctx, tenantID)
 
 	record := &configrepo.SchemaRecord{
-		Name:        "My Workspace",
+		Name:        "my-workspace",
 		Description: "Default workspace created on signup",
 		ChatEnabled: false,
 	}
