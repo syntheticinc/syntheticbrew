@@ -87,14 +87,17 @@ fi
 if [ "${EXPECT_KB_FILES:-}" = "true" ]; then
   echo "==> Assert knowledgeLoader uploaded files into KB"
   KB_NAME="${KB_NAME:-kind-smoke-kb}"
-  KB_ID=$(curl -fsS "$ENGINE_URL/api/v1/knowledge-bases" \
+  # Engine 1.1.0+: REST URLs are name-keyed. Pre-1.1.0 this script
+  # resolved the KB's UUID first and built /knowledge-bases/{uuid}/files
+  # — modern engines reject UUID-shaped strings in the {name} URL slot
+  # (ValidateResourceName), so use the canonical name directly.
+  if ! curl -fsS "$ENGINE_URL/api/v1/knowledge-bases" \
     -H "Authorization: Bearer $TOKEN" \
-    | jq -r --arg n "$KB_NAME" '.[] | select(.name==$n) | .id' | head -1)
-  if [ -z "$KB_ID" ]; then
+    | jq -er --arg n "$KB_NAME" '.[] | select(.name==$n) | .name' >/dev/null; then
     echo "FAIL: KB '$KB_NAME' not found in /api/v1/knowledge-bases"
     exit 1
   fi
-  files=$(curl -fsS "$ENGINE_URL/api/v1/knowledge-bases/$KB_ID/files" \
+  files=$(curl -fsS "$ENGINE_URL/api/v1/knowledge-bases/$KB_NAME/files" \
     -H "Authorization: Bearer $TOKEN" | jq -e 'length')
   expected="${EXPECT_KB_FILE_COUNT:-2}"
   if [ "$files" != "$expected" ]; then
