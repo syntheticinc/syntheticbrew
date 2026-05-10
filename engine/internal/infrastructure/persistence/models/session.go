@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/datatypes"
+)
 
 // SessionModel maps to the "sessions" table.
 //
@@ -18,6 +22,12 @@ type SessionModel struct {
 	SchemaID    string     `gorm:"type:uuid;not null;index;index:idx_sessions_isolation,priority:2" json:"schema_id"`
 	UserSub     string     `gorm:"column:user_sub;type:varchar(255);not null;index:idx_sessions_isolation,priority:3;index:idx_sessions_tenant_user_chrono,priority:2" json:"user_sub"`
 	Title       string     `gorm:"type:varchar(500)"`
+	// Metadata is opaque per-session JSON storage for clients that build
+	// multi-tenant layers on top of one ByteBrew schema. Engine never reads
+	// or interprets the contents — it only persists and returns the raw
+	// blob. Capped to 16KB at the HTTP layer to prevent unbounded growth.
+	// Added in engine 1.1.4 (Liquibase changeset 006).
+	Metadata    datatypes.JSON `gorm:"column:metadata;type:jsonb;not null;default:'{}'::jsonb"`
 	Status      string     `gorm:"type:varchar(20);not null;default:active;index"`
 	CreatedAt   time.Time  `gorm:"autoCreateTime;index:idx_sessions_tenant_user_chrono,priority:3"`
 	UpdatedAt   time.Time  `gorm:"autoUpdateTime"`

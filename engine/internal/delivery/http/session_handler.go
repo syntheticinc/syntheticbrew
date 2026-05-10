@@ -9,17 +9,81 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+
+	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
+
+// sessionACL captures actor identity + privilege flags relevant for /sessions
+// per-user filtering. It is derived from request context once at the top of
+// each handler and passed to access checks.
+//
+// trustedProxy actors (api_token) read tenant-wide because they sit between
+// engine and many end-users (chirp's ai-assistant pattern). isAdmin actors
+// (ScopeAdmin bit set) bypass per-user filter for tooling. Everyone else
+// — regular end-user JWT — is force-scoped to their own user_sub regardless
+// of any ?user_sub URL override (see chirp 1.1.3 audit).
+type sessionACL struct {
+	actorType    string // "api_token" | "admin" | ""
+	userSub      string // canonical identity from auth ctx
+	isAdmin      bool   // ScopeAdmin & scopes != 0
+	trustedProxy bool   // actorType == "api_token"
+}
+
+// extractSessionACL builds the ACL view from request context. Auth middleware
+// always populates ContextKeyActorType + ContextKeyScopes for authenticated
+// routes; UserSub is populated for both api_token (1.1.4 fix) and admin JWT.
+func extractSessionACL(r *http.Request) sessionACL {
+	ctx := r.Context()
+	actorType, _ := ctx.Value(ContextKeyActorType).(string)
+	scopes, _ := ctx.Value(ContextKeyScopes).(int)
+	return sessionACL{
+		actorType:    actorType,
+		userSub:      domain.UserSubFromContext(ctx),
+		isAdmin:      scopes&ScopeAdmin != 0,
+		trustedProxy: actorType == "api_token",
+	}
+}
+
+// canSeeAllUsers returns true when the actor is allowed to read sessions
+// across user_sub values inside the tenant (admin tooling, trusted proxies).
+func (a sessionACL) canSeeAllUsers() bool { return a.isAdmin || a.trustedProxy }
+
+// effectiveUserSubFilter returns the user_sub the handler should pass to the
+// service for List operations. For unrestricted actors the URL-supplied
+// override is honoured (or empty = tenant-wide); for restricted actors the
+// override is ignored and the caller's own user_sub is forced.
+func (a sessionACL) effectiveUserSubFilter(urlUserSub string) string {
+	if a.canSeeAllUsers() {
+		return urlUserSub
+	}
+	return a.userSub
+}
+
+// allowSession returns true iff the caller is allowed to view/mutate the
+// given session row. Cross-user access by non-admin / non-proxy actors is
+// rejected with information hiding (404, never 403) per security checklist
+// SCC-02.
+func (a sessionACL) allowSession(sessionUserSub string) bool {
+	if a.canSeeAllUsers() {
+		return true
+	}
+	return a.userSub != "" && a.userSub == sessionUserSub
+}
 
 // SessionResponse is the API representation of a session.
 type SessionResponse struct {
-	ID        string `json:"id"`
-	Title     string `json:"title,omitempty"`
-	SchemaID  string `json:"schema_id,omitempty"`
-	UserSub   string `json:"user_sub,omitempty"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID        string          `json:"id"`
+	Title     string          `json:"title,omitempty"`
+	SchemaID  string          `json:"schema_id,omitempty"`
+	UserSub   string          `json:"user_sub,omitempty"`
+	Status    string          `json:"status"`
+	// Metadata is opaque per-session JSON storage. Engine never reads or
+	// interprets the contents — clients can use it to attach their own
+	// org/user mapping (e.g. multi-tenant ai-assistant proxies on top of a
+	// single ByteBrew tenant). Default is `{}`. Capped at 16KB on writes.
+	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt string          `json:"created_at"`
+	UpdatedAt string          `json:"updated_at"`
 }
 
 // PaginatedSessionResponse wraps a page of sessions with pagination metadata.
@@ -33,17 +97,25 @@ type PaginatedSessionResponse struct {
 
 // CreateSessionRequest is the body for POST /api/v1/sessions.
 type CreateSessionRequest struct {
-	ID       string `json:"id,omitempty"`
-	Title    string `json:"title,omitempty"`
-	SchemaID string `json:"schema_id,omitempty"`
-	UserSub  string `json:"user_sub,omitempty"`
+	ID       string          `json:"id,omitempty"`
+	Title    string          `json:"title,omitempty"`
+	SchemaID string          `json:"schema_id,omitempty"`
+	UserSub  string          `json:"user_sub,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 // UpdateSessionRequest is the body for PUT /api/v1/sessions/{id}.
 type UpdateSessionRequest struct {
-	Title  *string `json:"title,omitempty"`
-	Status *string `json:"status,omitempty"`
+	Title    *string         `json:"title,omitempty"`
+	Status   *string         `json:"status,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
+
+// SessionMetadataMaxBytes is the upper bound on per-session JSON metadata.
+// Engine treats the field as opaque storage; clients should not exceed this
+// per call. 16KB matches the soft envelope used by major SaaS metadata
+// fields (Stripe metadata, GitHub repo metadata).
+const SessionMetadataMaxBytes = 16 * 1024
 
 // SessionService provides session CRUD operations.
 type SessionService interface {
@@ -98,9 +170,19 @@ func (h *SessionHandler) Routes() http.Handler {
 }
 
 // List handles GET /api/v1/sessions.
+//
+// Per-user filtering is applied via sessionACL.effectiveUserSubFilter:
+//   - api_token actors (trusted proxy): URL ?user_sub honoured (or empty = tenant-wide).
+//   - ScopeAdmin actors: same.
+//   - Regular end-user JWT actors: ?user_sub IGNORED, scoped to ctx user_sub.
+//
+// This prevents the chirp 1.1.3 cross-user enumeration where
+// `?user_sub=victim` against an end-user JWT would have returned victim's
+// sessions inside the same tenant.
 func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
+	acl := extractSessionACL(r)
 	agentName := r.URL.Query().Get("agent_name")
-	userSub := r.URL.Query().Get("user_sub")
+	userSub := acl.effectiveUserSubFilter(r.URL.Query().Get("user_sub"))
 	status := r.URL.Query().Get("status")
 	from := r.URL.Query().Get("from")
 	to := r.URL.Query().Get("to")
@@ -152,18 +234,23 @@ func parseSessionID(w http.ResponseWriter, r *http.Request) (string, bool) {
 }
 
 // Get handles GET /api/v1/sessions/{id}.
+//
+// Cross-user access is rejected with 404 (information hiding — same code
+// as truly-not-found, so an attacker cannot probe session UUID existence
+// to discover which IDs belong to other users in the tenant).
 func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseSessionID(w, r)
 	if !ok {
 		return
 	}
 
+	acl := extractSessionACL(r)
 	session, err := h.service.GetSession(r.Context(), id)
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
-	if session == nil {
+	if session == nil || !acl.allowSession(session.UserSub) {
 		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("session not found: %s", id))
 		return
 	}
@@ -172,11 +259,23 @@ func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/sessions.
+//
+// Non-admin / non-proxy actors cannot create a session attributed to a
+// different user_sub: the body field is silently overwritten with the
+// caller's identity (matches the chat-handler impersonation guard).
 func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
+	acl := extractSessionACL(r)
 	var req CreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %s", err.Error()))
 		return
+	}
+	if len(req.Metadata) > SessionMetadataMaxBytes {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("metadata exceeds %d bytes", SessionMetadataMaxBytes))
+		return
+	}
+	if !acl.canSeeAllUsers() {
+		req.UserSub = acl.userSub
 	}
 	session, err := h.service.CreateSession(r.Context(), req)
 	if err != nil {
@@ -188,15 +287,34 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PUT /api/v1/sessions/{id}.
+//
+// Pre-fetches the session to check ownership before mutating; non-trusted
+// callers attempting to modify another user's session get 404, never a
+// success that silently no-ops.
 func (h *SessionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseSessionID(w, r)
 	if !ok {
 		return
 	}
 
+	acl := extractSessionACL(r)
+	existing, err := h.service.GetSession(r.Context(), id)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	if existing == nil || !acl.allowSession(existing.UserSub) {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("session not found: %s", id))
+		return
+	}
+
 	var req UpdateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %s", err.Error()))
+		return
+	}
+	if len(req.Metadata) > SessionMetadataMaxBytes {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("metadata exceeds %d bytes", SessionMetadataMaxBytes))
 		return
 	}
 
@@ -220,6 +338,17 @@ func (h *SessionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	acl := extractSessionACL(r)
+	existing, err := h.service.GetSession(r.Context(), id)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	if existing == nil || !acl.allowSession(existing.UserSub) {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("session not found: %s", id))
+		return
+	}
+
 	if err := h.service.DeleteSession(r.Context(), id); err != nil {
 		writeDomainError(w, err)
 		return
@@ -236,13 +365,14 @@ func (h *SessionHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	acl := extractSessionACL(r)
 	if h.service != nil {
 		sess, err := h.service.GetSession(r.Context(), id)
 		if err != nil {
 			writeDomainError(w, err)
 			return
 		}
-		if sess == nil {
+		if sess == nil || !acl.allowSession(sess.UserSub) {
 			writeJSONError(w, http.StatusNotFound, "session not found")
 			return
 		}

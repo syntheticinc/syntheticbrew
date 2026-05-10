@@ -1,5 +1,109 @@
 # Changelog
 
+## [1.1.4] — 2026-05-10
+
+### **SECURITY** — Pre-existing chat impersonation vulnerability closed
+
+The api_token branch in `auth_middleware.go` did not populate
+`domain.WithUserSub(ctx)`. `chat_handler.resolveUserSub` then fell back to
+the client-controlled `req.UserSub` body field. An api_token holder with
+ScopeChat could create sessions and write memories under any user_sub by
+setting it in the request body — full impersonation without admin scope.
+
+Engine 1.1.4 stamps `info.Name` (the api_token name, e.g. operator-declared
+`"ai-assistant-proxy"`) into ctx as the canonical user_sub, and `resolveUserSub`
+no longer falls back to the body field for authenticated actors. JWT actors
+were unaffected — admin path always set ctx UserSub from `claims.Subject`.
+
+**Operator action:** existing memories scoped under `AnonymousMemoryUserID`
+(empty user_sub) due to api_token chat traffic stay where they are; new
+chat sessions use the token name. Audit any prior cross-user data merging
+suspicions before relying on memory ACL invariants.
+
+### Added — granular auth scopes (chirp dev-rollout request)
+
+Five legacy admin-JWT-only mounts migrated from `RequireAdminSession` to
+`RequireScope(...)`, enabling programmatic clients to access them with a
+narrow-scope api_token instead of being forced to issue admin tokens:
+
+- `GET /api/v1/audit` → `ScopeAuditRead` (262144)
+- `GET /api/v1/settings` → `ScopeSettingsRead` (65536)
+- `PUT /api/v1/settings/{key}` → `ScopeSettingsWrite` (131072)
+- `GET /api/v1/sessions[?...]` → `ScopeSessionsRead` (16384)
+- `GET /api/v1/sessions/{id}` → `ScopeSessionsRead`
+- `GET /api/v1/sessions/{id}/messages` → `ScopeSessionsRead`
+- `POST /api/v1/sessions` → `ScopeSessionsWrite` (32768)
+- `PUT /api/v1/sessions/{id}` → `ScopeSessionsWrite`
+- `DELETE /api/v1/sessions/{id}` → `ScopeSessionsWrite`
+- `GET /api/v1/tools/metadata` → `ScopeToolsRead` (2097152)
+- `GET /api/v1/resilience/circuit-breakers` → `ScopeResilienceRead` (524288)
+- `POST /api/v1/resilience/circuit-breakers/{name}/reset` →
+  `ScopeResilienceWrite` (1048576)
+
+`ScopeAdmin` remains the superscope and continues to bypass `RequireScope` —
+existing admin tokens work unchanged. New scope name aliases accepted by
+`POST /api/v1/auth/tokens` `scopes:[…]`: `sessions[:read|:write]`,
+`settings[:read|:write]`, `audit[:read]`, `resilience[:read|:write]`,
+`tools[:read]`. The composite `api` mask now also expands to include all
+new read-only scopes, so existing `scopes:["api"]` tokens automatically
+gain the read paths.
+
+`POST /api/v1/auth/tokens` and `POST /api/v1/admin/builder-assistant/restore`
+deliberately stay under `RequireAdminSession` — token-escalation guard
+(api_tokens shouldn't mint other api_tokens) and recovery flow.
+
+### Added — session per-user ACL hardening
+
+`session_handler` introduces `extractSessionACL` actor classification and
+applies per-user filtering at the HTTP layer:
+
+- **Trusted-proxy (api_token) actors:** read tenant-wide. Optional
+  `?user_sub` query honoured. Mirrors chirp's ai-assistant proxy pattern.
+- **ScopeAdmin actors:** same as trusted-proxy — admin tooling unchanged.
+- **All other authenticated actors:** `?user_sub` URL parameter is silently
+  ignored; results force-scoped to the caller's own `ctx.UserSub`. Direct
+  GET/PUT/DELETE on a session UUID owned by another user returns 404 (info
+  hiding — same response code as truly-not-found).
+
+This was an enforced-by-admin-gate-only invariant on 1.1.3. After the scope
+sweep, opening `/sessions` to non-admin clients without ACL hardening would
+have allowed cross-user enumeration via `?user_sub=victim`. Hardening
+prevents that regression.
+
+### Added — dispatch handler ACL parity
+
+`dispatch_handler.go` (`/api/v1/dispatch/tasks/{taskId}` and
+`/api/v1/sessions/{sessionId}/dispatch-tasks`) now extracts actor and
+verifies session ownership before returning packets. Cross-user reads
+return 404 — mirrors the new `/sessions/{id}` shape so dispatch routes
+can't be used to enumerate session UUIDs across users. `NewDispatchHandler`
+takes an additional `SessionOwnerReader` (the existing
+`configrepo.GORMSessionRepository`); pass `nil` only in unit tests that
+already trust the actor context.
+
+### Added — sessions metadata JSONB column
+
+`sessions.metadata jsonb NOT NULL DEFAULT '{}'::jsonb` (Liquibase
+changeset `006_add_sessions_metadata.yaml`). Engine never reads or
+interprets the contents — opaque storage for clients that maintain their
+own multi-tenant layer (org_id, end-user mapping, etc.) on top of one
+ByteBrew tenant. Accepted on `POST /api/v1/sessions` and
+`PUT /api/v1/sessions/{id}`, capped to 16KB (`SessionMetadataMaxBytes`),
+returned in GET responses. Migration is additive — existing rows backfill
+to `{}`.
+
+### Tests
+- New CE integration tests `TestSEC20`–`TestSEC28` — token issuance with
+  exact scope masks, scope enforcement on `/sessions`, impersonation guard
+  on `POST /sessions`, audit/tools/resilience scope migration, metadata
+  round-trip.
+- Existing `dispatch_handler_test.go` updated — passes a trusted-proxy
+  actor context via `asTrustedProxy(req)` so the new ACL guard short-
+  circuits and the existing tests continue to cover serialization +
+  routing rather than ACL.
+- Multi-tenant + multi-user JWT regression tests live in `bytebrew-ee/tests/integration/`
+  (separate PR, paired release).
+
 ## [1.1.3] — 2026-05-08
 
 ### Fixed

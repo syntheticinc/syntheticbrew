@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
+
+// asTrustedProxy wraps a request with an api_token actor context — short-
+// circuits the dispatch ACL guard via sessionACL.canSeeAllUsers(). The
+// existing dispatch_handler tests focus on serialization + queryer routing,
+// not ACL semantics; ACL coverage lives in TestSEC_Dispatch_* tests.
+func asTrustedProxy(req *http.Request) *http.Request {
+	ctx := context.WithValue(req.Context(), ContextKeyActorType, "api_token")
+	return req.WithContext(ctx)
+}
 
 type mockDispatchQueryer struct {
 	tasks map[string]*domain.TaskPacket
@@ -69,7 +79,9 @@ func newTestDispatchHandler() (*DispatchHandler, *mockDispatchQueryer) {
 			},
 		},
 	}
-	return NewDispatchHandler(mock), mock
+	// nil sessionOwners — tests run as trusted-proxy actor (see asTrustedProxy
+	// wrapper) so the ACL guard short-circuits before consulting it.
+	return NewDispatchHandler(mock, nil), mock
 }
 
 func TestDispatchHandler_Get(t *testing.T) {
@@ -92,7 +104,7 @@ func TestDispatchHandler_Get(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/dispatch/tasks/"+tt.taskID, nil)
 			w := httptest.NewRecorder()
-			r.ServeHTTP(w, req)
+			r.ServeHTTP(w, asTrustedProxy(req))
 
 			assert.Equal(t, tt.wantStatus, w.Code)
 
@@ -117,7 +129,7 @@ func TestDispatchHandler_Get_ResponseFields(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dispatch/tasks/task-1", nil)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	r.ServeHTTP(w, asTrustedProxy(req))
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -153,7 +165,7 @@ func TestDispatchHandler_ListBySession(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+tt.sessionID+"/dispatch-tasks", nil)
 			w := httptest.NewRecorder()
-			r.ServeHTTP(w, req)
+			r.ServeHTTP(w, asTrustedProxy(req))
 
 			assert.Equal(t, tt.wantStatus, w.Code)
 
@@ -173,7 +185,7 @@ func TestDispatchHandler_UpdatedAt_Heuristic(t *testing.T) {
 	// task-2 is running: updatedAt should be startedAt
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dispatch/tasks/task-2", nil)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	r.ServeHTTP(w, asTrustedProxy(req))
 
 	var resp TaskPacketResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
@@ -184,7 +196,7 @@ func TestDispatchHandler_UpdatedAt_Heuristic(t *testing.T) {
 	// task-3 is pending: updatedAt should equal createdAt
 	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/dispatch/tasks/task-3", nil)
 	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
+	r.ServeHTTP(w2, asTrustedProxy(req2))
 
 	var resp2 TaskPacketResponse
 	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &resp2))

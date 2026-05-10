@@ -58,6 +58,19 @@ const (
 	ScopeTriggersWrite = 2048
 	ScopeSchemasRead   = 4096
 	ScopeSchemasWrite  = 8192
+
+	// Granular scopes added in 1.1.4 to retire legacy RequireAdminSession
+	// gates on /sessions, /audit, /settings, /tools/metadata, /resilience.
+	// ScopeAdmin (=16) still acts as a superscope and bypasses any specific
+	// scope check via RequireScope — admin tooling stays unchanged.
+	ScopeSessionsRead    = 16384
+	ScopeSessionsWrite   = 32768
+	ScopeSettingsRead    = 65536
+	ScopeSettingsWrite   = 131072
+	ScopeAuditRead       = 262144
+	ScopeResilienceRead  = 524288
+	ScopeResilienceWrite = 1048576
+	ScopeToolsRead       = 2097152
 )
 
 // ScopeAPI is the virtual catch-all integration scope. It is NOT a separate
@@ -70,7 +83,7 @@ const (
 // Bug 3: clients POST /auth/tokens with `scopes: ["api"]` — we expand that
 // name into the mask below. An empty mask was previously stored (0), which
 // authenticated the token but 403'd every request.
-const ScopeAPIMask = ScopeChat | ScopeTasks | ScopeAgentsRead | ScopeModelsRead | ScopeMCPRead | ScopeTriggersRead | ScopeSchemasRead
+const ScopeAPIMask = ScopeChat | ScopeTasks | ScopeAgentsRead | ScopeModelsRead | ScopeMCPRead | ScopeTriggersRead | ScopeSchemasRead | ScopeSessionsRead | ScopeSettingsRead | ScopeAuditRead | ScopeResilienceRead | ScopeToolsRead
 
 // ScopeNameToMask maps canonical scope name tokens accepted by
 // POST /auth/tokens `scopes: [...]` to their underlying bitmask.
@@ -94,10 +107,23 @@ var ScopeNameToMask = map[string]int{
 	"mcp:read":      ScopeMCPRead,
 	"mcp":           ScopeMCPRead,
 	"mcp:write":     ScopeMCPWrite,
-	"schemas:read":  ScopeSchemasRead,
-	"schemas":       ScopeSchemasRead,
-	"schemas:write": ScopeSchemasWrite,
-	"api":           ScopeAPIMask,
+	"schemas:read":     ScopeSchemasRead,
+	"schemas":          ScopeSchemasRead,
+	"schemas:write":    ScopeSchemasWrite,
+	"sessions:read":    ScopeSessionsRead,
+	"sessions":         ScopeSessionsRead,
+	"sessions:write":   ScopeSessionsWrite,
+	"settings:read":    ScopeSettingsRead,
+	"settings":         ScopeSettingsRead,
+	"settings:write":   ScopeSettingsWrite,
+	"audit:read":       ScopeAuditRead,
+	"audit":            ScopeAuditRead,
+	"resilience:read":  ScopeResilienceRead,
+	"resilience":       ScopeResilienceRead,
+	"resilience:write": ScopeResilienceWrite,
+	"tools:read":       ScopeToolsRead,
+	"tools":            ScopeToolsRead,
+	"api":              ScopeAPIMask,
 }
 
 // ScopesToMask converts a list of scope names into a bitmask. Unknown
@@ -179,6 +205,15 @@ func (m *AuthMiddleware) authenticateAPIToken(w http.ResponseWriter, r *http.Req
 	ctx := context.WithValue(r.Context(), ContextKeyActorType, "api_token")
 	ctx = context.WithValue(ctx, ContextKeyActorID, info.Name)
 	ctx = context.WithValue(ctx, ContextKeyScopes, info.ScopesMask)
+	// SECURITY: api_token actors must have a non-empty UserSub in the context.
+	// Without this, downstream handlers (e.g. chat_handler.resolveUserSub) fall
+	// back to client-controlled `req.UserSub` from the request body — which
+	// allows an api_token holder with ScopeChat to create sessions / write
+	// memories under any user_sub they choose (impersonation). The token name
+	// (info.Name, e.g. "bb_xxx" or operator-declared "ai-assistant-proxy") is
+	// the canonical service identity; treat it as the user_sub for any flow
+	// that scopes data per end-user.
+	ctx = domain.WithUserSub(ctx, info.Name)
 	if info.TenantID != "" {
 		if _, err := uuid.Parse(info.TenantID); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tenant_id claim"})

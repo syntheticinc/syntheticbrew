@@ -7,6 +7,43 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-10
+
+### Changed
+- Bumps `appVersion` to **1.1.4** with engine auth scope sweep, session
+  per-user ACL hardening, the chat impersonation security fix, and the new
+  opaque `sessions.metadata` JSONB column.
+
+  Operator-visible behaviour:
+  - `/api/v1/sessions/...`, `/api/v1/audit`, `/api/v1/settings`,
+    `/api/v1/tools/metadata`, `/api/v1/resilience/circuit-breakers` now
+    accept narrow-scope `api_token` (e.g. `scopes: ["sessions:read"]`)
+    instead of requiring an admin JWT cookie. Existing admin tooling is
+    unaffected — `ScopeAdmin` remains the superscope.
+  - End-user JWT actors that previously had no `/sessions` access now see
+    a per-user-scoped view: `?user_sub=other` is silently ignored, and
+    cross-user GET by UUID returns 404. Trusted proxy `api_token` actors
+    keep tenant-wide reads — chirp's ai-assistant pattern unchanged.
+  - Chat impersonation via `POST /api/v1/schemas/{name}/chat` body
+    `user_sub` field is closed. The api_token's name is the canonical
+    identity for sessions/memories — clients that previously relied on
+    body-level `user_sub` for tagging must re-architect.
+  - New `metadata` JSONB column on `sessions` (additive migration 006).
+    Empty-default `{}`, capped to 16KB on writes, returned in GET
+    responses. Engine treats as opaque blob.
+
+  No DB wipe required. Migration `006_add_sessions_metadata.yaml` is an
+  additive `ALTER TABLE ADD COLUMN ... DEFAULT '{}'::jsonb` with a clean
+  rollback that drops the column. Engine 1.1.3 sessions retain
+  `metadata = {}` after upgrade.
+
+### Tests
+- Engine integration tests `TestSEC20`–`TestSEC28` cover scope enforcement
+  on the new mounts, the impersonation guard on `POST /sessions`, and
+  metadata round-trip.
+- Multi-tenant + multi-user cross-user ACL tests live in `bytebrew-ee/tests/integration/`
+  (paired PR / release).
+
 ## [0.6.3] - 2026-05-08
 
 ### Fixed
