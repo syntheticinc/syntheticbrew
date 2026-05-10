@@ -1,8 +1,11 @@
 # ByteBrew Engine
 
-[![CI](https://github.com/syntheticinc/bytebrew/actions/workflows/ci.yml/badge.svg)](https://github.com/syntheticinc/bytebrew/actions/workflows/ci.yml)
-[![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/syntheticinc/bytebrew?filename=engine%2Fgo.mod)](engine/go.mod)
+[![Build](https://img.shields.io/github/actions/workflow/status/syntheticinc/bytebrew/chart-test.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=build)](https://github.com/syntheticinc/bytebrew/actions/workflows/chart-test.yml)
+[![License](https://img.shields.io/badge/license-BSL%201.1-blue?style=flat-square)](LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/syntheticinc/bytebrew?filename=engine%2Fgo.mod&style=flat-square&logo=go&logoColor=white&label=go)](engine/go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/syntheticinc/bytebrew/engine?style=flat-square)](https://goreportcard.com/report/github.com/syntheticinc/bytebrew/engine)
+[![Release](https://img.shields.io/github/v/release/syntheticinc/bytebrew?style=flat-square&logo=github&label=release)](https://github.com/syntheticinc/bytebrew/releases/latest)
+[![Docker Pulls](https://img.shields.io/docker/pulls/bytebrew/engine?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/bytebrew/engine)
 
 **Open-source AI agent runtime.** Build, deploy, and orchestrate autonomous AI agents with multi-agent coordination, MCP tool integration, and a visual admin dashboard.
 
