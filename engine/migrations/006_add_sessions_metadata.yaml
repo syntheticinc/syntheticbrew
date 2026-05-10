@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006_add_sessions_metadata
+      author: bytebrew
+      comment: |
+        Adds opaque per-session JSONB metadata column. Engine itself never reads
+        the contents — it persists and returns the raw blob. Use case: clients
+        that build a multi-tenant layer on top of a single ByteBrew tenant can
+        attach their own org/user mapping (e.g. {"org_id": "...", ...}) directly
+        to the session row instead of maintaining a separate edge table.
+        Engine 1.1.4 + chart 0.6.4. ALTER ADD COLUMN with DEFAULT '{}'::jsonb
+        is additive — existing rows backfill instantly with the empty object,
+        no preflight HALT needed. Rollback drops the column cleanly.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE sessions
+                ADD COLUMN metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+        - rollback:
+            sql: |
+              ALTER TABLE sessions DROP COLUMN IF EXISTS metadata;

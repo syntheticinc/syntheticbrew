@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
@@ -417,22 +418,33 @@ type sessionServiceHTTPAdapter struct {
 	messageRepo *configrepo.GORMEventRepository
 }
 
+// sessionToResponse maps the persistence model into the API DTO. Metadata is
+// returned as-is when non-empty so clients receive their own opaque blob;
+// the column default `'{}'::jsonb` round-trips as `{}` JSON.
+func sessionToResponse(s *models.SessionModel) deliveryhttp.SessionResponse {
+	resp := deliveryhttp.SessionResponse{
+		ID:        s.ID,
+		Title:     s.Title,
+		SchemaID:  s.SchemaID,
+		UserSub:   s.UserSub,
+		Status:    s.Status,
+		CreatedAt: s.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
+	}
+	if len(s.Metadata) > 0 {
+		resp.Metadata = json.RawMessage(s.Metadata)
+	}
+	return resp
+}
+
 func (a *sessionServiceHTTPAdapter) ListSessions(ctx context.Context, agentName, userSub, status, from, to string, page, perPage int) ([]deliveryhttp.SessionResponse, int64, error) {
 	sessions, total, err := a.repo.List(ctx, agentName, userSub, status, from, to, page, perPage)
 	if err != nil {
 		return nil, 0, err
 	}
 	result := make([]deliveryhttp.SessionResponse, 0, len(sessions))
-	for _, s := range sessions {
-		result = append(result, deliveryhttp.SessionResponse{
-			ID:        s.ID,
-			Title:     s.Title,
-			SchemaID:  s.SchemaID,
-			UserSub:   s.UserSub,
-			Status:    s.Status,
-			CreatedAt: s.CreatedAt.Format(time.RFC3339),
-			UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
-		})
+	for i := range sessions {
+		result = append(result, sessionToResponse(&sessions[i]))
 	}
 	return result, total, nil
 }
@@ -445,15 +457,8 @@ func (a *sessionServiceHTTPAdapter) GetSession(ctx context.Context, id string) (
 	if s == nil {
 		return nil, nil
 	}
-	return &deliveryhttp.SessionResponse{
-		ID:        s.ID,
-		Title:     s.Title,
-		SchemaID:  s.SchemaID,
-		UserSub:   s.UserSub,
-		Status:    s.Status,
-		CreatedAt: s.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: s.UpdatedAt.Format(time.RFC3339),
-	}, nil
+	resp := sessionToResponse(s)
+	return &resp, nil
 }
 
 func (a *sessionServiceHTTPAdapter) CreateSession(ctx context.Context, req deliveryhttp.CreateSessionRequest) (*deliveryhttp.SessionResponse, error) {
@@ -468,18 +473,14 @@ func (a *sessionServiceHTTPAdapter) CreateSession(ctx context.Context, req deliv
 		UserSub:  req.UserSub,
 		Status:   "active",
 	}
+	if len(req.Metadata) > 0 {
+		session.Metadata = datatypes.JSON(req.Metadata)
+	}
 	if err := a.repo.Create(ctx, session); err != nil {
 		return nil, err
 	}
-	return &deliveryhttp.SessionResponse{
-		ID:        session.ID,
-		Title:     session.Title,
-		SchemaID:  session.SchemaID,
-		UserSub:   session.UserSub,
-		Status:    session.Status,
-		CreatedAt: session.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: session.UpdatedAt.Format(time.RFC3339),
-	}, nil
+	resp := sessionToResponse(session)
+	return &resp, nil
 }
 
 func (a *sessionServiceHTTPAdapter) UpdateSession(ctx context.Context, id string, req deliveryhttp.UpdateSessionRequest) (*deliveryhttp.SessionResponse, error) {
@@ -489,6 +490,9 @@ func (a *sessionServiceHTTPAdapter) UpdateSession(ctx context.Context, id string
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status
+	}
+	if len(req.Metadata) > 0 {
+		updates["metadata"] = datatypes.JSON(req.Metadata)
 	}
 	if len(updates) == 0 {
 		return a.GetSession(ctx, id)

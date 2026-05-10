@@ -178,11 +178,34 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveUserSub returns the authenticated end-user identifier.
-// Preference order: JWT `sub` claim (injected by auth middleware) → request body.
+//
+// Preference order:
+//   1. UserSub from auth context (JWT `sub` claim, or api_token name —
+//      auth middleware populates this for both authenticated actor types).
+//   2. Anonymous fallback to request body field — ONLY for unauthenticated
+//      requests (CE local / public widget).
+//
+// Authenticated actors (api_token, admin JWT) MUST NOT fall back to the
+// body field: that path was the chirp 1.1.3 impersonation hole — an
+// api_token holder with ScopeChat could create sessions under any
+// user_sub by setting it in the request body. Auth middleware now
+// stamps the canonical identity into ctx for both branches; if it's
+// missing for an authenticated actor we treat the request as unauth
+// (caller returns 401) rather than honouring the body.
+//
 // An empty result signals unauthenticated — caller must 401.
 func resolveUserSub(r *http.Request, fallback string) string {
 	if sub := domain.UserSubFromContext(r.Context()); sub != "" {
 		return sub
+	}
+	actorType, _ := r.Context().Value(ContextKeyActorType).(string)
+	if actorType == "api_token" || actorType == "admin" {
+		// Authenticated but no UserSub stamped — never fall back to
+		// client-controlled body. Defensive: post-Phase-0 this should
+		// be unreachable because both branches stamp ctx; if it ever
+		// fires it's a regression in auth_middleware to surface, not a
+		// silent impersonation.
+		return ""
 	}
 	return fallback
 }

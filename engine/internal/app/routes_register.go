@@ -215,9 +215,13 @@ func registerHTTPRoutes(deps routesDeps) {
 			r.Post("/api/v1/tasks/{id}/priority", taskHandler.SetPriority)
 		})
 
-		// Dispatch Tasks (lifecycle dispatcher queries)
+		// Dispatch Tasks (lifecycle dispatcher queries) — gated by ScopeTasks
+		// at the middleware layer plus per-user ACL inside the handler
+		// (extractSessionACL → SessionOwnerReader). Cross-user reads return
+		// 404 so dispatch routes can't be used to enumerate session UUIDs.
 		if lifecycleDispatcher != nil {
-			dispatchHandler := deliveryhttp.NewDispatchHandler(lifecycleDispatcher)
+			dispatchSessionRepo := configrepo.NewGORMSessionRepository(pgDB)
+			dispatchHandler := deliveryhttp.NewDispatchHandler(lifecycleDispatcher, dispatchSessionRepo)
 			r.Group(func(r chi.Router) {
 				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeTasks))
 				r.Get("/api/v1/dispatch/tasks/{taskId}", dispatchHandler.Get)
@@ -309,7 +313,7 @@ func registerHTTPRoutes(deps routesDeps) {
 		auditRepo := configrepo.NewGORMAuditRepository(pgDB)
 		auditHandler := deliveryhttp.NewAuditHandler(&auditServiceHTTPAdapter{repo: auditRepo})
 		r.Group(func(r chi.Router) {
-			r.Use(deliveryhttp.RequireAdminSession)
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAuditRead))
 			r.Get("/api/v1/audit", auditHandler.List)
 		})
 
@@ -369,7 +373,7 @@ func registerHTTPRoutes(deps routesDeps) {
 
 		// No /api/v1/widgets routes: the admin UI generates embed snippets client-side.
 
-		// Settings (admin-only)
+		// Settings — split read / write to keep least-privilege.
 		settingRepo := configrepo.NewGORMSettingRepository(pgDB)
 		settingHandler := deliveryhttp.NewSettingHandler(&settingServiceHTTPAdapter{
 			repo:         settingRepo,
@@ -378,8 +382,11 @@ func registerHTTPRoutes(deps routesDeps) {
 			byokFallback: byokFallbackCfg,
 		})
 		r.Group(func(r chi.Router) {
-			r.Use(deliveryhttp.RequireAdminSession)
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSettingsRead))
 			r.Get("/api/v1/settings", settingHandler.List)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSettingsWrite))
 			r.Put("/api/v1/settings/{key}", settingHandler.Update)
 		})
 
@@ -390,20 +397,32 @@ func registerHTTPRoutes(deps routesDeps) {
 			r.Post("/api/v1/admin/builder-assistant/restore", baHandler.Restore)
 		})
 
-		// Sessions (admin-only)
+		// Sessions — split read / write under granular scopes. Replaces the
+		// pre-1.1.4 RequireAdminSession gate that rejected any api_token.
+		// Per-user ACL hardening lives inside session_handler (extractSessionACL):
+		// trusted-proxy api_token actors and ScopeAdmin pass through tenant-wide;
+		// regular end-user JWT actors are auto-filtered to their own user_sub.
 		sessionRepo := configrepo.NewGORMSessionRepository(pgDB)
 		messageRepo := configrepo.NewGORMEventRepository(pgDB)
 		sessionHandler := deliveryhttp.NewSessionHandler(&sessionServiceHTTPAdapter{repo: sessionRepo, messageRepo: messageRepo})
 		sessionHandler.SetEventService(&eventServiceHTTPAdapter{repo: messageRepo})
 		r.Group(func(r chi.Router) {
-			r.Use(deliveryhttp.RequireAdminSession)
-			r.Mount("/api/v1/sessions", sessionHandler.Routes())
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSessionsRead))
+			r.Get("/api/v1/sessions", sessionHandler.List)
+			r.Get("/api/v1/sessions/{id}", sessionHandler.Get)
+			r.Get("/api/v1/sessions/{id}/messages", sessionHandler.ListMessages)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSessionsWrite))
+			r.Post("/api/v1/sessions", sessionHandler.Create)
+			r.Put("/api/v1/sessions/{id}", sessionHandler.Update)
+			r.Delete("/api/v1/sessions/{id}", sessionHandler.Delete)
 		})
 
-		// Tool metadata (admin-only)
+		// Tool metadata — read-only registry of builtin tools.
 		toolMetaHandler := deliveryhttp.NewToolMetadataHandler(&toolMetadataHTTPAdapter{})
 		r.Group(func(r chi.Router) {
-			r.Use(deliveryhttp.RequireAdminSession)
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeToolsRead))
 			r.Get("/api/v1/tools/metadata", toolMetaHandler.List)
 		})
 
@@ -457,13 +476,17 @@ func registerHTTPRoutes(deps routesDeps) {
 		toolCallLogHandlerOSS := deliveryhttp.NewToolCallLogHandler(&toolCallLogHTTPAdapter{repo: toolCallRepoOSS})
 		r.Get("/api/v1/audit/tool-calls", toolCallLogHandlerOSS.List)
 
-		// Resilience admin endpoints — circuit breaker observability.
+		// Resilience — circuit breaker observability + reset.
+		// Read = list breakers (low-risk metric); Write = reset (operational mutation).
 		resilienceHandler := deliveryhttp.NewResilienceHandler(
 			&circuitBreakerQuerierHTTPAdapter{registry: cbRegistry},
 		)
 		r.Group(func(r chi.Router) {
-			r.Use(deliveryhttp.RequireAdminSession)
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeResilienceRead))
 			r.Get("/api/v1/resilience/circuit-breakers", resilienceHandler.ListCircuitBreakers)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeResilienceWrite))
 			r.Post("/api/v1/resilience/circuit-breakers/{name}/reset", resilienceHandler.ResetCircuitBreaker)
 		})
 

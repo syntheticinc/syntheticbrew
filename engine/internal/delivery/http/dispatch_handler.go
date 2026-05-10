@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -15,14 +16,47 @@ type DispatchQueryer interface {
 	ListTasksBySession(sessionID string) []*domain.TaskPacket
 }
 
+// SessionOwnerReader resolves a session's owning user_sub for ACL checks.
+// Implemented by configrepo.GORMSessionRepository.GetUserSubBySessionID;
+// the dispatch handler uses it to reject cross-user reads without echoing
+// task data first (information hiding — same 404 as not-found).
+type SessionOwnerReader interface {
+	GetUserSubBySessionID(ctx context.Context, sessionID string) (string, bool, error)
+}
+
 // DispatchHandler serves dispatch task query endpoints.
 type DispatchHandler struct {
-	queryer DispatchQueryer
+	queryer       DispatchQueryer
+	sessionOwners SessionOwnerReader
 }
 
 // NewDispatchHandler creates a new DispatchHandler.
-func NewDispatchHandler(queryer DispatchQueryer) *DispatchHandler {
-	return &DispatchHandler{queryer: queryer}
+//
+// sessionOwners is required for the per-user ACL guard introduced in 1.1.4.
+// Passing nil disables the guard (used only in unit tests that fake the
+// queryer); production wiring in routes_register supplies the real
+// repository.
+func NewDispatchHandler(queryer DispatchQueryer, sessionOwners SessionOwnerReader) *DispatchHandler {
+	return &DispatchHandler{queryer: queryer, sessionOwners: sessionOwners}
+}
+
+// allowDispatchSession returns true iff the actor may see dispatch packets
+// for the given session. Mirrors sessionACL.allowSession — trusted proxy
+// (api_token) and ScopeAdmin actors pass; everyone else must own the
+// session. Missing session_id or owner-lookup error → deny.
+func (h *DispatchHandler) allowDispatchSession(r *http.Request, sessionID string) bool {
+	acl := extractSessionACL(r)
+	if acl.canSeeAllUsers() {
+		return true
+	}
+	if h.sessionOwners == nil || sessionID == "" {
+		return false
+	}
+	ownerSub, ok, err := h.sessionOwners.GetUserSubBySessionID(r.Context(), sessionID)
+	if err != nil || !ok {
+		return false
+	}
+	return acl.userSub != "" && acl.userSub == ownerSub
 }
 
 // TaskPacketResponse is the JSON representation of a dispatched task.
@@ -39,6 +73,10 @@ type TaskPacketResponse struct {
 }
 
 // Get handles GET /api/v1/dispatch/tasks/{taskId}.
+//
+// Cross-user dispatch reads inherit the same ACL as /sessions: actor must
+// either be ScopeAdmin / api_token (trusted proxy) or own the session that
+// the dispatch packet belongs to. Mismatch → 404 (info hiding).
 func (h *DispatchHandler) Get(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
 	if taskID == "" {
@@ -51,16 +89,29 @@ func (h *DispatchHandler) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
 		return
 	}
+	if !h.allowDispatchSession(r, packet.SessionID) {
+		// Same code as not-found — never confirm task existence to
+		// non-owner actors.
+		http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toTaskPacketResponse(packet))
 }
 
 // ListBySession handles GET /api/v1/sessions/{sessionId}/dispatch-tasks.
+//
+// ACL gate: non-owner actors get 404, mirroring /sessions/{id} response so
+// dispatch routes can't be used to enumerate session UUIDs across users.
 func (h *DispatchHandler) ListBySession(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionId")
 	if sessionID == "" {
 		http.Error(w, `{"error":"session id required"}`, http.StatusBadRequest)
+		return
+	}
+	if !h.allowDispatchSession(r, sessionID) {
+		http.Error(w, `{"error":"session not found"}`, http.StatusNotFound)
 		return
 	}
 
