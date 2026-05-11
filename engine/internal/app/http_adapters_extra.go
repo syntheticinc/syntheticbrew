@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
+	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
@@ -416,6 +417,51 @@ func (a *settingServiceHTTPAdapter) UpdateSetting(ctx context.Context, key, valu
 type sessionServiceHTTPAdapter struct {
 	repo        *configrepo.GORMSessionRepository
 	messageRepo *configrepo.GORMEventRepository
+	// db is used by resolveSchemaRef to translate operator-declared schema
+	// names into UUIDs on POST /api/v1/sessions. The handler accepts both
+	// schema UUID and schema name in the `schema_id` body field — engine
+	// resolves on its side so GitOps consumers don't have to pre-call
+	// GET /schemas on cold start (1.1.5 fix, symmetric with the 1.1.3
+	// CreateSchema entry_agent resolver).
+	db *gorm.DB
+}
+
+// resolveSchemaRef returns the schema UUID for a tenant-scoped reference.
+// Accepts either a UUID (validated against tenant ownership) or a name
+// (resolved via the per-tenant unique-name index). Mirrors the
+// resolveAgentModel pattern from agent_manager_http_adapter.go: explicit
+// tenant filter in WHERE, InvalidInput on miss (mapped to 400 by
+// writeDomainError, not 500 SQL leakage). Empty input returns "" — caller
+// decides whether NULL FK is acceptable; sessions.schema_id is NOT NULL so
+// the DB constraint will catch empty inserts.
+func (a *sessionServiceHTTPAdapter) resolveSchemaRef(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+	if isUUID(ref) {
+		// Verify tenant ownership; cross-tenant UUID guess returns 400
+		// (info hiding — same response as truly-not-found name).
+		var found string
+		err := a.db.WithContext(ctx).
+			Raw("SELECT id FROM schemas WHERE id = ? AND tenant_id = ? LIMIT 1", ref, tenantID).
+			Scan(&found).Error
+		if err != nil || found == "" {
+			return "", pkgerrors.InvalidInput(fmt.Sprintf("schema not found: %s", ref))
+		}
+		return ref, nil
+	}
+	var id string
+	err := a.db.WithContext(ctx).
+		Raw("SELECT id FROM schemas WHERE tenant_id = ? AND name = ? LIMIT 1", tenantID, ref).
+		Scan(&id).Error
+	if err != nil || id == "" {
+		return "", pkgerrors.InvalidInput(fmt.Sprintf("schema not found: %s", ref))
+	}
+	return id, nil
 }
 
 // sessionToResponse maps the persistence model into the API DTO. Metadata is
@@ -466,10 +512,14 @@ func (a *sessionServiceHTTPAdapter) CreateSession(ctx context.Context, req deliv
 	if id == "" {
 		id = uuid.New().String()
 	}
+	schemaID, err := a.resolveSchemaRef(ctx, req.SchemaID)
+	if err != nil {
+		return nil, err
+	}
 	session := &models.SessionModel{
 		ID:       id,
 		Title:    req.Title,
-		SchemaID: req.SchemaID,
+		SchemaID: schemaID,
 		UserSub:  req.UserSub,
 		Status:   "active",
 	}

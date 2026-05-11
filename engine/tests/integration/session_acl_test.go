@@ -189,17 +189,22 @@ func TestSEC27_ToolMetadata_APITokenToolsRead_200(t *testing.T) {
 // TestSEC28_SessionMetadata_RoundTrip — Phase 4 sanity: the new opaque
 // metadata JSONB column accepts client-supplied JSON and returns it verbatim.
 // Engine never parses; this test asserts persistence + shape preservation.
+//
+// 1.1.5 update: schema_id now resolves via tenant-scoped lookup, so we
+// create a real schema first (was a stub UUID under 1.1.4 — passed through
+// without validation).
 func TestSEC28_SessionMetadata_RoundTrip(t *testing.T) {
 	requireSuite(t)
 	t.Cleanup(func() { truncateTables(t) })
 
 	tok := issueAPIToken(t, "tc-sec-28-admin", 16) // admin
+	schema := createSchemaForTest(t, map[string]any{"name": "tc-sec-28-schema"})
 
 	created := do(t, http.MethodPost, "/api/v1/sessions",
 		mustJSON(map[string]any{
 			"id":        "22222222-2222-4222-a222-222222222222",
 			"user_sub":  "tc-sec-28-user",
-			"schema_id": "00000000-0000-0000-0000-000000000000",
+			"schema_id": schema.ID,
 			"metadata":  map[string]any{"org_id": "org-abc", "tier": "free"},
 		}), tok)
 	body := readBody(t, created)
@@ -221,4 +226,165 @@ func TestSEC28_SessionMetadata_RoundTrip(t *testing.T) {
 	gotMeta, _ := got["metadata"].(map[string]any)
 	require.NotNil(t, gotMeta, "metadata field must round-trip on GET: %s", getBody)
 	assert.Equal(t, "org-abc", gotMeta["org_id"])
+}
+
+// Engine 1.1.5 — UUID-or-name resolver on body FK refs.
+
+// TestSEC29_SessionCreate_SchemaIDByName_201 — operator-declared schema name
+// passes through `resolveSchemaRef` in sessionServiceHTTPAdapter; engine
+// resolves to the schema UUID via tenant-scoped lookup. This was the chirp
+// fourth-follow-up #1 ask: POST /sessions returned 500 SQLSTATE 22P02 on
+// `{"schema_id":"chirp"}` before 1.1.5.
+func TestSEC29_SessionCreate_SchemaIDByName_201(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	tok := issueAPIToken(t, "tc-sec-29-admin", 16) // admin
+	schema := createSchemaForTest(t, map[string]any{"name": "tc-sec-29-schema"})
+
+	created := do(t, http.MethodPost, "/api/v1/sessions",
+		mustJSON(map[string]any{
+			"user_sub":  "tc-sec-29-user",
+			"schema_id": schema.Name, // operator-declared name, not UUID
+		}), tok)
+	body := readBody(t, created)
+	assertStatusAny(t, created, http.StatusOK, http.StatusCreated)
+
+	var resp map[string]any
+	require.NoError(t, jsonUnmarshalOrNil(body, &resp), "decode created: %s", body)
+	gotSchemaID, _ := resp["schema_id"].(string)
+	assert.Equal(t, schema.ID, gotSchemaID,
+		"engine must resolve schema name → UUID on POST /sessions (chirp #1 fix); got %q want %q",
+		gotSchemaID, schema.ID)
+}
+
+// TestSEC30_SessionCreate_SchemaIDUnknownName_400 — unknown schema reference
+// must yield 400 InvalidInput (not 500 SQL leakage). Mirrors the
+// pkgerrors.InvalidInput → writeDomainError mapping used by
+// resolveAgentModel / resolveEntryAgentRef.
+func TestSEC30_SessionCreate_SchemaIDUnknownName_400(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	tok := issueAPIToken(t, "tc-sec-30-admin", 16)
+
+	resp := do(t, http.MethodPost, "/api/v1/sessions",
+		mustJSON(map[string]any{
+			"user_sub":  "tc-sec-30-user",
+			"schema_id": "no-such-schema-name",
+		}), tok)
+	body := readBody(t, resp)
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
+		"unknown schema ref must yield 400 InvalidInput (not 500 SQL); body=%s", body)
+	assert.Contains(t, string(body), "schema not found",
+		"error message must surface the unresolved ref: %s", body)
+}
+
+// TestSEC31_SessionCreate_SchemaIDByUUID_201 — backwards-compatible UUID
+// path. Pre-1.1.5 clients that passed schema_id as a UUID continue to work.
+// Resolver branches on isUUID; UUID path verifies tenant ownership and
+// returns the same value.
+func TestSEC31_SessionCreate_SchemaIDByUUID_201(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	tok := issueAPIToken(t, "tc-sec-31-admin", 16)
+	schema := createSchemaForTest(t, map[string]any{"name": "tc-sec-31-schema"})
+
+	created := do(t, http.MethodPost, "/api/v1/sessions",
+		mustJSON(map[string]any{
+			"user_sub":  "tc-sec-31-user",
+			"schema_id": schema.ID, // explicit UUID — back-compat path
+		}), tok)
+	body := readBody(t, created)
+	assertStatusAny(t, created, http.StatusOK, http.StatusCreated)
+
+	var resp map[string]any
+	require.NoError(t, jsonUnmarshalOrNil(body, &resp))
+	gotSchemaID, _ := resp["schema_id"].(string)
+	assert.Equal(t, schema.ID, gotSchemaID, "UUID path must pass through unchanged")
+}
+
+// TestSEC32_KBCreate_EmbeddingModelByName_201 — symmetric to TestSEC29 on
+// the KB endpoint. POST /api/v1/knowledge-bases accepts embedding_model_id
+// as either UUID or tenant-local model name via resolveEmbeddingModelRef.
+// kind=embedding check is preserved.
+func TestSEC32_KBCreate_EmbeddingModelByName_201(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	tok := issueAPIToken(t, "tc-sec-32-admin", 16)
+
+	// Create an embedding model first (createModelForTest defaults to chat).
+	embedResp := do(t, http.MethodPost, "/api/v1/models",
+		mustJSON(map[string]any{
+			"name":       "tc-sec-32-embed",
+			"type":       "openai_compatible",
+			"kind":       "embedding",
+			"model_name": "test-embedding",
+			"api_key":    "test-key",
+			"base_url":   "https://api.test.com",
+		}), adminToken)
+	assertStatusAny(t, embedResp, http.StatusOK, http.StatusCreated)
+	_ = readBody(t, embedResp)
+
+	kbResp := do(t, http.MethodPost, "/api/v1/knowledge-bases",
+		mustJSON(map[string]any{
+			"name":               "tc-sec-32-kb",
+			"description":        "kb with embedding model by name",
+			"embedding_model_id": "tc-sec-32-embed", // operator-declared name
+		}), tok)
+	body := readBody(t, kbResp)
+	assertStatusAny(t, kbResp, http.StatusOK, http.StatusCreated)
+
+	var got map[string]any
+	require.NoError(t, jsonUnmarshalOrNil(body, &got), "decode KB: %s", body)
+	embedID, _ := got["embedding_model_id"].(string)
+	assert.NotEmpty(t, embedID, "engine must resolve embedding_model name → UUID: %s", body)
+}
+
+// TestSEC33_KBCreate_EmbeddingModelUnknownName_400 — unknown embedding model
+// reference must yield 400 InvalidInput. Engine's pre-1.1.5 raw SQL fall-
+// through could have produced 500 on certain inputs; 1.1.5 normalises to
+// a clean DomainError mapping.
+func TestSEC33_KBCreate_EmbeddingModelUnknownName_400(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	tok := issueAPIToken(t, "tc-sec-33-admin", 16)
+
+	resp := do(t, http.MethodPost, "/api/v1/knowledge-bases",
+		mustJSON(map[string]any{
+			"name":               "tc-sec-33-kb",
+			"embedding_model_id": "no-such-embedding-model",
+		}), tok)
+	body := readBody(t, resp)
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
+		"unknown embedding model must yield 400; body=%s", body)
+	assert.Contains(t, string(body), "embedding model not found",
+		"error must name the unresolved ref: %s", body)
+}
+
+// TestSEC34_SessionList_ResponseIncludesPerPageMax — Phase 3: server surfaces
+// the enforced per_page upper bound (currently 100) so paginating clients
+// can detect runaway loops without out-of-band knowledge. Additive JSON
+// field, no breaking impact on existing parsers.
+func TestSEC34_SessionList_ResponseIncludesPerPageMax(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	tok := issueAPIToken(t, "tc-sec-34-admin", 16)
+
+	resp := do(t, http.MethodGet, "/api/v1/sessions", nil, tok)
+	body := readBody(t, resp)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "GET /sessions: body=%s", body)
+
+	var got map[string]any
+	require.NoError(t, jsonUnmarshalOrNil(body, &got))
+	maxVal, ok := got["per_page_max"].(float64) // JSON numbers decode to float64
+	require.True(t, ok, "response must include per_page_max field: %s", body)
+	assert.Equal(t, float64(100), maxVal,
+		"per_page_max must equal SessionPaginationMaxPerPage (100)")
 }

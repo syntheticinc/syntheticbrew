@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
+	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/indexing"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
@@ -95,30 +97,54 @@ type kbStoreAdapter struct {
 	db   *gorm.DB // for counting files and resolving agents
 }
 
-// validateEmbeddingModelKind checks that the given model ID references a model
-// with kind='embedding'. Returns an error with the actual kind when mismatched.
-// Wave 5: embedding_model_id must reference a model with kind='embedding'.
-func (a *kbStoreAdapter) validateEmbeddingModelKind(ctx context.Context, modelID string) error {
-	if modelID == "" {
-		return nil
+// resolveEmbeddingModelRef accepts a UUID or a tenant-local model name and
+// returns the model UUID after verifying tenant ownership AND kind=embedding.
+// Replaces the pre-1.1.5 validateEmbeddingModelKind which (a) accepted UUID
+// only and (b) was missing a tenant_id filter — crafted cross-tenant UUIDs
+// would have passed the kind check. 1.1.5 closes both gaps: explicit
+// tenant scoping + UUID-or-name acceptance (symmetric with the 1.1.3
+// CreateSchema entry_agent resolver).
+//
+// Empty input returns "" + nil — caller decides whether KB without an
+// embedding model is acceptable (current behaviour: kb.EmbeddingModelID
+// stays nil).
+func (a *kbStoreAdapter) resolveEmbeddingModelRef(ctx context.Context, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
 	}
-	var kind string
-	if err := a.db.WithContext(ctx).
-		Model(&models.LLMProviderModel{}).
-		Where("id = ?", modelID).
-		Pluck("kind", &kind).Error; err != nil || kind == "" {
-		return fmt.Errorf("embedding_model_id references unknown model: %s", modelID)
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
 	}
-	if kind != "embedding" {
-		return fmt.Errorf("embedding_model_id must reference an embedding model, got kind=%s", kind)
+	var model models.LLMProviderModel
+	q := a.db.WithContext(ctx)
+	if isUUID(ref) {
+		if err := q.Where("id = ? AND tenant_id = ?", ref, tenantID).First(&model).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", pkgerrors.InvalidInput(fmt.Sprintf("embedding model not found: %s", ref))
+			}
+			return "", err
+		}
+	} else {
+		if err := q.Where("tenant_id = ? AND name = ?", tenantID, ref).First(&model).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", pkgerrors.InvalidInput(fmt.Sprintf("embedding model not found: %s", ref))
+			}
+			return "", err
+		}
 	}
-	return nil
+	if model.Kind != "embedding" {
+		return "", pkgerrors.InvalidInput(fmt.Sprintf("embedding_model_id must reference an embedding model, got kind=%s", model.Kind))
+	}
+	return model.ID, nil
 }
 
 func (a *kbStoreAdapter) Create(ctx context.Context, name, description, embeddingModelID, tenantID string) (*deliveryhttp.KnowledgeBaseInfo, error) {
-	if err := a.validateEmbeddingModelKind(ctx, embeddingModelID); err != nil {
+	resolvedEmbedding, err := a.resolveEmbeddingModelRef(ctx, embeddingModelID)
+	if err != nil {
 		return nil, err
 	}
+	embeddingModelID = resolvedEmbedding
 	kb := &models.KnowledgeBase{
 		TenantID:    tenantID,
 		Name:        name,
@@ -143,9 +169,11 @@ func (a *kbStoreAdapter) Create(ctx context.Context, name, description, embeddin
 }
 
 func (a *kbStoreAdapter) Update(ctx context.Context, id, name, description, embeddingModelID string) (*deliveryhttp.KnowledgeBaseInfo, error) {
-	if err := a.validateEmbeddingModelKind(ctx, embeddingModelID); err != nil {
+	resolved, err := a.resolveEmbeddingModelRef(ctx, embeddingModelID)
+	if err != nil {
 		return nil, err
 	}
+	embeddingModelID = resolved
 	kb, err := a.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -196,11 +224,14 @@ func (a *kbStoreAdapter) List(ctx context.Context) ([]deliveryhttp.KnowledgeBase
 
 // Patch applies only the non-nil fields in req to the existing knowledge base.
 func (a *kbStoreAdapter) Patch(ctx context.Context, id string, req deliveryhttp.PatchKBRequest) (*deliveryhttp.KnowledgeBaseInfo, error) {
-	// Wave 5: validate embedding_model_id kind when being set.
+	// 1.1.5: resolve embedding_model_id UUID-or-name + tenant-scoped kind check.
+	// Replaces validateEmbeddingModelKind (UUID-only, no tenant scope).
 	if req.EmbeddingModelID != nil && *req.EmbeddingModelID != "" {
-		if err := a.validateEmbeddingModelKind(ctx, *req.EmbeddingModelID); err != nil {
+		resolved, err := a.resolveEmbeddingModelRef(ctx, *req.EmbeddingModelID)
+		if err != nil {
 			return nil, err
 		}
+		req.EmbeddingModelID = &resolved
 	}
 	kb, err := a.repo.GetByID(ctx, id)
 	if err != nil {
