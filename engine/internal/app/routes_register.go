@@ -404,7 +404,7 @@ func registerHTTPRoutes(deps routesDeps) {
 		// regular end-user JWT actors are auto-filtered to their own user_sub.
 		sessionRepo := configrepo.NewGORMSessionRepository(pgDB)
 		messageRepo := configrepo.NewGORMEventRepository(pgDB)
-		sessionHandler := deliveryhttp.NewSessionHandler(&sessionServiceHTTPAdapter{repo: sessionRepo, messageRepo: messageRepo})
+		sessionHandler := deliveryhttp.NewSessionHandler(&sessionServiceHTTPAdapter{repo: sessionRepo, messageRepo: messageRepo, db: pgDB})
 		sessionHandler.SetEventService(&eventServiceHTTPAdapter{repo: messageRepo})
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSessionsRead))

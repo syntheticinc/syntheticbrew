@@ -7,6 +7,18 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-05-11
+
+### Changed
+- Bumps `appVersion` to **1.1.5** with the symmetric UUID-or-name body-field
+  resolvers (`POST /sessions schema_id`, `POST /knowledge-bases
+  embedding_model_id`), the embedding-model lookup tenant-scoping fix
+  (preemptive hardening), the new `per_page_max` pagination response field,
+  and the `docs/api/auth-scopes.md` reference document.
+
+No DB schema changes, no breaking template / values changes, no DB wipe.
+Drop-in upgrade from chart 0.6.4. brewctl default tag remains `0.2.3`.
+
 ## [0.6.4] - 2026-05-10
 
 ### Changed

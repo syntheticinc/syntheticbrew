@@ -86,12 +86,20 @@ type SessionResponse struct {
 	UpdatedAt string          `json:"updated_at"`
 }
 
+// SessionPaginationMaxPerPage is the server-enforced upper bound on the
+// `per_page` query parameter for GET /api/v1/sessions. Surfaced in
+// PaginatedSessionResponse.PerPageMax so programmatic consumers (e.g. thin
+// proxies that page through the entire list) can detect runaway loops if
+// their own math drifts from the server's effective bound.
+const SessionPaginationMaxPerPage = 100
+
 // PaginatedSessionResponse wraps a page of sessions with pagination metadata.
 type PaginatedSessionResponse struct {
 	Data       []SessionResponse `json:"data"`
 	Total      int64             `json:"total"`
 	Page       int               `json:"page"`
 	PerPage    int               `json:"per_page"`
+	PerPageMax int               `json:"per_page_max"`
 	TotalPages int               `json:"total_pages"`
 }
 
@@ -197,8 +205,8 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := r.URL.Query().Get("per_page"); v != "" {
 		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			if p > 100 {
-				p = 100
+			if p > SessionPaginationMaxPerPage {
+				p = SessionPaginationMaxPerPage
 			}
 			perPage = p
 		}
@@ -220,6 +228,7 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 		Total:      total,
 		Page:       page,
 		PerPage:    perPage,
+		PerPageMax: SessionPaginationMaxPerPage,
 		TotalPages: totalPages,
 	})
 }

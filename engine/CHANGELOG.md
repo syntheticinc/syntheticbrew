@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.1.5] — 2026-05-11
+
+### Fixed
+- **`POST /api/v1/sessions` now accepts `schema_id` as UUID-or-name.**
+  Previously the field was passed raw into the `sessions.schema_id` UUID
+  column, so sending the operator-declared schema name (e.g.
+  `{"schema_id":"chirp"}`) produced a 500 SQLSTATE 22P02 instead of a clean
+  resolve. Clients had to pre-call `GET /api/v1/schemas` on every cold start
+  to translate name → UUID. 1.1.5 mirrors the `resolveAgentModel` /
+  `resolveEntryAgentRef` pattern in `sessionServiceHTTPAdapter`: explicit
+  tenant scoping in both UUID and name branches, `pkgerrors.InvalidInput`
+  on miss (→ 400, not 500 SQL leakage), backwards-compatible UUID path
+  preserved. Symmetric with the 1.1.3 CreateSchema `entry_agent` fix.
+
+- **`POST /api/v1/knowledge-bases` (`embedding_model_id`) now accepts
+  UUID-or-name.** Same shape as schema_id. `kbStoreAdapter.Create/Update/Patch`
+  go through the new `resolveEmbeddingModelRef`, which preserves the
+  kind=embedding check from the pre-1.1.5 `validateEmbeddingModelKind`.
+
+### Security
+- **Tenant scoping bug closed in embedding model lookup.** The pre-1.1.5
+  `validateEmbeddingModelKind` used a raw `Where("id = ?", modelID)` with
+  **no tenant filter** — a crafted request with a cross-tenant embedding
+  model UUID would pass the kind check (the actual FK insert would still
+  fail due to row-level tenant isolation, but the lookup itself was a
+  side-channel). 1.1.5 adds `AND tenant_id = ?` to both UUID and name
+  branches of `resolveEmbeddingModelRef`. No known exploitation; preemptive
+  hardening.
+
+### Added
+- **`PaginatedSessionResponse.per_page_max`** — server-enforced upper bound
+  on `?per_page` (currently 100) surfaced in the response so clients can
+  detect runaway pagination loops without out-of-band knowledge. Additive
+  JSON field; existing parsers unaffected.
+
+- **`engine/docs/architecture/auth-scopes.md`** — full scope table, actor matrix,
+  anti-impersonation guard documented as by-design (chat endpoint ignores
+  body `user_sub` for authenticated actors — 1.1.4 fix; regression-guarded
+  by integration test `TestSEC24`). POST /sessions trusted-proxy session
+  creation explicitly preserved as the chosen pattern for ai-assistant
+  style proxies. Deferred from the 1.1.4 plan, written now alongside the
+  chirp #2(a) documentation ask.
+
+### Known limitation
+- Model names are not currently immutable (unlike schema and KB names). If
+  an operator renames an embedding model via direct DB update after KBs
+  reference it by name, subsequent KB creates with the old name will 400.
+  Model name immutability mirror (PATCH model name → 409) deferred to
+  1.1.6 if it becomes an actual issue.
+
 ## [1.1.4] — 2026-05-10
 
 ### **SECURITY** — Pre-existing chat impersonation vulnerability closed
