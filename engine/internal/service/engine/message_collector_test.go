@@ -83,6 +83,83 @@ func TestMessageCollector_PropagatesTenantToHandleEvent(t *testing.T) {
 	}
 }
 
+// AgentEvent with Error → persisted payload.IsError=true.
+func TestMessageCollector_ToolResultErrorPersistsIsErrorFlag(t *testing.T) {
+	repo := &captureCtxHistoryRepo{}
+	mc := NewMessageCollector(context.Background(), "session-err", "supervisor", repo)
+	cb := mc.WrapEventCallback(nil)
+
+	require.NoError(t, cb(&domain.AgentEvent{
+		Type: domain.EventTypeToolCall,
+		Metadata: map[string]interface{}{
+			"id":                 "call-1",
+			"tool_name":          "rule.list",
+			"function_arguments": `{}`,
+		},
+	}))
+	require.NoError(t, cb(&domain.AgentEvent{
+		Type: domain.EventTypeToolResult,
+		Metadata: map[string]interface{}{
+			"tool_name":   "rule.list",
+			"full_result": "[UNAVAILABLE] circuit breaker open for chirp-platform: too many failures",
+		},
+		Content: "[UNAVAILABLE] circuit breaker open for chirp-platform: too many failures",
+		Error:   &domain.AgentError{Code: "tool_error", Message: "circuit breaker open"},
+	}))
+
+	var toolResult *domain.Message
+	for _, m := range repo.messages {
+		if m.Type == domain.MessageTypeToolResult {
+			toolResult = m
+			break
+		}
+	}
+	require.NotNil(t, toolResult, "tool_result message was not persisted")
+
+	p, ok := toolResult.GetToolResultPayload()
+	require.True(t, ok)
+	assert.True(t, p.IsError, "tool_result with AgentEvent.Error must persist IsError=true")
+	assert.Contains(t, p.Content, "circuit breaker open")
+}
+
+// Happy-path tool_result JSON omits is_error (back-compat).
+func TestMessageCollector_ToolResultHappyPathOmitsIsError(t *testing.T) {
+	repo := &captureCtxHistoryRepo{}
+	mc := NewMessageCollector(context.Background(), "session-ok", "supervisor", repo)
+	cb := mc.WrapEventCallback(nil)
+
+	require.NoError(t, cb(&domain.AgentEvent{
+		Type: domain.EventTypeToolCall,
+		Metadata: map[string]interface{}{
+			"id":                 "call-1",
+			"tool_name":          "echo_message",
+			"function_arguments": `{"text":"hi"}`,
+		},
+	}))
+	require.NoError(t, cb(&domain.AgentEvent{
+		Type: domain.EventTypeToolResult,
+		Metadata: map[string]interface{}{
+			"tool_name":   "echo_message",
+			"full_result": "ok",
+		},
+		Content: "ok",
+	}))
+
+	var toolResult *domain.Message
+	for _, m := range repo.messages {
+		if m.Type == domain.MessageTypeToolResult {
+			toolResult = m
+			break
+		}
+	}
+	require.NotNil(t, toolResult)
+
+	p, _ := toolResult.GetToolResultPayload()
+	assert.False(t, p.IsError)
+	assert.NotContains(t, string(toolResult.Payload), "is_error",
+		"happy-path payload JSON must omit is_error field for back-compat")
+}
+
 // TestMessageCollector_NilCtxFallsBackToBackground guards the safety net in
 // handleEvent: if a caller forgets to pass ctx, writes still succeed (with the
 // CETenantID default) instead of panicking.

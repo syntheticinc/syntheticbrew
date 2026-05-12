@@ -158,7 +158,7 @@ func TestEventFromModel_Nil(t *testing.T) {
 }
 
 func TestEventRoundtrip(t *testing.T) {
-	original, _ := domain.NewToolResultEvent("session-1", "call-1", "search", "Found 5 files")
+	original, _ := domain.NewToolResultEvent("session-1", "call-1", "search", "Found 5 files", false)
 	original.AgentID = "supervisor"
 
 	model, err := EventToModel(original)

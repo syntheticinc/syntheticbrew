@@ -3,9 +3,13 @@
 package integration
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -387,4 +391,101 @@ func TestSEC34_SessionList_ResponseIncludesPerPageMax(t *testing.T) {
 	require.True(t, ok, "response must include per_page_max field: %s", body)
 	assert.Equal(t, float64(100), maxVal,
 		"per_page_max must equal SessionPaginationMaxPerPage (100)")
+}
+
+// TestSEC35_ToolResultIsErrorRoundTrip verifies GET /sessions/{id}/messages
+// surfaces payload.is_error=true for tool_result rows that originated from
+// a failed tool call (MCP isError, circuit-breaker open, [ERROR]-prefixed
+// content, Eino OnToolError). Happy-path rows must omit the field for
+// backwards compat.
+func TestSEC35_ToolResultIsErrorRoundTrip(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	schema := createSchemaForTest(t, map[string]any{
+		"name":         "tc-sec-35-schema",
+		"chat_enabled": false,
+	})
+
+	sessionID := "55555555-5555-4555-a555-555555555555"
+	resp := do(t, http.MethodPost, "/api/v1/sessions",
+		mustJSON(map[string]any{
+			"id":        sessionID,
+			"user_sub":  "tc-sec-35-user",
+			"schema_id": schema.ID,
+			"title":     "round-trip is_error",
+		}), adminToken)
+	body := readBody(t, resp)
+	assertStatusAny(t, resp, http.StatusOK, http.StatusCreated)
+	_ = body
+
+	require.NotNil(t, testDB, "integration suite must expose testDB")
+
+	insert := func(eventType, callID string, payload map[string]any) {
+		t.Helper()
+		raw, err := json.Marshal(payload)
+		require.NoError(t, err)
+		require.NoError(t, testDB.WithContext(context.Background()).Exec(
+			`INSERT INTO messages (id, session_id, event_type, call_id, payload, created_at)
+			 VALUES (?, ?, ?, ?, ?::jsonb, ?)`,
+			uuid.New().String(), sessionID, eventType, callID, string(raw), time.Now(),
+		).Error)
+	}
+
+	// Failed tool call: payload carries is_error:true.
+	insert("tool_call", "call-err", map[string]any{
+		"tool":      "rule.list",
+		"arguments": map[string]string{},
+	})
+	insert("tool_result", "call-err", map[string]any{
+		"tool":     "rule.list",
+		"content":  "[UNAVAILABLE] circuit breaker open for chirp-platform",
+		"is_error": true,
+	})
+
+	// Successful tool call: payload must omit is_error.
+	insert("tool_call", "call-ok", map[string]any{
+		"tool":      "echo_message",
+		"arguments": map[string]string{"text": "hi"},
+	})
+	insert("tool_result", "call-ok", map[string]any{
+		"tool":    "echo_message",
+		"content": "ok",
+	})
+
+	resp = do(t, http.MethodGet, "/api/v1/sessions/"+sessionID+"/messages", nil, adminToken)
+	body = readBody(t, resp)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "GET messages: body=%s", body)
+
+	var events []struct {
+		EventType string          `json:"event_type"`
+		CallID    string          `json:"call_id"`
+		Payload   json.RawMessage `json:"payload"`
+	}
+	require.NoError(t, json.Unmarshal(body, &events), "decode events: %s", body)
+
+	var errResult, okResult json.RawMessage
+	for _, e := range events {
+		if e.EventType != "tool_result" {
+			continue
+		}
+		switch e.CallID {
+		case "call-err":
+			errResult = e.Payload
+		case "call-ok":
+			okResult = e.Payload
+		}
+	}
+	require.NotEmpty(t, errResult, "tool_result for call-err must be returned: %s", body)
+	require.NotEmpty(t, okResult, "tool_result for call-ok must be returned: %s", body)
+
+	var errP struct {
+		IsError bool `json:"is_error"`
+	}
+	require.NoError(t, json.Unmarshal(errResult, &errP))
+	assert.True(t, errP.IsError,
+		"failed tool_result must surface is_error=true on the wire; got %s", string(errResult))
+
+	assert.NotContains(t, string(okResult), "is_error",
+		"happy-path tool_result must omit is_error for back-compat; got %s", string(okResult))
 }
