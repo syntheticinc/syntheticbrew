@@ -137,7 +137,7 @@ func TestEventRepository_ToolCallRoundtrip(t *testing.T) {
 	require.NoError(t, repo.Create(ctx, tc))
 
 	// Create tool result event
-	tr, err := domain.NewToolResultEvent(sessionID, "call-1", "search", "Found 3 files")
+	tr, err := domain.NewToolResultEvent(sessionID, "call-1", "search", "Found 3 files", false)
 	require.NoError(t, err)
 	tr.AgentID = "supervisor"
 	require.NoError(t, repo.Create(ctx, tr))

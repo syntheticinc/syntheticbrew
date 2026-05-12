@@ -53,9 +53,12 @@ type ToolCallPayload struct {
 }
 
 // ToolResultPayload is used by tool_result events.
+// IsError mirrors AgentEvent.Error so reloaded history distinguishes failed
+// tool calls from successful ones.
 type ToolResultPayload struct {
 	Tool    string `json:"tool"`
 	Content string `json:"content"`
+	IsError bool   `json:"is_error,omitempty"`
 }
 
 // --- Constructors ---
@@ -113,14 +116,14 @@ func NewToolCallEvent(sessionID, callID, toolName string, arguments map[string]s
 }
 
 // NewToolResultEvent creates a tool result event.
-func NewToolResultEvent(sessionID, callID, toolName, content string) (*Message, error) {
+func NewToolResultEvent(sessionID, callID, toolName, content string, isError bool) (*Message, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("session_id is required")
 	}
 	if callID == "" {
 		return nil, fmt.Errorf("call_id is required for tool result")
 	}
-	payload, _ := json.Marshal(ToolResultPayload{Tool: toolName, Content: content})
+	payload, _ := json.Marshal(ToolResultPayload{Tool: toolName, Content: content, IsError: isError})
 	return &Message{
 		SessionID: sessionID,
 		Type:      MessageTypeToolResult,

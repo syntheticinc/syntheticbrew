@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -82,7 +83,7 @@ func TestNewToolCallEvent_Validation(t *testing.T) {
 }
 
 func TestNewToolResultEvent(t *testing.T) {
-	msg, err := NewToolResultEvent("session-1", "call-1", "search_code", "Found 5 results")
+	msg, err := NewToolResultEvent("session-1", "call-1", "search_code", "Found 5 results", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,13 +104,43 @@ func TestNewToolResultEvent(t *testing.T) {
 	if p.Content != "Found 5 results" {
 		t.Errorf("Content = %v, want 'Found 5 results'", p.Content)
 	}
+	if p.IsError {
+		t.Errorf("IsError = true, want false on happy path")
+	}
+}
+
+func TestNewToolResultEvent_IsError(t *testing.T) {
+	msg, err := NewToolResultEvent("session-1", "call-1", "rule.list",
+		"[UNAVAILABLE] circuit breaker open for chirp-platform: too many failures", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	p, ok := msg.GetToolResultPayload()
+	if !ok {
+		t.Fatal("GetToolResultPayload() returned false")
+	}
+	if !p.IsError {
+		t.Errorf("IsError = false, want true for error result")
+	}
+
+	if !bytes.Contains(msg.Payload, []byte(`"is_error":true`)) {
+		t.Errorf("payload JSON missing is_error:true marker; got %s", string(msg.Payload))
+	}
+}
+
+func TestToolResultPayload_OmitEmptyOnSuccess(t *testing.T) {
+	msg, _ := NewToolResultEvent("s1", "c1", "search", "ok", false)
+	if bytes.Contains(msg.Payload, []byte("is_error")) {
+		t.Errorf("happy-path payload must omit is_error; got %s", string(msg.Payload))
+	}
 }
 
 func TestNewToolResultEvent_Validation(t *testing.T) {
-	if _, err := NewToolResultEvent("", "c1", "tool", "result"); err == nil {
+	if _, err := NewToolResultEvent("", "c1", "tool", "result", false); err == nil {
 		t.Error("expected error for empty session_id")
 	}
-	if _, err := NewToolResultEvent("s1", "", "tool", "result"); err == nil {
+	if _, err := NewToolResultEvent("s1", "", "tool", "result", false); err == nil {
 		t.Error("expected error for empty call_id")
 	}
 }
@@ -172,7 +203,7 @@ func TestToHistoryMessage_AllTypes(t *testing.T) {
 }
 
 func TestToHistoryMessage_ToolResult_Content(t *testing.T) {
-	msg, _ := NewToolResultEvent("s1", "call-1", "search", "Found 3 files")
+	msg, _ := NewToolResultEvent("s1", "call-1", "search", "Found 3 files", false)
 	hm := msg.ToHistoryMessage()
 
 	if hm.Role != "tool" {

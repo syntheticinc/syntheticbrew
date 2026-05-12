@@ -259,7 +259,7 @@ func (mc *MessageCollector) handleToolResult(ctx context.Context, event *domain.
 
 	// Save tool result event — strip internal prompt injection markers before persisting.
 	cleanContent := stripToolOutputMarkers(content)
-	histMsg, err := domain.NewToolResultEvent(mc.sessionID, toolCallID, toolName, cleanContent)
+	histMsg, err := domain.NewToolResultEvent(mc.sessionID, toolCallID, toolName, cleanContent, event.Error != nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to create tool result event", "error", err)
 		return
