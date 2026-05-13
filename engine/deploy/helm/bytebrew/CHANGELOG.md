@@ -7,6 +7,19 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-05-13
+
+### Changed
+- Bumps `appVersion` to **1.1.6** with the `tool_result.is_error` persistence
+  fix. `GET /api/v1/sessions/{id}/messages` now surfaces `payload.is_error:
+  true` for failed tool calls (MCP `isError`, circuit-breaker open, `[ERROR]`
+  prefix, Eino tool error) — matching what the live SSE stream already
+  carried via `tool_has_error`. Happy-path rows still omit the field
+  (`omitempty`), so existing JSON parsers are unaffected.
+
+No DB schema changes, no breaking template / values changes, no DB wipe.
+Drop-in upgrade from chart 0.6.5. brewctl default tag remains `0.2.3`.
+
 ## [0.6.5] - 2026-05-11
 
 ### Changed

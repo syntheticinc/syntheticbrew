@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.6] — 2026-05-13
+
+### Fixed
+- **`tool_result` rows persist `payload.is_error` for failed tool calls.**
+  The live SSE stream already carried `tool_has_error` via `AgentEvent.Error`
+  (set in `OnToolEnd` for `[ERROR]`-prefixed responses and `OnToolError` for
+  MCP `isError`, circuit-breaker open, and Eino-side Go errors). The
+  persistence path through `MessageCollector` dropped that signal — reloaded
+  history rendered failed and successful tool calls identically. 1.1.6 adds
+  `ToolResultPayload.IsError bool` (`json:"is_error,omitempty"`) and threads
+  `event.Error != nil` through `NewToolResultEvent`. `omitempty` + bool zero
+  value keeps existing rows binary-compatible; happy-path JSON still emits
+  `{"tool":"...","content":"..."}` with no `is_error` key. External proxy
+  consumers (e.g. ai-assistant) that branch on `payload.is_error` can drop
+  their `[UNAVAILABLE]`-prefix content heuristics. PR #54.
+
 ## [1.1.5] — 2026-05-11
 
 ### Fixed
