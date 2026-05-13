@@ -82,7 +82,33 @@ func (a *agentManagerHTTPAdapter) ListAgents(ctx context.Context) ([]deliveryhtt
 	return result, nil
 }
 
+// resolveAgentName translates an agent reference (UUID or name) into the
+// canonical name expected by repo.GetByName. Mirrors resolveSchemaRef
+// (http_adapters_extra.go) with explicit tenant scoping so cross-tenant
+// UUID probes return NotFound instead of leaking existence.
+func (a *agentManagerHTTPAdapter) resolveAgentName(ctx context.Context, ref string) (string, error) {
+	if ref == "" || !isUUID(ref) {
+		return ref, nil
+	}
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+	var name string
+	err := a.db.WithContext(ctx).
+		Raw("SELECT name FROM agents WHERE id = ? AND tenant_id = ? LIMIT 1", ref, tenantID).
+		Scan(&name).Error
+	if err != nil || name == "" {
+		return "", pkgerrors.NotFound(fmt.Sprintf("agent not found: %s", ref))
+	}
+	return name, nil
+}
+
 func (a *agentManagerHTTPAdapter) GetAgent(ctx context.Context, name string) (*deliveryhttp.AgentDetail, error) {
+	name, err := a.resolveAgentName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
 	rec, err := a.repo.GetByName(ctx, name)
 	if err != nil {
 		return nil, pkgerrors.NotFound(fmt.Sprintf("agent not found: %s", name))
@@ -225,6 +251,10 @@ func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryh
 }
 
 func (a *agentManagerHTTPAdapter) UpdateAgent(ctx context.Context, name string, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
+	name, err := a.resolveAgentName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
 	if err := a.resolveAgentModel(ctx, &req); err != nil {
 		return nil, err
 	}
@@ -286,6 +316,10 @@ func (a *agentManagerHTTPAdapter) UpdateAgent(ctx context.Context, name string, 
 
 // PatchAgent applies only the non-nil fields in req; unspecified fields are preserved.
 func (a *agentManagerHTTPAdapter) PatchAgent(ctx context.Context, name string, req deliveryhttp.UpdateAgentRequest) (*deliveryhttp.AgentDetail, error) {
+	name, err := a.resolveAgentName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := a.repo.GetByName(ctx, name)
 	if err != nil || existing == nil {
 		return nil, pkgerrors.NotFound(fmt.Sprintf("agent not found: %s", name))
@@ -389,6 +423,10 @@ func (a *agentManagerHTTPAdapter) PatchAgent(ctx context.Context, name string, r
 }
 
 func (a *agentManagerHTTPAdapter) DeleteAgent(ctx context.Context, name string) error {
+	name, err := a.resolveAgentName(ctx, name)
+	if err != nil {
+		return err
+	}
 	// System agents cannot be deleted via API.
 	existing, err := a.repo.GetByName(ctx, name)
 	if err == nil && existing != nil && existing.IsSystem {

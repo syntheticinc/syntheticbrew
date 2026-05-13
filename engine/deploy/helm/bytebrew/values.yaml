@@ -258,7 +258,7 @@ configApply:
     # UUID for schemas[].entry_agent_id and agents[].model_id, so a fresh-DB
     # single apply leaves no NULL FK or silent tenant-default fallback.
     repository: ghcr.io/syntheticinc/brewctl
-    tag: "0.2.3"
+    tag: "0.2.4"
     pullPolicy: IfNotPresent
 
   # Inline bytebrew.yaml content. Format: bundle YAML with top-level

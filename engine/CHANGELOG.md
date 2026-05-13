@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.1.7] — 2026-05-13
+
+### Fixed
+- **`GET/PUT/PATCH/DELETE /api/v1/agents/{ref}` now accept UUID or name.**
+  Previously the path parameter was treated strictly as `name`, so external
+  consumers using the agent UUID returned by `GET /api/v1/agents` received
+  404 NOT_FOUND on the very next PATCH. 1.1.7 adds `resolveAgentName` in
+  `agentManagerHTTPAdapter` (mirrors the 1.1.5 `resolveSchemaRef` pattern):
+  explicit tenant scoping in the resolver, info-hiding 404 on miss, no SQL
+  leakage. Admin SPA continues to use names — fully back-compat. PR #56.
+
+### Added
+- **`models[*].extra_body` passthrough for `openai_compatible` providers.**
+  Operators can now inject upstream-specific JSON fields (e.g. OpenRouter
+  `provider: {order: ["zai", "google"], allow_fallbacks: false}`) on a
+  per-model basis. The field is stored in the existing `LLMProviderModel.Config`
+  JSONB column (no migration), exposed in HTTP DTOs (CreateModelRequest /
+  UpdateModelRequest / ModelResponse) and YAML import/export. At LLM call
+  time, an `extraBodyTransport` http.RoundTripper merges the map into each
+  request body. Reserved keys (`messages`, `tools`, `stream`, `model`) cannot
+  be overwritten so the engine's wire contract stays predictable. Works
+  generically — unblocks OpenRouter sub-provider pinning, transforms,
+  reasoning effort, and any future passthrough without engine code changes.
+
 ## [1.1.6] — 2026-05-13
 
 ### Fixed

@@ -136,11 +136,12 @@ func (a *agentYAML) UnmarshalYAML(node *yaml.Node) error {
 }
 
 type modelYAML struct {
-	Name      string `yaml:"name"`
-	Type      string `yaml:"type"`
-	BaseURL   string `yaml:"base_url,omitempty"`
-	ModelName string `yaml:"model_name"`
-	APIKey    string `yaml:"api_key,omitempty"`
+	Name      string         `yaml:"name"`
+	Type      string         `yaml:"type"`
+	BaseURL   string         `yaml:"base_url,omitempty"`
+	ModelName string         `yaml:"model_name"`
+	APIKey    string         `yaml:"api_key,omitempty"`
+	ExtraBody map[string]any `yaml:"extra_body,omitempty"`
 }
 
 // resolvedType returns the canonical model type.

@@ -1,8 +1,11 @@
 package llm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -90,6 +93,69 @@ func (c *ModelCache) InvalidateAll() {
 	slog.InfoContext(context.Background(), "model cache fully invalidated")
 }
 
+// extraBodyTransport merges operator-supplied JSON fields into every outgoing
+// request body. Used to pass through upstream-specific options (e.g.
+// OpenRouter provider routing) that Eino's ChatModelConfig doesn't model.
+//
+// Only JSON POST bodies are touched. Engine-set top-level keys (messages,
+// tools, stream, model) take precedence — operator extras cannot overwrite
+// them, so the engine's wire contract stays predictable.
+type extraBodyTransport struct {
+	base  http.RoundTripper
+	extra map[string]any
+}
+
+var reservedExtraBodyKeys = map[string]struct{}{
+	"messages": {},
+	"tools":    {},
+	"stream":   {},
+	"model":    {},
+}
+
+func (t *extraBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if len(t.extra) == 0 || req.Body == nil || req.Method != http.MethodPost {
+		return t.base.RoundTrip(req)
+	}
+	ct := req.Header.Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		return t.base.RoundTrip(req)
+	}
+
+	raw, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, fmt.Errorf("extra_body: read request body: %w", err)
+	}
+	if cerr := req.Body.Close(); cerr != nil {
+		slog.WarnContext(req.Context(), "extra_body: close original body", "error", cerr)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		// Non-JSON body — restore and forward unchanged.
+		req.Body = io.NopCloser(bytes.NewReader(raw))
+		req.ContentLength = int64(len(raw))
+		return t.base.RoundTrip(req)
+	}
+
+	for k, v := range t.extra {
+		if _, reserved := reservedExtraBodyKeys[k]; reserved {
+			continue
+		}
+		payload[k] = v
+	}
+
+	merged, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("extra_body: marshal merged body: %w", err)
+	}
+	req.Body = io.NopCloser(bytes.NewReader(merged))
+	req.ContentLength = int64(len(merged))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(merged)), nil
+	}
+	return t.base.RoundTrip(req)
+}
+
 // anthropicTransport adds the required anthropic-version header to all requests.
 type anthropicCacheTransport struct {
 	base http.RoundTripper
@@ -126,6 +192,12 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 			BaseURL: m.BaseURL,
 			Model:   m.ModelName,
 			APIKey:  m.APIKeyEncrypted,
+		}
+		if extra := m.GetConfig().ExtraBody; len(extra) > 0 {
+			cfg.HTTPClient = &http.Client{Transport: &extraBodyTransport{
+				base:  http.DefaultTransport,
+				extra: extra,
+			}}
 		}
 		return openai.NewChatModel(ctx, cfg)
 

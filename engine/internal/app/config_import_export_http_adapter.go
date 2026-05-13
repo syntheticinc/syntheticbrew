@@ -139,6 +139,7 @@ func (a *configImportExportHTTPAdapter) exportModels(_ context.Context) ([]model
 			Type:      m.Type,
 			BaseURL:   m.BaseURL,
 			ModelName: m.ModelName,
+			ExtraBody: m.GetConfig().ExtraBody,
 			// API key intentionally not exported.
 		})
 	}
@@ -221,10 +222,15 @@ func (a *configImportExportHTTPAdapter) importModels(tx *gorm.DB, items []modelY
 		var existing models.LLMProviderModel
 		err := tx.Where("name = ?", m.Name).First(&existing).Error
 		if err == nil {
-			// Update existing (preserve API key).
+			// Update existing (preserve API key). Carry ExtraBody through
+			// alongside the rest of the fields so YAML stays the source of
+			// truth — empty extra_body in YAML clears any previously-set value.
 			existing.Type = m.resolvedType()
 			existing.BaseURL = m.BaseURL
 			existing.ModelName = m.ModelName
+			cfg := existing.GetConfig()
+			cfg.ExtraBody = m.ExtraBody
+			existing.SetConfig(cfg)
 			if err := tx.Save(&existing).Error; err != nil {
 				return fmt.Errorf("update model %q: %w", m.Name, err)
 			}
@@ -236,6 +242,9 @@ func (a *configImportExportHTTPAdapter) importModels(tx *gorm.DB, items []modelY
 			Type:      m.resolvedType(),
 			BaseURL:   m.BaseURL,
 			ModelName: m.ModelName,
+		}
+		if len(m.ExtraBody) > 0 {
+			newModel.SetConfig(models.ModelConfig{ExtraBody: m.ExtraBody})
 		}
 		if err := tx.Create(&newModel).Error; err != nil {
 			return fmt.Errorf("create model %q: %w", m.Name, err)
