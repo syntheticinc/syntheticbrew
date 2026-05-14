@@ -16,9 +16,11 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `openai_compatible` providers (OpenRouter provider routing, etc.).
 
 No DB schema changes, no breaking template / values changes, no DB wipe.
-Drop-in upgrade from chart 0.6.6. brewctl default tag bumps to **0.2.4**
-to pick up `agents[].max_turn_duration` propagation and `models[*].extra_body`
-YAML pass-through on the GitOps side.
+Drop-in upgrade from chart 0.6.6. brewctl default tag stays at `0.2.3` —
+brewctl 0.2.4 (with `agents[].max_turn_duration` propagation and
+`models[*].extra_body` YAML pass-through) ships separately; the next chart
+release will bump the default. Operators wanting the new GitOps surface
+before then can set `configApply.image.tag: "0.2.4"` once it's published.
 
 ## [0.6.6] - 2026-05-13
 
