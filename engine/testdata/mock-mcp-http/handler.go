@@ -143,6 +143,28 @@ func (h *MCPHandler) handleToolsList(req jsonRPCRequest) jsonRPCResponse {
 				"required": []string{"message"},
 			},
 		},
+		// chirp 2026-05-14 RED fixtures — used by integration repro for Issues 2 and 3.
+		// device.list — dotted name; valid MCP convention, rejected by OpenAI's
+		// ^[a-zA-Z0-9_-]+$ regex when routed to openai/openai-compatible providers.
+		{
+			"name":        "device.list",
+			"description": "RED fixture: dotted MCP tool name (OpenAI rejects it).",
+			"inputSchema": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+		},
+		// device_list_bare — underscore name (valid for OpenAI) with bare
+		// {"type":"object"} schema that omits "properties". OpenAI rejects this
+		// shape; mcp-go emits it via spec but eino-ext/libs/acl/openai re-serializes
+		// the JSONSchema and drops the empty properties map.
+		{
+			"name":        "device_list_bare",
+			"description": "RED fixture: object schema without properties field.",
+			"inputSchema": map[string]any{
+				"type": "object",
+			},
+		},
 	}
 
 	return jsonRPCResponse{
@@ -167,6 +189,8 @@ func (h *MCPHandler) handleToolsCall(req jsonRPCRequest, headers http.Header) js
 		return h.callEchoHeaders(req.ID, headers)
 	case "echo_message":
 		return h.callEchoMessage(req.ID, params.Arguments)
+	case "device.list", "device_list_bare":
+		return h.callDeviceListStub(req.ID, params.Name)
 	default:
 		return jsonRPCResponse{
 			JSONRPC: "2.0",
@@ -202,6 +226,21 @@ func (h *MCPHandler) callEchoHeaders(id json.RawMessage, headers http.Header) js
 		Result: map[string]any{
 			"content": []map[string]string{
 				{"type": "text", "text": string(text)},
+			},
+		},
+	}
+}
+
+// callDeviceListStub returns a fixed device list response. Tool body is irrelevant
+// for the RED scenarios — these fixtures exist to exercise tool schema/name
+// validation paths, not the tool execution result.
+func (h *MCPHandler) callDeviceListStub(id json.RawMessage, name string) jsonRPCResponse {
+	return jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: map[string]any{
+			"content": []map[string]string{
+				{"type": "text", "text": fmt.Sprintf("[%s] []", name)},
 			},
 		},
 	}

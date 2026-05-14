@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
@@ -124,6 +125,13 @@ func (t *StructuredOutputTool) InvokableRun(ctx context.Context, argumentsInJSON
 			Timestamp: time.Now(),
 			Content:   string(contentJSON),
 		})
+	}
+
+	// Halt the react loop after this tool — user's next message resumes it.
+	// Failure means the tool was invoked outside a react graph (programming
+	// error); logged ERROR for operator alerting.
+	if err := react.SetReturnDirectly(ctx); err != nil {
+		slog.ErrorContext(ctx, "[structured_output] SetReturnDirectly failed — react loop may not halt", "error", err)
 	}
 
 	return "Structured output displayed to user.", nil

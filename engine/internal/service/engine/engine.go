@@ -47,9 +47,11 @@ type ExecutionConfig struct {
 	// Pass-through to react.Agent
 	ContextReminders []react.ContextReminderProvider
 	ToolCallRecorder react.ToolCallRecorder
-	ModelName        string
-	AgentConfig      *config.AgentConfig
-	SessionDirName   string
+	ModelName       string
+	ProviderType    string // e.g. "openai", "openai_compatible"
+	ProviderBaseURL string
+	AgentConfig     *config.AgentConfig
+	SessionDirName  string
 
 	// Code agent specific
 	ParentAgentID string
@@ -141,6 +143,8 @@ func (e *Engine) Execute(ctx context.Context, cfg ExecutionConfig) (*ExecutionRe
 		SessionID:                cfg.SessionID,
 		AgentConfig:              e.buildEffectiveAgentConfig(cfg),
 		ModelName:                cfg.ModelName,
+		ProviderType:             cfg.ProviderType,
+		ProviderBaseURL:          cfg.ProviderBaseURL,
 		HistoryMessages:          historyMessages,
 		ContextReminderProviders: cfg.ContextReminders,
 		ToolCallRecorder:         cfg.ToolCallRecorder,

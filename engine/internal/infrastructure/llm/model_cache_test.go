@@ -79,7 +79,7 @@ func TestModelCache_Invalidate(t *testing.T) {
 	// Pre-populate cache manually to avoid needing a real LLM server.
 	mockClient := &mockChatModel{id: "cached"}
 	cache.mu.Lock()
-	cache.clients["test-42"] = &cachedModel{client: mockClient, name: "test-model"}
+	cache.clients["test-42"] = &cachedModel{resolved: &ResolvedModel{Client: mockClient, Name: "test-model"}}
 	cache.mu.Unlock()
 
 	// Verify it's cached.
@@ -102,8 +102,8 @@ func TestModelCache_InvalidateAll(t *testing.T) {
 	cache := NewModelCache(nil)
 
 	cache.mu.Lock()
-	cache.clients["1"] = &cachedModel{client: &mockChatModel{id: "a"}, name: "a"}
-	cache.clients["2"] = &cachedModel{client: &mockChatModel{id: "b"}, name: "b"}
+	cache.clients["1"] = &cachedModel{resolved: &ResolvedModel{Client: &mockChatModel{id: "a"}, Name: "a"}}
+	cache.clients["2"] = &cachedModel{resolved: &ResolvedModel{Client: &mockChatModel{id: "b"}, Name: "b"}}
 	cache.mu.Unlock()
 
 	cache.InvalidateAll()
@@ -118,7 +118,7 @@ func TestModelCache_Get_CacheHit(t *testing.T) {
 	mockClient := &mockChatModel{id: "cached-model"}
 
 	cache.mu.Lock()
-	cache.clients["10"] = &cachedModel{client: mockClient, name: "gpt-4"}
+	cache.clients["10"] = &cachedModel{resolved: &ResolvedModel{Client: mockClient, Name: "gpt-4"}}
 	cache.mu.Unlock()
 
 	client, name, err := cache.Get(context.Background(), "10")
@@ -132,7 +132,7 @@ func TestModelCache_ConcurrentAccess(t *testing.T) {
 	mockClient := &mockChatModel{id: "concurrent"}
 
 	cache.mu.Lock()
-	cache.clients["1"] = &cachedModel{client: mockClient, name: "test"}
+	cache.clients["1"] = &cachedModel{resolved: &ResolvedModel{Client: mockClient, Name: "test"}}
 	cache.mu.Unlock()
 
 	var wg sync.WaitGroup

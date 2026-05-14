@@ -394,3 +394,86 @@ func TestSanitizeForSystemPrompt_NewlineRemoval(t *testing.T) {
 		})
 	}
 }
+
+// HITL prompt directive injection.
+
+// TestMessageModifier_AppendsHITLDirective_WhenStructuredOutputPresent asserts
+// the prompt directive is appended to the system message when an agent has
+// show_structured_output in its tool list. This is the prompt-based mitigation
+// for qwen-coder-class models emitting prose alongside the HITL tool_call.
+func TestMessageModifier_AppendsHITLDirective_WhenStructuredOutputPresent(t *testing.T) {
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt: "You are a helpful assistant.",
+		ToolNames:    []string{"show_structured_output", "knowledge_search"},
+	})
+
+	out := m.Modify(context.Background(), []*schema.Message{
+		{Role: schema.User, Content: "hi"},
+	})
+
+	require.NotEmpty(t, out)
+	require.Equal(t, schema.System, out[0].Role, "first message must be system prompt")
+	require.Contains(t, out[0].Content, "When you call `show_structured_output`",
+		"HITL directive must be injected when show_structured_output is in tools")
+	require.Contains(t, out[0].Content, "ONLY the tool call",
+		"directive must instruct model to output only the tool call")
+}
+
+// TestMessageModifier_NoChange_WhenNoHITLTool guards the regression: agents
+// without HITL tools must NOT see the directive. Streaming UX for the 99% of
+// turns that don't involve HITL must be unaffected.
+func TestMessageModifier_NoChange_WhenNoHITLTool(t *testing.T) {
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt: "You are a helpful assistant.",
+		ToolNames:    []string{"manage_tasks", "knowledge_search"},
+	})
+
+	out := m.Modify(context.Background(), []*schema.Message{
+		{Role: schema.User, Content: "hi"},
+	})
+
+	require.NotEmpty(t, out)
+	require.Equal(t, schema.System, out[0].Role)
+	require.NotContains(t, out[0].Content, "When you call `show_structured_output`",
+		"agents without HITL tools must not get the directive")
+	require.NotContains(t, out[0].Content, "ONLY the tool call")
+}
+
+// TestMessageModifier_NoChange_WhenToolNamesEmpty ensures the directive
+// isn't injected for agents with no tools at all (empty toolNames slice).
+func TestMessageModifier_NoChange_WhenToolNamesEmpty(t *testing.T) {
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt: "You are a helpful assistant.",
+		ToolNames:    nil,
+	})
+
+	out := m.Modify(context.Background(), []*schema.Message{
+		{Role: schema.User, Content: "hi"},
+	})
+
+	require.NotEmpty(t, out)
+	require.Equal(t, schema.System, out[0].Role)
+	require.NotContains(t, out[0].Content, "When you call `show_structured_output`")
+}
+
+// TestMessageModifier_HITLDirective_AppearsAfterToolsList ensures ordering:
+// the directive lands after the "Available tools" listing so the model reads
+// the tool whitelist before the HITL constraint that references it.
+func TestMessageModifier_HITLDirective_AppearsAfterToolsList(t *testing.T) {
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt: "Base prompt.",
+		ToolNames:    []string{"show_structured_output"},
+	})
+
+	out := m.Modify(context.Background(), []*schema.Message{
+		{Role: schema.User, Content: "hi"},
+	})
+
+	require.NotEmpty(t, out)
+	sysPrompt := out[0].Content
+	toolsIdx := strings.Index(sysPrompt, "**Available tools:**")
+	directiveIdx := strings.Index(sysPrompt, "When you call `show_structured_output`")
+	require.Greater(t, toolsIdx, -1, "tools listing must be present")
+	require.Greater(t, directiveIdx, toolsIdx,
+		"HITL directive must appear AFTER the tool whitelist so the model sees the whitelist first")
+}

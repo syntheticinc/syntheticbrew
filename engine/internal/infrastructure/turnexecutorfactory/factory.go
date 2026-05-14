@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/cloudwego/eino/components/model"
-
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
 	agentservice "github.com/syntheticinc/bytebrew/engine/internal/service/agent"
@@ -218,8 +216,8 @@ func (f *Factory) CreateForSession(
 	// tenant-configured model when X-BYOK-* headers are present; otherwise
 	// the per-agent DB model is used, falling back to the static
 	// ModelSelector. See V2 §5.8.
-	chatModel, modelName := f.resolveModel(ctx, agentName)
-	if chatModel == nil {
+	resolved := f.resolveModel(ctx, agentName)
+	if resolved == nil || resolved.Client == nil {
 		slog.ErrorContext(context.Background(), "no model available for agent — add a model via Admin Dashboard",
 			"agent", agentName)
 		return nil
@@ -243,15 +241,16 @@ func (f *Factory) CreateForSession(
 		agentUUID = f.agentUUIDResolver.ResolveAgentUUID(ctx, agentName)
 	}
 
-	// Create EngineAdapter (implements TurnExecutor interface)
 	adapter, err := turnexecutor.NewEngineAdapter(turnexecutor.Config{
 		Engine:           f.engine,
 		FlowProvider:     f.flowManager,
 		ToolResolver:     f.toolResolver,
 		ToolDeps:         toolDeps,
-		ChatModel:        chatModel,
+		ChatModel:        resolved.Client,
 		AgentConfig:      f.agentConfig,
-		ModelName:        modelName,
+		ModelName:        resolved.Name,
+		ProviderType:     resolved.ProviderType,
+		ProviderBaseURL:  resolved.BaseURL,
 		AgentName:        agentName,
 		AgentUUID:        agentUUID,
 		SchemaID:         schemaID,
@@ -277,7 +276,7 @@ func (f *Factory) CreateForSession(
 //
 // API key redaction: BYOK paths log only the provider + model + a
 // fingerprinted key (llm.RedactAPIKey) — never the raw secret.
-func (f *Factory) resolveModel(ctx context.Context, agentName string) (model.ToolCallingChatModel, string) {
+func (f *Factory) resolveModel(ctx context.Context, agentName string) *llm.ResolvedModel {
 	if creds := llm.BYOKCredentialsFrom(ctx); creds != nil {
 		client, err := llm.BuildBYOKChatModel(ctx, *creds)
 		if err != nil {
@@ -297,25 +296,33 @@ func (f *Factory) resolveModel(ctx context.Context, agentName string) (model.Too
 				"provider", creds.Provider,
 				"model", modelName,
 				"api_key", llm.RedactAPIKey(creds.APIKey))
-			return client, modelName
+			return &llm.ResolvedModel{
+				Client:       client,
+				Name:         modelName,
+				ProviderType: creds.Provider,
+				BaseURL:      creds.BaseURL,
+			}
 		}
 	}
 
 	if f.modelCache != nil && f.agentResolver != nil {
 		modelID := f.agentResolver.ResolveModelID(ctx, agentName)
 		if modelID != nil {
-			client, name, err := f.modelCache.Get(ctx, *modelID)
+			resolved, err := f.modelCache.Resolve(ctx, *modelID)
 			if err != nil {
 				slog.ErrorContext(context.Background(), "failed to resolve model from cache, falling back to selector",
 					"agent", agentName, "model_id", *modelID, "error", err)
 			} else {
-				return client, name
+				return resolved
 			}
 		}
 	}
 
-	// Fallback: static ModelSelector (legacy config or no per-agent model)
-	return f.modelSelector.Select(agentName), f.modelSelector.ModelName(agentName)
+	// Static ModelSelector fallback — provider type / base URL unknown.
+	return &llm.ResolvedModel{
+		Client: f.modelSelector.Select(agentName),
+		Name:   f.modelSelector.ModelName(agentName),
+	}
 }
 
 // capabilityHintReminder injects capability usage hints into the agent's context.

@@ -7,6 +7,30 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-05-14
+
+### Changed
+- Bumps `appVersion` to **1.1.8** with `openai_compatible` route
+  hardening: transport-level logging of raw 4xx/5xx provider response
+  bodies (operators can read full provider diagnostics from engine
+  logs), outgoing JSON normalisation for bare `{"type":"object"}`
+  schemas (OpenAI no longer 400s on no-arg MCP tools), early
+  engine-side tool-name validation on OpenAI-strict routes (clear
+  `INVALID_INPUT` replaces opaque upstream 400), and HITL halt-point
+  enforcement for `show_structured_output` (prompt directive + react
+  loop halt + content suppression + retract event) so models with
+  weak tool-use boundaries cannot emit fabricated post-confirmation
+  claims.
+- Bumps default `configApply.image.tag` from `0.2.3` to `0.2.4`.
+  brewctl 0.2.4 propagates `agents[].max_turn_duration` and
+  `models[*].extra_body` YAML pass-through.
+
+No DB schema changes, no breaking template / values changes, no DB
+wipe. Drop-in upgrade from chart 0.6.7. Non-OpenAI flows (qwen, glm,
+anthropic-via-OpenRouter, Ollama, Google, vLLM, llama.cpp) see no
+behaviour change — only OpenAI-strict routes (direct OpenAI / Azure
+OpenAI / OpenRouter routing to OpenAI families) are gated.
+
 ## [0.6.7] - 2026-05-13
 
 ### Changed

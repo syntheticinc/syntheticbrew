@@ -237,11 +237,20 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, schemaID string,
 					message += content
 				}
 			}
+		case "assistant_retract":
+			// Drop fabricated prose from a HITL turn. errMsg stays — real
+			// operational failures must reach the client.
+			message = ""
 		case "tool_call":
 			toolName, _ := data["tool"].(string)
 			input, _ := data["content"].(string)
 			lastTool = toolName
 			toolCalls = append(toolCalls, toolCallEntry{Tool: toolName, Input: input})
+			// Belt-and-suspenders: retract on HITL tool_call directly in case
+			// the retract event hasn't arrived yet.
+			if domain.IsHITLTool(toolName) {
+				message = ""
+			}
 		case "tool_result":
 			output, _ := data["content"].(string)
 			for i := len(toolCalls) - 1; i >= 0; i-- {

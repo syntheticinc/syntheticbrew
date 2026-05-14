@@ -27,9 +27,17 @@ type ModelCache struct {
 	db      *gorm.DB
 }
 
+// ResolvedModel is the cached view of a model record — client plus the
+// routing metadata downstream callers use for provider-specific behaviour.
+type ResolvedModel struct {
+	Client       model.ToolCallingChatModel
+	Name         string
+	ProviderType string
+	BaseURL      string
+}
+
 type cachedModel struct {
-	client    model.ToolCallingChatModel
-	name      string
+	resolved  *ResolvedModel
 	createdAt time.Time
 }
 
@@ -41,38 +49,50 @@ func NewModelCache(db *gorm.DB) *ModelCache {
 	}
 }
 
-// Get returns a cached model client or creates one from the database.
-// Returns the client, the model display name, and any error.
+// Get returns a cached model client or creates one. Back-compat shim —
+// new callers should use Resolve.
 func (c *ModelCache) Get(ctx context.Context, modelID string) (model.ToolCallingChatModel, string, error) {
+	resolved, err := c.Resolve(ctx, modelID)
+	if err != nil {
+		return nil, "", err
+	}
+	return resolved.Client, resolved.Name, nil
+}
+
+// Resolve returns the cached client + routing metadata for a model.
+func (c *ModelCache) Resolve(ctx context.Context, modelID string) (*ResolvedModel, error) {
 	c.mu.RLock()
 	if cached, ok := c.clients[modelID]; ok {
 		c.mu.RUnlock()
-		return cached.client, cached.name, nil
+		return cached.resolved, nil
 	}
 	c.mu.RUnlock()
 
 	var dbModel models.LLMProviderModel
 	if err := c.db.WithContext(ctx).First(&dbModel, "id = ?", modelID).Error; err != nil {
-		return nil, "", fmt.Errorf("model ID %s not found: %w", modelID, err)
+		return nil, fmt.Errorf("model ID %s not found: %w", modelID, err)
 	}
 
 	client, err := CreateClientFromDBModel(dbModel)
 	if err != nil {
-		return nil, "", fmt.Errorf("create client for model %q: %w", dbModel.Name, err)
+		return nil, fmt.Errorf("create client for model %q: %w", dbModel.Name, err)
+	}
+
+	resolved := &ResolvedModel{
+		Client:       client,
+		Name:         dbModel.ModelName,
+		ProviderType: dbModel.Type,
+		BaseURL:      dbModel.BaseURL,
 	}
 
 	c.mu.Lock()
-	c.clients[modelID] = &cachedModel{
-		client:    client,
-		name:      dbModel.ModelName,
-		createdAt: time.Now(),
-	}
+	c.clients[modelID] = &cachedModel{resolved: resolved, createdAt: time.Now()}
 	c.mu.Unlock()
 
 	slog.InfoContext(ctx, "model client created and cached",
-		"model_id", modelID, "name", dbModel.Name, "model", dbModel.ModelName)
+		"model_id", modelID, "name", dbModel.Name, "model", dbModel.ModelName, "type", dbModel.Type)
 
-	return client, dbModel.ModelName, nil
+	return resolved, nil
 }
 
 // Invalidate removes a cached model client, forcing re-creation on next access.
@@ -193,12 +213,17 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 			Model:   m.ModelName,
 			APIKey:  m.APIKeyEncrypted,
 		}
-		if extra := m.GetConfig().ExtraBody; len(extra) > 0 {
-			cfg.HTTPClient = &http.Client{Transport: &extraBodyTransport{
-				base:  http.DefaultTransport,
-				extra: extra,
-			}}
+		// Transport chain (innermost → outermost): default → properties
+		// normaliser (OpenAI-strict only) → extra body → response logging.
+		var transport http.RoundTripper = http.DefaultTransport
+		if IsOpenAIStrictRoute(m.Type, m.ModelName, m.BaseURL) {
+			transport = &propertiesNormalizingTransport{base: transport}
 		}
+		if extra := m.GetConfig().ExtraBody; len(extra) > 0 {
+			transport = &extraBodyTransport{base: transport, extra: extra}
+		}
+		transport = &responseLoggingTransport{base: transport}
+		cfg.HTTPClient = &http.Client{Transport: transport}
 		return openai.NewChatModel(ctx, cfg)
 
 	case "azure_openai":

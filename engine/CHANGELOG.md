@@ -1,5 +1,88 @@
 # Changelog
 
+## [1.1.8] — 2026-05-14
+
+Hardening for `openai_compatible` LLM routes — observability on upstream
+errors, schema normalisation, tool-name validation, and HITL halt-point
+enforcement. No DB schema changes, drop-in upgrade from 1.1.7.
+
+### Added
+- **HTTP transport: log raw provider response body on 4xx/5xx**
+  (`internal/infrastructure/llm/response_logging_transport.go`). Wraps the
+  outermost openai/openai_compatible HTTP client; on any non-2xx response,
+  reads up to 16 KiB of the body and logs it at ERROR with `status`,
+  redacted `url`, and a `truncated` flag, then restores the body for
+  downstream parsers. Eino-ext otherwise collapses rich upstream error
+  payloads (e.g. OpenRouter's `error.metadata.raw`) into opaque
+  "Provider returned error" strings; operators can now diagnose
+  schema/payload issues from inside the cluster.
+
+- **HTTP transport: normalize empty `properties` for OpenAI tool schemas**
+  (`internal/infrastructure/llm/properties_normalizing_transport.go`).
+  Walks outgoing `tools[*].function.parameters` JSON; when a schema has
+  `type: object` but no `properties` key, inserts `properties: {}`.
+  OpenAI rejects bare `{"type":"object"}` with 400
+  `object schema missing properties`; other providers tolerate it.
+  Gated on `IsOpenAIStrictRoute` so non-OpenAI flows pay no per-request
+  JSON re-marshal cost.
+
+- **Early validation of tool names for OpenAI-strict routes**
+  (`internal/infrastructure/agents/react/agent.go`). When the resolved
+  route is OpenAI-strict — provider type `openai`, or `openai_compatible`
+  with a base URL on `api.openai.com` / `*.openai.azure.com` or a model
+  slug matching OpenAI families (`openai/`, `azure/`, `gpt-`, `o1`, `o3`,
+  `o4`, `chatgpt-`, `text-davinci-`) — tool names not matching OpenAI's
+  `^[a-zA-Z0-9_-]+$` regex produce a clear `INVALID_INPUT` error naming
+  the offending tool BEFORE any upstream call. Non-OpenAI flows (qwen,
+  glm, anthropic-via-OpenRouter, Ollama, Google, vLLM, llama.cpp) are
+  unaffected and continue to accept the dotted MCP convention
+  (`device.list`, `alarm.definition.create`).
+
+- **`llm.IsOpenAIStrictRoute(providerType, modelName, baseURL)`** —
+  shared route-classification helper used by tool-name validation and
+  the properties-normalising transport gate. Single definition + test
+  matrix (`internal/infrastructure/llm/openai_strict_test.go`) covers
+  direct OpenAI, Azure, OpenRouter routing slugs, bare GPT/o-series
+  names, non-OpenAI flows, and empty inputs.
+
+- **HITL halt-point semantics** for `show_structured_output`:
+  - System-prompt directive injected by `MessageModifier` when an agent
+    has any HITL tool, instructing the model to emit ONLY the tool call.
+  - `tools/structured_output_tool.go` calls `react.SetReturnDirectly`
+    so Eino halts the loop instead of feeding the tool_result back to
+    the LLM. Without this, the model would otherwise produce a
+    follow-up assistant message claiming actions no tool has run.
+  - `callbacks.ModelEventHandler.MarkHITLSeen` / `HITLSeen` track the
+    flag; `FinalizeAccumulatedText` drops accumulated prose on a HITL
+    turn; `Agent.Stream` / `Agent.RunWithCallbacks` skip the final
+    `EventTypeAnswer` event so history is clean.
+  - New `EventTypeRetractAssistant` SSE event so streaming consumers
+    can scrub already-delivered chunks. Non-streaming aggregator in
+    `chat_handler.handleNonStreaming` resets `message` on the event
+    and as a belt-and-suspenders on the HITL tool_call event itself.
+  - Strict-boundary models (Claude, GPT-4) are unaffected — they
+    already emit empty `content` alongside `tool_calls`.
+
+### Changed
+- `internal/infrastructure/llm/model_cache.go` openai/openai_compatible
+  branch builds a layered transport chain:
+  `http.DefaultTransport → propertiesNormalizingTransport (OpenAI-strict
+  routes only) → extraBodyTransport → responseLoggingTransport`. Outermost
+  logging so it observes the final wire response.
+- `internal/infrastructure/llm/model_cache.go` adds `GetWithType` method
+  returning the model's provider type and base URL alongside client+name.
+  `Get` is preserved as a back-compat shim that discards the new fields.
+- `react.AgentConfig` carries `ProviderType` + `ProviderBaseURL`; threaded
+  through `model_cache.GetWithType` → factory → engine adapter →
+  `engine.ExecutionConfig` → `react.AgentConfig`.
+
+### Notes
+- Eino's ReAct manual warns prompt-engineering mitigations should be
+  "verified in actual use" — defense for the HITL path is layered
+  (prompt directive + content suppression + retract event + react-loop
+  halt) so a single layer failing does not unblock fabricated
+  destructive claims.
+
 ## [1.1.7] — 2026-05-13
 
 ### Fixed

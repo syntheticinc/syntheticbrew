@@ -32,11 +32,28 @@ type ModelEventHandler struct {
 	accumulatedMu        sync.Mutex
 	chunksStreamed       bool // true if chunks were sent via chunkCb (avoid duplicate EventTypeAnswer)
 
+	// hitlSeen — true once a HITL tool_call fires; suppresses accumulated text.
+	hitlSeen bool
+
 	// streamWg tracks active streaming goroutines. Agent.Stream() waits on this
 	// before returning, preventing ProcessingStopped from firing before all chunks
 	// are delivered. Used instead of a channel because OnModelEndWithStreamOutput
 	// may be called multiple times during multi-step agent execution.
 	streamWg sync.WaitGroup
+}
+
+// MarkHITLSeen flags this turn as HITL and drops any already-accumulated text.
+func (h *ModelEventHandler) MarkHITLSeen() {
+	h.accumulatedMu.Lock()
+	h.hitlSeen = true
+	h.accumulatedChunks = ""
+	h.accumulatedMu.Unlock()
+}
+
+func (h *ModelEventHandler) HITLSeen() bool {
+	h.accumulatedMu.Lock()
+	defer h.accumulatedMu.Unlock()
+	return h.hitlSeen
 }
 
 // NewModelEventHandler creates a new ModelEventHandler.
@@ -303,11 +320,19 @@ func (h *ModelEventHandler) FinalizeAccumulatedText(ctx context.Context) {
 	h.accumulatedMu.Lock()
 	accumulated := h.accumulatedChunks
 	alreadyStreamed := h.chunksStreamed
+	hitl := h.hitlSeen
 	h.accumulatedChunks = ""
 	h.chunksStreamed = false
 	h.accumulatedMu.Unlock()
 
 	if accumulated == "" {
+		return
+	}
+
+	// Defense-in-depth for HITL turns — drop fabricated prose.
+	if hitl {
+		slog.InfoContext(ctx, "[CALLBACK] suppressing accumulated text on HITL turn",
+			"dropped_length", len(accumulated))
 		return
 	}
 
