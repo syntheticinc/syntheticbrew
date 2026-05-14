@@ -48,6 +48,9 @@ const (
 	EventTypeStructuredOutput AgentEventType = "structured_output" // structured data display (tables, actions)
 	EventTypeStateChanged     AgentEventType = "state_changed"     // Agent lifecycle state transition (AC-STATE-02)
 	EventTypeTokenUsage       AgentEventType = "token_usage"       // Cumulative token usage for the turn (metadata: total_tokens, prompt_tokens, completion_tokens)
+	// Signals the client to drop assistant text already emitted in this turn —
+	// fires when a HITL tool_call lands alongside model-generated prose.
+	EventTypeRetractAssistant AgentEventType = "assistant_retract"
 )
 
 // AgentError represents error information for EventTypeError

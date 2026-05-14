@@ -14,10 +14,16 @@ import (
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents/callbacks"
+	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
 	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 )
+
+// openAIToolNamePattern is the regex OpenAI applies to function tool names.
+const openAIToolNamePattern = `^[a-zA-Z0-9_-]+$`
+
+var openAIToolNameRegex = regexp.MustCompile(openAIToolNamePattern)
 
 // Agent wraps Eino ReAct agent with additional functionality
 type Agent struct {
@@ -72,6 +78,17 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 			info, err := t.Info(ctx)
 			if err == nil && info != nil {
 				toolNames = append(toolNames, info.Name)
+			}
+		}
+
+		// Early-reject tool names that OpenAI's regex would 400 on.
+		if llm.IsOpenAIStrictRoute(config.ProviderType, config.ModelName, config.ProviderBaseURL) {
+			for _, name := range toolNames {
+				if !openAIToolNameRegex.MatchString(name) {
+					return nil, errors.New(errors.CodeInvalidInput,
+						fmt.Sprintf("tool name %q is not OpenAI-compatible (must match %s); rename the tool in its MCP source or attach a non-OpenAI model",
+							name, openAIToolNamePattern))
+				}
 			}
 		}
 
@@ -403,6 +420,13 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 		callbackOpt = cb.BuildCallbackOption()
 	}
 
+	// Drop residual content on HITL turns — the widget is the message.
+	if cb.HITLSeen() && result.Content != "" {
+		slog.InfoContext(ctx, "[RUN] suppressing assistant content on HITL turn",
+			"dropped_length", len(result.Content))
+		result.Content = ""
+	}
+
 	if result.Content != "" {
 		messages = append(messages, &schema.Message{
 			Role:    schema.Assistant,
@@ -600,6 +624,14 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 
 	// Emit cumulative token usage for this turn (consumed by EventStream for the done event)
 	cb.EmitTokenUsage(ctx, a.lastContextTokens())
+
+	// Drop streamed content from history on HITL turns (live chunks may
+	// have already reached the client; history and final-answer event must not).
+	if cb.HITLSeen() && finalContent != "" {
+		slog.InfoContext(ctx, "[STREAM] suppressing assistant content on HITL turn",
+			"dropped_length", len(finalContent))
+		finalContent = ""
+	}
 
 	if finalContent != "" {
 		messages = append(messages, &schema.Message{

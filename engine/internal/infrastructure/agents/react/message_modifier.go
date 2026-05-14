@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/schema"
+	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
 
 // MessageModifier modifies messages before sending to the model
@@ -71,6 +72,12 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 		toolsNote := fmt.Sprintf("\n\n**Available tools:** %s\nOnly use these tools. Do not invent or call tools that are not listed.",
 			strings.Join(m.toolNames, ", "))
 		currentSystemPrompt += toolsNote
+	}
+
+	// Inject the HITL halt-point directive when any HITL tool is available.
+	// Constrains models that emit prose alongside the HITL tool_call.
+	if domain.HasAnyHITLTool(m.toolNames) {
+		currentSystemPrompt += hitlPromptDirective
 	}
 
 	if m.maxSteps > 0 {

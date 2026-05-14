@@ -65,6 +65,8 @@ type EngineAdapter struct {
 	chatModel        model.ToolCallingChatModel
 	agentConfig      *config.AgentConfig
 	modelName        string
+	providerType     string // e.g. "openai", "openai_compatible"
+	providerBaseURL  string
 	agentName        string
 	agentUUID        string // uuid FK → agents.id (for engine execution context)
 	// pass-through deps
@@ -83,6 +85,8 @@ type Config struct {
 	ChatModel        model.ToolCallingChatModel
 	AgentConfig      *config.AgentConfig
 	ModelName        string
+	ProviderType     string // e.g. "openai", "openai_compatible"
+	ProviderBaseURL  string
 	AgentName        string
 	AgentUUID        string // uuid FK → agents.id (for engine execution context)
 	ContextReminders []ContextReminderProvider
@@ -117,6 +121,8 @@ func NewEngineAdapter(cfg Config) (*EngineAdapter, error) {
 		chatModel:        cfg.ChatModel,
 		agentConfig:      cfg.AgentConfig,
 		modelName:        cfg.ModelName,
+		providerType:     cfg.ProviderType,
+		providerBaseURL:  cfg.ProviderBaseURL,
 		agentName:        cfg.AgentName,
 		agentUUID:        cfg.AgentUUID,
 		contextReminders: cfg.ContextReminders,
@@ -195,6 +201,8 @@ func (e *EngineAdapter) ExecuteTurn(
 		ContextReminders:  engineReminders,
 		ToolCallRecorder:  convertToolCallRecorderToEngine(e.toolCallRecorder),
 		ModelName:         e.modelName,
+		ProviderType:      e.providerType,
+		ProviderBaseURL:   e.providerBaseURL,
 		AgentConfig:       e.agentConfig,
 		MessageCompressor: compressor,
 	}

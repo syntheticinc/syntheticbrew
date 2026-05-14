@@ -3,12 +3,16 @@ package react
 import (
 	"context"
 	"encoding/json"
+	goerrors "errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
 	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
 	"github.com/cloudwego/eino/components/model"
+	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -439,5 +443,162 @@ func TestSanitizeToolArguments_NoJSON(t *testing.T) {
 	result := sanitizeToolArguments(input)
 	if result != input {
 		t.Errorf("expected original returned, got %q", result)
+	}
+}
+
+// Fix 2: openai-compatible tool name validation.
+// The strict regex ^[a-zA-Z0-9_-]+$ rejects the dotted MCP convention
+// (device.list). Without this guard the request hits OpenAI and gets an
+// opaque 400; with it, the engine surfaces a clear InvalidInput error
+// naming the offending tool BEFORE any upstream call.
+
+// stubInvokableTool implements tool.InvokableTool with a fixed name. Used to
+// drive NewAgent's name-validation branch without standing up a real tool.
+type stubInvokableTool struct {
+	name string
+}
+
+func (s *stubInvokableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{Name: s.name, Desc: "fix2 validation stub"}, nil
+}
+
+// InvokableRun is unused — validation runs synchronously inside NewAgent before
+// any tool ever executes — but BaseTool casting requires the method to exist.
+func (s *stubInvokableTool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...einotool.Option) (string, error) {
+	return "", nil
+}
+
+func TestNewAgent_Fix2_RejectsDottedToolNameForOpenAI(t *testing.T) {
+	cases := []struct {
+		name         string
+		providerType string
+		modelName    string
+		baseURL      string
+		toolName     string
+	}{
+		// openai provider type — always validate.
+		{"openai (direct) rejects alarm.definition.create", "openai", "gpt-4o-mini", "https://api.openai.com/v1", "alarm.definition.create"},
+		{"openai rejects names with space", "openai", "gpt-4o", "https://api.openai.com/v1", "get issue"},
+		// openai_compatible + OpenAI base URL.
+		{"openai_compatible at api.openai.com rejects device.list", "openai_compatible", "gpt-4o-mini", "https://api.openai.com/v1", "device.list"},
+		{"openai_compatible at azure rejects device.list", "openai_compatible", "any", "https://my.openai.azure.com/v1", "device.list"},
+		// openai_compatible + OpenRouter slug routing to OpenAI.
+		{"openai_compatible + openai/ slug rejects device.list", "openai_compatible", "openai/gpt-4o-mini", "https://openrouter.ai/api/v1", "device.list"},
+		{"openai_compatible + azure/ slug rejects device.list", "openai_compatible", "azure/gpt-4o", "https://openrouter.ai/api/v1", "device.list"},
+		// openai_compatible + bare GPT prefix (operator points compatible driver direct at OpenAI without /v1 slug).
+		{"openai_compatible + bare gpt-4o-mini rejects", "openai_compatible", "gpt-4o-mini", "", "device.list"},
+		{"openai_compatible + bare o1 rejects", "openai_compatible", "o1-preview", "", "device.list"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewAgent(context.Background(), AgentConfig{
+				ChatModel:       llm.NewMockChatModel("answer"),
+				Tools:           []einotool.BaseTool{&stubInvokableTool{name: tc.toolName}},
+				ProviderType:    tc.providerType,
+				ModelName:       tc.modelName,
+				ProviderBaseURL: tc.baseURL,
+			})
+			if err == nil {
+				t.Fatalf("expected validation error for tool %q (provider %q, model %q, baseURL %q), got nil",
+					tc.toolName, tc.providerType, tc.modelName, tc.baseURL)
+			}
+			var domainErr *pkgerrors.DomainError
+			if !goerrors.As(err, &domainErr) || domainErr.Code != pkgerrors.CodeInvalidInput {
+				t.Errorf("error must classify as InvalidInput, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.toolName) {
+				t.Errorf("error must name the offending tool %q, got: %v", tc.toolName, err)
+			}
+		})
+	}
+}
+
+func TestNewAgent_Fix2_AcceptsValidToolNamesForOpenAI(t *testing.T) {
+	cases := []string{"device_list", "device-list", "DeviceList42"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := NewAgent(context.Background(), AgentConfig{
+				ChatModel:       llm.NewMockChatModel("answer"),
+				Tools:           []einotool.BaseTool{&stubInvokableTool{name: name}},
+				ProviderType:    "openai_compatible",
+				ModelName:       "openai/gpt-4o-mini",
+				ProviderBaseURL: "https://openrouter.ai/api/v1",
+			})
+			if err != nil {
+				t.Fatalf("name %q should pass openai validation, got: %v", name, err)
+			}
+		})
+	}
+}
+
+// TestNewAgent_Fix2_AllowsDottedNameWhenModelNotOpenAIRouted guards the key
+// regression: providerType "openai_compatible" with a model NOT routed to
+// OpenAI (qwen, glm, anthropic-via-OpenRouter, vLLM/llama.cpp local) MUST
+// keep accepting dotted MCP tool names. base_url must also not match an
+// OpenAI endpoint.
+func TestNewAgent_Fix2_AllowsDottedNameWhenModelNotOpenAIRouted(t *testing.T) {
+	cases := []struct {
+		name      string
+		modelName string
+		baseURL   string
+	}{
+		{"qwen via OpenRouter", "qwen/qwen3-coder", "https://openrouter.ai/api/v1"},
+		{"glm via OpenRouter", "z-ai/glm-4.7", "https://openrouter.ai/api/v1"},
+		{"anthropic via OpenRouter", "anthropic/claude-haiku-4.5", "https://openrouter.ai/api/v1"},
+		{"deepseek-coder bare", "deepseek-coder", "https://openrouter.ai/api/v1"},
+		{"mistral local", "mistralai/Mixtral-8x7B", "http://vllm.svc:8000/v1"},
+		{"empty all", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewAgent(context.Background(), AgentConfig{
+				ChatModel:       llm.NewMockChatModel("answer"),
+				Tools:           []einotool.BaseTool{&stubInvokableTool{name: "device.list"}},
+				ProviderType:    "openai_compatible",
+				ModelName:       tc.modelName,
+				ProviderBaseURL: tc.baseURL,
+			})
+			if err != nil {
+				t.Fatalf("openai_compatible + model %q + baseURL %q must tolerate dotted MCP tool names, got: %v",
+					tc.modelName, tc.baseURL, err)
+			}
+		})
+	}
+}
+
+func TestNewAgent_Fix2_AllowsDottedToolNameForNonOpenAIProviders(t *testing.T) {
+	cases := []string{"anthropic", "ollama", "google", "azure_openai", ""}
+	for _, provider := range cases {
+		t.Run("provider="+provider, func(t *testing.T) {
+			_, err := NewAgent(context.Background(), AgentConfig{
+				ChatModel:       llm.NewMockChatModel("answer"),
+				Tools:           []einotool.BaseTool{&stubInvokableTool{name: "device.list"}},
+				ProviderType:    provider,
+				ModelName:       "any-model",
+				ProviderBaseURL: "https://example.com/v1",
+			})
+			if err != nil {
+				t.Fatalf("provider %q must tolerate dotted MCP tool names, got: %v", provider, err)
+			}
+		})
+	}
+}
+
+func TestNewAgent_Fix2_RejectsFirstInvalidToolName(t *testing.T) {
+	_, err := NewAgent(context.Background(), AgentConfig{
+		ChatModel: llm.NewMockChatModel("answer"),
+		Tools: []einotool.BaseTool{
+			&stubInvokableTool{name: "ok_tool"},
+			&stubInvokableTool{name: "bad.tool"},
+			&stubInvokableTool{name: "also.bad"},
+		},
+		ProviderType: "openai_compatible",
+		ModelName:    "openai/gpt-4o-mini",
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "bad.tool") {
+		t.Errorf("validation must name the first offending tool, got: %v", err)
 	}
 }

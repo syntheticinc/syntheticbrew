@@ -115,3 +115,8 @@ func (b *AgentCallbackBuilder) EmitTokenUsage(ctx context.Context, contextTokens
 func (b *AgentCallbackBuilder) GetTotalTokens() int {
 	return b.tokenAcc.TotalTokens()
 }
+
+// HITLSeen reports whether a HITL tool fired during this run.
+func (b *AgentCallbackBuilder) HITLSeen() bool {
+	return b.modelHandler.HITLSeen()
+}

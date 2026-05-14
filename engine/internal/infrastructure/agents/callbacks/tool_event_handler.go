@@ -15,6 +15,11 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
+// HITLAware lets the tool handler flag a HITL turn on the model handler.
+type HITLAware interface {
+	MarkHITLSeen()
+}
+
 // ToolCallRecorder defines interface for recording tool calls and results.
 // Consumer-side interface: defined here where it's used.
 type ToolCallRecorder interface {
@@ -58,8 +63,25 @@ func (h *ToolEventHandler) OnToolStart(ctx context.Context, info *callbacks.RunI
 		h.recorder.RecordToolCall(h.sessionID, info.Name)
 	}
 
+	// Mark HITL BEFORE finalizing so the model handler drops accumulated text.
+	isHITL := domain.IsHITLTool(info.Name)
+	if isHITL {
+		if aware, ok := any(h.model).(HITLAware); ok {
+			aware.MarkHITLSeen()
+		}
+	}
+
 	// Finalize any accumulated text BEFORE tool call so it appears in chat history first
 	h.model.FinalizeAccumulatedText(ctx)
+
+	// For HITL tools, emit a retract so SSE clients can scrub already-delivered prose.
+	if isHITL {
+		h.emitter.Emit(ctx, &domain.AgentEvent{
+			Type:      domain.EventTypeRetractAssistant,
+			Timestamp: time.Now(),
+			Step:      currentStep,
+		})
+	}
 
 	// Generate call ID for server-side tools
 	callID := fmt.Sprintf("server-%s-%d", info.Name, currentStep)

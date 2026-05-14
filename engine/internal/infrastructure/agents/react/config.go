@@ -30,4 +30,6 @@ type AgentConfig struct {
 	ParentAgentID            string // parent agent ID (for Code Agents → "supervisor")
 	SubtaskID                string // subtask being executed (for Code Agents)
 	SessionDirName           string // shared session dir name (set by parent to keep all logs together)
+	ProviderType    string // e.g. "openai", "openai_compatible", "anthropic"
+	ProviderBaseURL string // upstream API base URL — paired with ProviderType/ModelName for route detection
 }
