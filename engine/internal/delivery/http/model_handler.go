@@ -23,8 +23,12 @@ type ModelResponse struct {
 	EmbeddingDim int    `json:"embedding_dim,omitempty"` // >0 for embedding models
 	// IsDefault flags the tenant's current default chat model (at most one
 	// per tenant, enforced by a partial unique DB index).
-	IsDefault    bool   `json:"is_default"`
-	CreatedAt    string `json:"created_at"`
+	IsDefault bool `json:"is_default"`
+	// ExtraBody is merged into every LLM request body for openai_compatible
+	// providers. Lets operators pass upstream-specific fields (e.g. OpenRouter
+	// provider routing) without engine code changes.
+	ExtraBody map[string]any `json:"extra_body,omitempty"`
+	CreatedAt string         `json:"created_at"`
 }
 
 // CreateModelRequest is the body for POST /api/v1/models.
@@ -37,11 +41,12 @@ type CreateModelRequest struct {
 	ModelName    string `json:"model_name"`
 	APIKey       string `json:"api_key,omitempty"`
 	APIVersion   string `json:"api_version,omitempty"`
-	EmbeddingDim int    `json:"embedding_dim,omitempty"` // required when kind=embedding
+	EmbeddingDim int `json:"embedding_dim,omitempty"` // required when kind=embedding
 	// IsDefault, when true on a chat model, promotes it to tenant default
 	// (atomic swap). When not set on the first chat model created for a
 	// tenant, the server auto-promotes it (natural bootstrap).
-	IsDefault    bool   `json:"is_default,omitempty"`
+	IsDefault bool           `json:"is_default,omitempty"`
+	ExtraBody map[string]any `json:"extra_body,omitempty"`
 }
 
 // ModelVerifyResult contains the result of model connectivity verification.
@@ -69,7 +74,9 @@ type UpdateModelRequest struct {
 	// IsDefault: pointer so nil = "don't touch". *true = promote this model
 	// to tenant default. *false = rejected (you must promote a replacement
 	// instead; you can't clear the default without picking another).
-	IsDefault    *bool   `json:"is_default,omitempty"`
+	IsDefault *bool `json:"is_default,omitempty"`
+	// ExtraBody: nil preserves existing value; empty map clears it.
+	ExtraBody *map[string]any `json:"extra_body,omitempty"`
 }
 
 // ModelService provides LLM model CRUD operations.

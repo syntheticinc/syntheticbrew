@@ -8,8 +8,16 @@ import (
 // ModelConfig holds type-specific configuration for an LLM provider model.
 // Stored as jsonb in the "config" column. Extensible for future fields
 // (context_window, supports_tools, etc.).
+//
+// ExtraBody is merged verbatim into the JSON request body for each LLM call
+// on openai_compatible providers. Lets operators pass through fields the
+// upstream understands but Eino doesn't model — e.g. OpenRouter's
+// {"provider":{"order":["zai"],"allow_fallbacks":false}} routing override.
+// Keys colliding with engine-set fields (messages, tools, stream, model)
+// are dropped at merge time so the engine's request contract stays intact.
 type ModelConfig struct {
-	EmbeddingDim int `json:"embedding_dim,omitempty"` // >0 for embedding models (e.g. 1536 for text-embedding-3-small)
+	EmbeddingDim int            `json:"embedding_dim,omitempty"` // >0 for embedding models (e.g. 1536 for text-embedding-3-small)
+	ExtraBody    map[string]any `json:"extra_body,omitempty"`
 }
 
 // LLMProviderModel maps to the "models" table (LLM provider configuration).

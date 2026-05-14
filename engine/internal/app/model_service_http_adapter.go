@@ -54,6 +54,7 @@ func (m *modelServiceHTTPAdapter) ListModels(ctx context.Context) ([]deliveryhtt
 			APIVersion:   p.APIVersion,
 			EmbeddingDim: p.EmbeddingDim(),
 			IsDefault:    p.IsDefault,
+			ExtraBody:    p.GetConfig().ExtraBody,
 			CreatedAt:    p.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -96,8 +97,11 @@ func (m *modelServiceHTTPAdapter) CreateModel(ctx context.Context, req deliveryh
 	if kind == "chat" && autoPromoted {
 		provider.IsDefault = true
 	}
-	if req.EmbeddingDim > 0 {
-		provider.SetConfig(models.ModelConfig{EmbeddingDim: req.EmbeddingDim})
+	if req.EmbeddingDim > 0 || len(req.ExtraBody) > 0 {
+		provider.SetConfig(models.ModelConfig{
+			EmbeddingDim: req.EmbeddingDim,
+			ExtraBody:    req.ExtraBody,
+		})
 	}
 
 	if err := m.repo.Create(ctx, provider); err != nil {
@@ -134,6 +138,7 @@ func (m *modelServiceHTTPAdapter) CreateModel(ctx context.Context, req deliveryh
 		APIVersion:   provider.APIVersion,
 		EmbeddingDim: provider.EmbeddingDim(),
 		IsDefault:    provider.IsDefault,
+		ExtraBody:    provider.GetConfig().ExtraBody,
 		CreatedAt:    provider.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
@@ -204,8 +209,14 @@ func (m *modelServiceHTTPAdapter) UpdateModel(ctx context.Context, name string, 
 		// goes through SetDefault to keep the atomic-swap invariant intact.
 		IsDefault:  existing.IsDefault,
 	}
-	if req.EmbeddingDim > 0 {
-		update.SetConfig(models.ModelConfig{EmbeddingDim: req.EmbeddingDim})
+	// PUT semantics: replace config wholesale. Carry over both
+	// EmbeddingDim and ExtraBody from the request — omitted fields clear
+	// (mirrors the rest of the PUT path which replaces, not patches).
+	if req.EmbeddingDim > 0 || len(req.ExtraBody) > 0 {
+		update.SetConfig(models.ModelConfig{
+			EmbeddingDim: req.EmbeddingDim,
+			ExtraBody:    req.ExtraBody,
+		})
 	}
 	// Only update API key if provided (empty means keep existing).
 	if req.APIKey != "" {
@@ -259,6 +270,7 @@ func (m *modelServiceHTTPAdapter) UpdateModel(ctx context.Context, name string, 
 		APIVersion:   req.APIVersion,
 		EmbeddingDim: req.EmbeddingDim,
 		IsDefault:    isDefault,
+		ExtraBody:    req.ExtraBody,
 		CreatedAt:    existing.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
@@ -323,6 +335,11 @@ func (m *modelServiceHTTPAdapter) PatchModel(ctx context.Context, name string, r
 		cfg.EmbeddingDim = *req.EmbeddingDim
 		update.SetConfig(cfg)
 	}
+	if req.ExtraBody != nil {
+		cfg := update.GetConfig()
+		cfg.ExtraBody = *req.ExtraBody
+		update.SetConfig(cfg)
+	}
 
 	// Preserve current IsDefault through the plain Update path — promotion
 	// goes through SetDefault to keep the atomic-swap invariant intact.
@@ -369,6 +386,7 @@ func (m *modelServiceHTTPAdapter) PatchModel(ctx context.Context, name string, r
 		APIVersion:   update.APIVersion,
 		EmbeddingDim: embDim,
 		IsDefault:    isDefault,
+		ExtraBody:    update.GetConfig().ExtraBody,
 		CreatedAt:    existing.CreatedAt.Format(time.RFC3339),
 	}, nil
 }

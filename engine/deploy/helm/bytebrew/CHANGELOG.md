@@ -7,6 +7,21 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-05-13
+
+### Changed
+- Bumps `appVersion` to **1.1.7**: agent endpoints accept UUID-or-name on
+  GET/PUT/PATCH/DELETE (closes external-consumer 404 when using UUIDs from
+  the list response), and `models[*].extra_body` passthrough for
+  `openai_compatible` providers (OpenRouter provider routing, etc.).
+
+No DB schema changes, no breaking template / values changes, no DB wipe.
+Drop-in upgrade from chart 0.6.6. brewctl default tag stays at `0.2.3` —
+brewctl 0.2.4 (with `agents[].max_turn_duration` propagation and
+`models[*].extra_body` YAML pass-through) ships separately; the next chart
+release will bump the default. Operators wanting the new GitOps surface
+before then can set `configApply.image.tag: "0.2.4"` once it's published.
+
 ## [0.6.6] - 2026-05-13
 
 ### Changed
