@@ -5,14 +5,30 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
+
+// authedRequest builds an httptest.Request with the auth ctx values that the
+// session handler ACL pre-check expects: actor type "admin", ScopeAdmin scope
+// bit, and a populated user_sub. Without this, extractSessionACL (added in
+// 1.1.4 ownership hardening) sees an empty actor and the GetSession path
+// short-circuits to 404 even when the mock service has the row.
+func authedRequest(method, path string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, path, body)
+	ctx := req.Context()
+	ctx = context.WithValue(ctx, ContextKeyActorType, "admin")
+	ctx = context.WithValue(ctx, ContextKeyScopes, ScopeAdmin)
+	ctx = domain.WithUserSub(ctx, "admin-test")
+	return req.WithContext(ctx)
+}
 
 type mockSessionService struct {
 	sessions []SessionResponse
@@ -78,10 +94,8 @@ func (m *mockSessionService) DeleteSession(_ context.Context, id string) error {
 	return m.err
 }
 
-func newSessionRouter(handler *SessionHandler) *chi.Mux {
-	r := chi.NewRouter()
-	r.Mount("/sessions", handler.Routes())
-	return r
+func newSessionRouter(handler *SessionHandler) http.Handler {
+	return newSessionTestRouter(handler)
 }
 
 func TestSessionHandler_List(t *testing.T) {
@@ -119,7 +133,7 @@ func TestSessionHandler_List(t *testing.T) {
 			handler := NewSessionHandler(svc)
 			router := newSessionRouter(handler)
 
-			req := httptest.NewRequest(http.MethodGet, "/sessions"+tt.query, nil)
+			req := authedRequest(http.MethodGet, "/api/v1/sessions"+tt.query, nil)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
@@ -138,7 +152,7 @@ func TestSessionHandler_List_Filters(t *testing.T) {
 	handler := NewSessionHandler(svc)
 	router := newSessionRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/sessions?agent_name=sales&user_sub=u1&status=active&page=2&per_page=5", nil)
+	req := authedRequest(http.MethodGet, "/api/v1/sessions?agent_name=sales&user_sub=u1&status=active&page=2&per_page=5", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -177,7 +191,7 @@ func TestSessionHandler_Get(t *testing.T) {
 			handler := NewSessionHandler(svc)
 			router := newSessionRouter(handler)
 
-			req := httptest.NewRequest(http.MethodGet, "/sessions/"+tt.id, nil)
+			req := authedRequest(http.MethodGet, "/api/v1/sessions/"+tt.id, nil)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
@@ -212,7 +226,7 @@ func TestSessionHandler_Create(t *testing.T) {
 			handler := NewSessionHandler(svc)
 			router := newSessionRouter(handler)
 
-			req := httptest.NewRequest(http.MethodPost, "/sessions", bytes.NewBufferString(tt.body))
+			req := authedRequest(http.MethodPost, "/api/v1/sessions", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
@@ -229,13 +243,15 @@ func TestSessionHandler_Create(t *testing.T) {
 }
 
 func TestSessionHandler_Update(t *testing.T) {
-	updated := &SessionResponse{ID: "11111111-1111-1111-1111-111111111111", UserSub: "u1", Title: "New title", Status: "active", CreatedAt: "2026-03-19T10:00:00Z", UpdatedAt: "2026-03-19T10:06:00Z"}
-	svc := &mockSessionService{updated: updated}
+	const id = "11111111-1111-1111-1111-111111111111"
+	existing := &SessionResponse{ID: id, UserSub: "admin-test", Status: "active", CreatedAt: "2026-03-19T10:00:00Z", UpdatedAt: "2026-03-19T10:05:00Z"}
+	updated := &SessionResponse{ID: id, UserSub: "admin-test", Title: "New title", Status: "active", CreatedAt: "2026-03-19T10:00:00Z", UpdatedAt: "2026-03-19T10:06:00Z"}
+	svc := &mockSessionService{session: existing, updated: updated}
 	handler := NewSessionHandler(svc)
 	router := newSessionRouter(handler)
 
 	body := `{"title":"New title"}`
-	req := httptest.NewRequest(http.MethodPut, "/sessions/11111111-1111-1111-1111-111111111111", bytes.NewBufferString(body))
+	req := authedRequest(http.MethodPut, "/api/v1/sessions/"+id, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -247,12 +263,12 @@ func TestSessionHandler_Update(t *testing.T) {
 }
 
 func TestSessionHandler_Update_NotFound(t *testing.T) {
-	svc := &mockSessionService{} // updated is nil
+	svc := &mockSessionService{} // GetSession returns nil → 404 from ACL pre-check
 	handler := NewSessionHandler(svc)
 	router := newSessionRouter(handler)
 
 	body := `{"title":"New title"}`
-	req := httptest.NewRequest(http.MethodPut, "/sessions/99999999-9999-9999-9999-999999999999", bytes.NewBufferString(body))
+	req := authedRequest(http.MethodPut, "/api/v1/sessions/99999999-9999-9999-9999-999999999999", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -261,16 +277,18 @@ func TestSessionHandler_Update_NotFound(t *testing.T) {
 }
 
 func TestSessionHandler_Delete(t *testing.T) {
-	svc := &mockSessionService{}
+	const id = "11111111-1111-1111-1111-111111111111"
+	existing := &SessionResponse{ID: id, UserSub: "admin-test", Status: "active"}
+	svc := &mockSessionService{session: existing}
 	handler := NewSessionHandler(svc)
 	router := newSessionRouter(handler)
 
-	req := httptest.NewRequest(http.MethodDelete, "/sessions/11111111-1111-1111-1111-111111111111", nil)
+	req := authedRequest(http.MethodDelete, "/api/v1/sessions/"+id, nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Equal(t, "11111111-1111-1111-1111-111111111111", svc.lastDeleteID)
+	assert.Equal(t, id, svc.lastDeleteID)
 }
 
 func TestSessionHandler_Delete_Error(t *testing.T) {
@@ -278,7 +296,7 @@ func TestSessionHandler_Delete_Error(t *testing.T) {
 	handler := NewSessionHandler(svc)
 	router := newSessionRouter(handler)
 
-	req := httptest.NewRequest(http.MethodDelete, "/sessions/99999999-9999-9999-9999-999999999999", nil)
+	req := authedRequest(http.MethodDelete, "/api/v1/sessions/99999999-9999-9999-9999-999999999999", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -290,7 +308,7 @@ func TestSessionHandler_List_PerPageCap(t *testing.T) {
 	handler := NewSessionHandler(svc)
 	router := newSessionRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/sessions?per_page=200", nil)
+	req := authedRequest(http.MethodGet, "/api/v1/sessions?per_page=200", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

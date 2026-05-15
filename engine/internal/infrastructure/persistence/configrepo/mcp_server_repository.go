@@ -18,20 +18,44 @@ func NewGORMMCPServerRepository(db *gorm.DB) *GORMMCPServerRepository {
 	return &GORMMCPServerRepository{db: db}
 }
 
-// List returns all MCP server models for the tenant.
+// List returns all MCP server models for the tenant resolved from ctx.
 //
 // V2 Commit Group C (§5.6): runtime status (connection state, tools_count)
 // is no longer persisted — callers that need status must ping the live MCP
 // client registry instead.
+//
+// HTTP callers continue to use this method (tenant flows in via context).
+// Background callers without a request ctx must use ListForTenant — passing
+// an explicit tenantID instead of relying on the CE sentinel fallback.
 func (r *GORMMCPServerRepository) List(ctx context.Context) ([]models.MCPServerModel, error) {
+	return r.ListForTenant(ctx, tenantIDFromCtx(ctx))
+}
+
+// ListForTenant returns all MCP server models for the supplied tenantID.
+// Explicit tenant scoping for background callers (Manager.Init, lazy load,
+// reconnect) so the tenant identity is never inferred from ambient context.
+func (r *GORMMCPServerRepository) ListForTenant(ctx context.Context, tenantID string) ([]models.MCPServerModel, error) {
 	var servers []models.MCPServerModel
 	if err := r.db.WithContext(ctx).
-		Scopes(tenantScope(ctx)).
+		Where("tenant_id = ?", tenantID).
 		Order("name").
 		Find(&servers).Error; err != nil {
-		return nil, fmt.Errorf("list mcp servers: %w", err)
+		return nil, fmt.Errorf("list mcp servers for tenant %s: %w", tenantID, err)
 	}
 	return servers, nil
+}
+
+// GetByName returns a single MCP server model by name within the supplied
+// tenant. Used by Manager.ReconnectServer (этап 1) for per-server reconnect
+// after CRUD without taking a fresh full-tenant List.
+func (r *GORMMCPServerRepository) GetByName(ctx context.Context, tenantID, name string) (*models.MCPServerModel, error) {
+	var server models.MCPServerModel
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND name = ?", tenantID, name).
+		First(&server).Error; err != nil {
+		return nil, fmt.Errorf("get mcp server %s for tenant %s: %w", name, tenantID, err)
+	}
+	return &server, nil
 }
 
 // GetByID returns a single MCP server model by ID (tenant-scoped).

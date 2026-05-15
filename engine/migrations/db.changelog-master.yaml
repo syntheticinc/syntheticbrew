@@ -17,3 +17,6 @@ databaseChangeLog:
   - include:
       file: 006_add_sessions_metadata.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 007_add_mcp_catalog_refresh_interval.yaml
+      relativeToChangelogFile: true

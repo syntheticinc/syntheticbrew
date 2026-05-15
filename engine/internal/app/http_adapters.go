@@ -2,20 +2,19 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"sync/atomic"
 	"time"
 
+	"github.com/cloudwego/eino/components/tool"
 	"gorm.io/gorm"
 
 	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
+	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agentregistry"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/audit"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
 	mcpcatalog "github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
 	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
 )
@@ -148,11 +147,10 @@ func (a *tokenRepoHTTPAdapter) VerifyToken(ctx context.Context, tokenHash string
 
 // configReloaderHTTPAdapter bridges AgentRegistry and MCP reconnection to the http.ConfigReloader interface.
 type configReloaderHTTPAdapter struct {
-	registry            *agentregistry.AgentRegistry
-	mcpRegistry         *mcp.ClientRegistry
-	db                  *gorm.DB
-	forwardHeadersStore *atomic.Value // shared with ChatHandler for dynamic forward header updates
-	transportPolicy     mcpcatalog.TransportPolicy
+	registry        *agentregistry.AgentRegistry
+	mcpManager      *mcp.Manager
+	db              *gorm.DB
+	transportPolicy mcpcatalog.TransportPolicy
 }
 
 func (a *configReloaderHTTPAdapter) Reload(ctx context.Context) error {
@@ -165,27 +163,23 @@ func (a *configReloaderHTTPAdapter) Reload(ctx context.Context) error {
 }
 
 func (a *configReloaderHTTPAdapter) reconnectMCPServers(ctx context.Context) {
-	if a.mcpRegistry == nil || a.db == nil {
+	if a.mcpManager == nil || a.db == nil {
 		return
 	}
 
-	mcpServerRepo := configrepo.NewGORMMCPServerRepository(a.db)
-	mcpServers, err := mcpServerRepo.List(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to load MCP servers for reload", "error", err)
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+
+	if err := a.mcpManager.ReconnectTenant(ctx, tenantID); err != nil {
+		slog.ErrorContext(ctx, "failed to reconnect MCP servers for tenant", "tenant_id", tenantID, "error", err)
 		return
 	}
 
-	a.mcpRegistry.CloseAll()
-	mcpcatalog.ConnectAll(ctx, mcpServers, a.mcpRegistry, a.transportPolicy)
-
-	// Update forward headers so ChatHandler picks up changes immediately
-	if a.forwardHeadersStore != nil {
-		a.forwardHeadersStore.Store(collectForwardHeaders(mcpServers))
-		slog.InfoContext(ctx, "forward headers updated after config reload")
-	}
-
-	slog.InfoContext(ctx, "MCP servers reconnected after config reload", "count", len(mcpServers))
+	// Forward-headers cache is refreshed by Manager.ReconnectTenant inside
+	// the same code path — no extra step needed here.
+	slog.InfoContext(ctx, "MCP servers reconnected after config reload", "tenant_id", tenantID)
 }
 
 func (a *configReloaderHTTPAdapter) AgentsCount() int {
@@ -195,28 +189,28 @@ func (a *configReloaderHTTPAdapter) AgentsCount() int {
 	return a.registry.Count()
 }
 
-// collectForwardHeaders returns the deduplicated union of forward_headers
-// configured across all MCP servers.
-func collectForwardHeaders(mcpServers []models.MCPServerModel) []string {
-	seen := make(map[string]bool)
-	var headers []string
-	for _, srv := range mcpServers {
-		if srv.ForwardHeaders == nil || *srv.ForwardHeaders == "" {
-			continue
-		}
-		var fh []string
-		if err := json.Unmarshal([]byte(*srv.ForwardHeaders), &fh); err != nil {
-			continue
-		}
-		for _, h := range fh {
-			if !seen[h] {
-				seen[h] = true
-				headers = append(headers, h)
-			}
-		}
-	}
-	return headers
+// mcpProviderAdapter wraps *mcp.Manager so AgentToolResolver sees a tenant-aware
+// MCPClientProvider. The adapter routes the per-request ctx (tenant_id baked
+// in by middleware) to the matching ClientRegistry; CE single-tenant mode
+// always returns the singleton.
+type mcpProviderAdapter struct {
+	manager *mcp.Manager
 }
+
+func newMCPProviderAdapter(m *mcp.Manager) *mcpProviderAdapter {
+	return &mcpProviderAdapter{manager: m}
+}
+
+func (a *mcpProviderAdapter) GetMCPTools(ctx context.Context, name string) ([]tool.InvokableTool, error) {
+	registry, err := a.manager.GetForContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return registry.GetMCPTools(name)
+}
+
+// collectForwardHeaders moved to mcp.CollectForwardHeaders so the Manager
+// can refresh per-tenant forward-header lists without an import cycle.
 
 // configImportExportHTTPAdapter and its YAML types live in config_import_export_http_adapter.go.
 

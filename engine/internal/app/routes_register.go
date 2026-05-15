@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -40,8 +39,7 @@ type routesDeps struct {
 	KnowledgeRepo        *configrepo.GORMKnowledgeRepository
 	KnowledgeIndexer     *knowledge.Indexer
 	EmbeddingsClient     *indexing.EmbeddingsClient
-	MCPRegistry          *mcp.ClientRegistry
-	ForwardHeadersStore  *atomic.Value
+	MCPManager           *mcp.Manager
 	CBRegistry           *resilience.CircuitBreakerRegistry
 	LifecycleManager     *lifecycle.Manager
 	LifecycleDispatcher  *lifecycle.Dispatcher
@@ -80,8 +78,7 @@ func registerHTTPRoutes(deps routesDeps) {
 	apiTokenRepo := deps.APITokenRepo
 	knowledgeRepo := deps.KnowledgeRepo
 	knowledgeIndexer := deps.KnowledgeIndexer
-	mcpRegistry := deps.MCPRegistry
-	forwardHeadersStore := deps.ForwardHeadersStore
+	mcpManager := deps.MCPManager
 	cbRegistry := deps.CBRegistry
 	lifecycleManager := deps.LifecycleManager
 	lifecycleDispatcher := deps.LifecycleDispatcher
@@ -231,7 +228,7 @@ func registerHTTPRoutes(deps routesDeps) {
 
 		// Config
 		configHandler := deliveryhttp.NewConfigHandler(
-			&configReloaderHTTPAdapter{registry: agentRegistry, mcpRegistry: mcpRegistry, db: pgDB, forwardHeadersStore: forwardHeadersStore, transportPolicy: transportPolicy},
+			&configReloaderHTTPAdapter{registry: agentRegistry, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
 			&configImportExportHTTPAdapter{db: pgDB},
 		)
 		r.Group(func(r chi.Router) {
@@ -328,7 +325,7 @@ func registerHTTPRoutes(deps routesDeps) {
 
 		// MCP Servers
 		mcpServerRepo := configrepo.NewGORMMCPServerRepository(pgDB)
-		mcpHandler := deliveryhttp.NewMCPHandler(&mcpServiceHTTPAdapter{repo: mcpServerRepo}, transportPolicy)
+		mcpHandler := deliveryhttp.NewMCPHandler(&mcpServiceHTTPAdapter{repo: mcpServerRepo, mcpManager: mcpManager}, transportPolicy)
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeMCPRead))
 			r.Get("/api/v1/mcp-servers", mcpHandler.List)
@@ -339,6 +336,7 @@ func registerHTTPRoutes(deps routesDeps) {
 			r.Put("/api/v1/mcp-servers/{name}", mcpHandler.Update)
 			r.Patch("/api/v1/mcp-servers/{name}", mcpHandler.Patch)
 			r.Delete("/api/v1/mcp-servers/{name}", mcpHandler.Delete)
+			r.Post("/api/v1/mcp-servers/{name}/refresh", mcpHandler.Refresh)
 		})
 
 		// Schemas (with agent_relations). Chat access on a schema is

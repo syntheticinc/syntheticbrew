@@ -50,17 +50,18 @@ type ChatService interface {
 type ChatHandler struct {
 	service          ChatService
 	schemas          SchemaNameResolver
-	forwardHeadersFn func() []string // dynamic — returns current forward headers
+	forwardHeadersFn func(context.Context) []string // dynamic, ctx-scoped — returns current forward headers for the request's tenant
 }
 
 // NewChatHandler creates a new ChatHandler.
 //
 // schemas is the tenant-scoped name → UUID resolver — required to translate
 // the URL `{name}` segment into the canonical schema UUID consumed by the
-// chat dispatcher. forwardHeadersFn returns the current union of all
-// forward_headers across MCP server configs (called per request so that
-// config reloads take effect immediately).
-func NewChatHandler(service ChatService, schemas SchemaNameResolver, forwardHeadersFn func() []string) *ChatHandler {
+// chat dispatcher. forwardHeadersFn receives the request context (which
+// carries tenant_id stamped by auth middleware) and returns that tenant's
+// current union of forward_headers across MCP server configs. Called per
+// request so config reloads / CRUD-driven refreshes take effect immediately.
+func NewChatHandler(service ChatService, schemas SchemaNameResolver, forwardHeadersFn func(context.Context) []string) *ChatHandler {
 	return &ChatHandler{service: service, schemas: schemas, forwardHeadersFn: forwardHeadersFn}
 }
 
@@ -290,7 +291,7 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, schemaID string,
 // and stores them in a domain.RequestContext within the request's Go context.
 func (h *ChatHandler) buildRequestContext(r *http.Request) context.Context {
 	ctx := r.Context()
-	forwardHeaders := h.forwardHeadersFn()
+	forwardHeaders := h.forwardHeadersFn(ctx)
 	if len(forwardHeaders) == 0 {
 		return ctx
 	}

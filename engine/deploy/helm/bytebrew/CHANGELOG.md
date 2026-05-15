@@ -7,6 +7,27 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-05-15
+
+### Changed
+- Bumps `appVersion` to **1.1.9** with multi-tenant correctness for the
+  MCP subsystem: `MCP ClientRegistry` becomes per-tenant via
+  `mcp.Manager`, `forward_headers` store is per-tenant, MCP server CRUD
+  auto-reconnects the affected client (no more "Save not applied" via
+  Admin SPA), and an optional per-server
+  `catalog_refresh_interval_seconds` (30..86400) drives periodic
+  `tools/list` refresh so downstream MCP rollouts (renamed/added tools,
+  description changes) propagate without `kubectl rollout restart`.
+
+### Database
+- Engine 1.1.9 ships changeset **007_add_mcp_catalog_refresh_interval**
+  (nullable `INTEGER` column on `mcp_servers` + `chk_mcp_refresh_range`
+  CHECK 30..86400). Additive — pre-existing rows default to NULL (no
+  background refresh). No backfill, no DB wipe.
+
+Drop-in upgrade from chart 0.6.8. No breaking template / values
+changes.
+
 ## [0.6.8] - 2026-05-14
 
 ### Changed

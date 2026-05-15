@@ -124,34 +124,6 @@ func NewSchemaHandler(schemas SchemaService, agentRelations AgentRelationService
 	return &SchemaHandler{schemas: schemas, agentRelations: agentRelations, resolver: resolver}
 }
 
-// Routes returns a chi router with all schema and agent-relation endpoints.
-func (h *SchemaHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-
-	// Schema CRUD
-	r.Get("/", h.ListSchemas)
-	r.Post("/", h.CreateSchema)
-	r.Get("/{name}", h.GetSchema)
-	r.Put("/{name}", h.UpdateSchema)
-	r.Patch("/{name}", h.PatchSchema)
-	r.Delete("/{name}", h.DeleteSchema)
-
-	// Schema-Agent membership (read-only — derived from agent_relations).
-	// Mutation is done via the agent-relations endpoints below
-	// (docs/architecture/agent-first-runtime.md §2.1).
-	r.Get("/{name}/agents", h.ListSchemaAgents)
-
-	// Agent relations (per-schema). relationId remains UUID — internal
-	// FK to agent_relations.id, never operator-facing.
-	r.Get("/{name}/agent-relations", h.ListAgentRelations)
-	r.Post("/{name}/agent-relations", h.CreateAgentRelation)
-	r.Get("/{name}/agent-relations/{relationId}", h.GetAgentRelation)
-	r.Put("/{name}/agent-relations/{relationId}", h.UpdateAgentRelation)
-	r.Delete("/{name}/agent-relations/{relationId}", h.DeleteAgentRelation)
-
-	return r
-}
-
 // resolveSchemaName translates the `{name}` URL param into a tenant-scoped
 // UUID. On any error it writes the appropriate HTTP response and returns
 // ("", false); callers must not write further output when ok == false.

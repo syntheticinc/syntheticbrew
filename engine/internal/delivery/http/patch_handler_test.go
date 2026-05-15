@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,9 +52,7 @@ func (m *mockAgentManager) DeleteAgent(ctx context.Context, name string) error {
 }
 
 func newAgentManagerRouter(mgr *mockAgentManager) http.Handler {
-	r := chi.NewRouter()
-	r.Mount("/agents", NewAgentHandlerWithManager(mgr).Routes())
-	return r
+	return newAgentTestRouter(NewAgentHandlerWithManager(mgr))
 }
 
 // TestAgentHandler_Patch_PreservesUnspecifiedFields verifies BUG-MT-03 regression:
@@ -78,7 +75,7 @@ func TestAgentHandler_Patch_PreservesUnspecifiedFields(t *testing.T) {
 	body, _ := json.Marshal(UpdateAgentRequest{SystemPrompt: &prompt})
 
 	r := newAgentManagerRouter(mgr)
-	req := httptest.NewRequest(http.MethodPatch, "/agents/my-agent", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/my-agent", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -106,7 +103,7 @@ func TestAgentHandler_Put_MissingSystemPrompt_Returns400(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"tools": []string{"search"},
 	})
-	req := httptest.NewRequest(http.MethodPut, "/agents/my-agent", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/my-agent", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -127,7 +124,7 @@ func TestAgentHandler_Put_WithSystemPrompt_Succeeds(t *testing.T) {
 		Name:         "my-agent",
 		SystemPrompt: "You are helpful",
 	})
-	req := httptest.NewRequest(http.MethodPut, "/agents/my-agent", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/my-agent", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -149,7 +146,7 @@ func TestAgentHandler_Patch_NullFieldVsMissingField(t *testing.T) {
 
 	// Send explicit null for tools — means "clear tools".
 	body := []byte(`{"tools": null}`)
-	req := httptest.NewRequest(http.MethodPatch, "/agents/my-agent", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/my-agent", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -167,9 +164,7 @@ func TestAgentHandler_Patch_NullFieldVsMissingField(t *testing.T) {
 // ---- Model PATCH / PUT strict tests ----
 
 func newModelRouter(svc ModelService) http.Handler {
-	r := chi.NewRouter()
-	r.Mount("/api/v1/models", NewModelHandler(svc).Routes())
-	return r
+	return newModelTestRouter(NewModelHandler(svc))
 }
 
 // mockModelServiceWithPatch extends stubModelService to add PatchModel.
@@ -269,9 +264,7 @@ func (s *stubMCPServiceWithPatch) PatchMCPServer(ctx context.Context, name strin
 }
 
 func newMCPTestRouterWithPatch(svc *stubMCPServiceWithPatch) http.Handler {
-	r := chi.NewRouter()
-	r.Mount("/", NewMCPHandler(svc, policyFromEnv()).Routes())
-	return r
+	return newMCPTestRouterFull(NewMCPHandler(svc, policyFromEnv()))
 }
 
 func TestMCPHandler_Put_MissingType_Returns400(t *testing.T) {
@@ -282,7 +275,7 @@ func TestMCPHandler_Put_MissingType_Returns400(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"command": "/bin/echo",
 	})
-	req := httptest.NewRequest(http.MethodPut, "/my-server", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/mcp-servers/my-server", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -306,7 +299,7 @@ func TestMCPHandler_Patch_PreservesUnspecifiedFields(t *testing.T) {
 
 	newURL := "https://example.com/mcp"
 	body, _ := json.Marshal(UpdateMCPServerRequest{URL: &newURL})
-	req := httptest.NewRequest(http.MethodPatch, "/my-server", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/mcp-servers/my-server", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -325,7 +318,7 @@ func TestMCPHandler_Patch_Cloud_BlocksStdioType(t *testing.T) {
 
 	stdioType := "stdio"
 	body, _ := json.Marshal(UpdateMCPServerRequest{Type: &stdioType})
-	req := httptest.NewRequest(http.MethodPatch, "/my-server", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/mcp-servers/my-server", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -398,9 +391,7 @@ func newSchemaRouter(svc SchemaService) http.Handler {
 		},
 	}
 	h := NewSchemaHandler(svc, &mockAgentRelationServiceNoop{}, resolver)
-	r := chi.NewRouter()
-	r.Mount("/schemas", h.Routes())
-	return r
+	return newSchemaTestRouter(h)
 }
 
 func TestSchemaHandler_Put_MissingName_Returns400(t *testing.T) {
@@ -411,7 +402,7 @@ func TestSchemaHandler_Put_MissingName_Returns400(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"chat_enabled": true,
 	})
-	req := httptest.NewRequest(http.MethodPut, "/schemas/some-uuid", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/schemas/some-uuid", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -434,7 +425,7 @@ func TestSchemaHandler_Patch_WithoutName_Succeeds(t *testing.T) {
 
 	chatEnabled := true
 	body, _ := json.Marshal(UpdateSchemaRequest{ChatEnabled: &chatEnabled})
-	req := httptest.NewRequest(http.MethodPatch, "/schemas/some-uuid", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/schemas/some-uuid", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -453,7 +444,7 @@ func TestSchemaHandler_Put_NameMatchesURL_Succeeds(t *testing.T) {
 	// Name in body equals URL segment — no rename, just an idempotent PUT.
 	name := "my-schema"
 	body, _ := json.Marshal(UpdateSchemaRequest{Name: &name})
-	req := httptest.NewRequest(http.MethodPut, "/schemas/my-schema", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/schemas/my-schema", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -469,7 +460,7 @@ func TestSchemaHandler_Put_RenameAttempt_Returns409(t *testing.T) {
 	// immutable post-create. Must reject with 409 Conflict.
 	newName := "renamed-schema"
 	body, _ := json.Marshal(UpdateSchemaRequest{Name: &newName})
-	req := httptest.NewRequest(http.MethodPut, "/schemas/my-schema", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/schemas/my-schema", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

@@ -44,7 +44,7 @@ func (f *fakeChatService) Chat(ctx context.Context, schemaID, _, userSub, _ stri
 }
 
 // fakeForwardHeaders returns no header forwarding — focus is BYOK only.
-func fakeForwardHeaders() []string { return nil }
+func fakeForwardHeaders(_ context.Context) []string { return nil }
 
 // testSchemaID is the canonical UUID the test resolver returns when handed
 // the test schema name. The chat service mock asserts this same value to

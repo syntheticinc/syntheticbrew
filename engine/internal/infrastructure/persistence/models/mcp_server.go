@@ -25,8 +25,12 @@ type MCPServerModel struct {
 	AuthClientID   string    `gorm:"type:varchar(255)"`                      // oauth2 client ID
 	Enabled        bool      `gorm:"not null;default:true"`                  // false suppresses tool registration without deletion
 	TenantID       string    `gorm:"type:uuid;not null;default:'00000000-0000-0000-0000-000000000001'" json:"tenant_id"`
-	CreatedAt      time.Time `gorm:"autoCreateTime"`
-	UpdatedAt      time.Time `gorm:"autoUpdateTime"`
+	// CatalogRefreshIntervalSeconds enables periodic tools/list refresh per server.
+	// NULL (default) disables refresh; allowed range 30..86400 enforced by DB CHECK
+	// chk_mcp_refresh_range and dual-validated at the API layer. Engine 1.1.9.
+	CatalogRefreshIntervalSeconds *int      `gorm:"column:catalog_refresh_interval_seconds"`
+	CreatedAt                     time.Time `gorm:"autoCreateTime"`
+	UpdatedAt                     time.Time `gorm:"autoUpdateTime"`
 }
 
 func (MCPServerModel) TableName() string { return "mcp_servers" }

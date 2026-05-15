@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
@@ -21,8 +23,50 @@ import (
 )
 
 // mcpServiceHTTPAdapter bridges GORMMCPServerRepository to the http.MCPService interface.
+//
+// mcpManager is invoked AFTER successful Create/Update/Patch/Delete to keep
+// the runtime catalog in sync with the DB without a manual /config/reload.
+// Per-server granularity (PATCH chirp-tools never touches slack-bot of the
+// same tenant), tenant-scoped (tenant A's CRUD never affects tenant B). When
+// nil (legacy boot path) auto-reconnect is silently skipped — runtime catches
+// up at next /config/reload or restart.
 type mcpServiceHTTPAdapter struct {
-	repo *configrepo.GORMMCPServerRepository
+	repo       *configrepo.GORMMCPServerRepository
+	mcpManager *mcp.Manager
+}
+
+// reconnectAfterCRUD is the post-write hook for Create/Update/Patch. Failure
+// is logged at warn level — we never fail the CRUD response because the DB
+// has already committed and is the source of truth; the client catches up
+// at the next reload or restart.
+func (a *mcpServiceHTTPAdapter) reconnectAfterCRUD(ctx context.Context, name string) {
+	if a.mcpManager == nil {
+		return
+	}
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+	if err := a.mcpManager.ReconnectServer(ctx, tenantID, name); err != nil {
+		slog.WarnContext(ctx, "mcp auto-reconnect after CRUD failed",
+			"name", name, "tenant_id", tenantID, "error", err)
+	}
+}
+
+// disconnectAfterDelete is the post-write hook for Delete. Same fail-soft
+// rationale as reconnectAfterCRUD — DB is source of truth.
+func (a *mcpServiceHTTPAdapter) disconnectAfterDelete(ctx context.Context, name string) {
+	if a.mcpManager == nil {
+		return
+	}
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+	if err := a.mcpManager.DisconnectServer(ctx, tenantID, name); err != nil {
+		slog.WarnContext(ctx, "mcp auto-disconnect after DELETE failed",
+			"name", name, "tenant_id", tenantID, "error", err)
+	}
 }
 
 func (a *mcpServiceHTTPAdapter) ListMCPServers(ctx context.Context) ([]deliveryhttp.MCPServerResponse, error) {
@@ -48,16 +92,17 @@ func (a *mcpServiceHTTPAdapter) ListMCPServers(ctx context.Context) ([]deliveryh
 			agents = []string{}
 		}
 		resp := deliveryhttp.MCPServerResponse{
-			ID:           s.ID,
-			Name:         s.Name,
-			Type:         s.Type,
-			Command:      s.Command,
-			URL:          s.URL,
-			AuthType:     s.AuthType,
-			AuthKeyEnv:   s.AuthKeyEnv,
-			AuthTokenEnv: s.AuthTokenEnv,
-			AuthClientID: s.AuthClientID,
-			Agents:       agents,
+			ID:                            s.ID,
+			Name:                          s.Name,
+			Type:                          s.Type,
+			Command:                       s.Command,
+			URL:                           s.URL,
+			AuthType:                      s.AuthType,
+			AuthKeyEnv:                    s.AuthKeyEnv,
+			AuthTokenEnv:                  s.AuthTokenEnv,
+			AuthClientID:                  s.AuthClientID,
+			CatalogRefreshIntervalSeconds: s.CatalogRefreshIntervalSeconds,
+			Agents:                        agents,
 		}
 		if s.Args != nil && *s.Args != "" {
 			_ = json.Unmarshal([]byte(*s.Args), &resp.Args)
@@ -77,14 +122,15 @@ func (a *mcpServiceHTTPAdapter) ListMCPServers(ctx context.Context) ([]deliveryh
 
 func (a *mcpServiceHTTPAdapter) CreateMCPServer(ctx context.Context, req deliveryhttp.CreateMCPServerRequest) (*deliveryhttp.MCPServerResponse, error) {
 	model := &models.MCPServerModel{
-		Name:         req.Name,
-		Type:         req.Type,
-		Command:      req.Command,
-		URL:          req.URL,
-		AuthType:     req.AuthType,
-		AuthKeyEnv:   req.AuthKeyEnv,
-		AuthTokenEnv: req.AuthTokenEnv,
-		AuthClientID: req.AuthClientID,
+		Name:                          req.Name,
+		Type:                          req.Type,
+		Command:                       req.Command,
+		URL:                           req.URL,
+		AuthType:                      req.AuthType,
+		AuthKeyEnv:                    req.AuthKeyEnv,
+		AuthTokenEnv:                  req.AuthTokenEnv,
+		AuthClientID:                  req.AuthClientID,
+		CatalogRefreshIntervalSeconds: req.CatalogRefreshIntervalSeconds,
 	}
 	if len(req.Args) > 0 {
 		data, _ := json.Marshal(req.Args)
@@ -107,20 +153,22 @@ func (a *mcpServiceHTTPAdapter) CreateMCPServer(ctx context.Context, req deliver
 		}
 		return nil, err
 	}
+	a.reconnectAfterCRUD(ctx, model.Name)
 	return &deliveryhttp.MCPServerResponse{
-		ID:             model.ID,
-		Name:           model.Name,
-		Type:           model.Type,
-		Command:        model.Command,
-		URL:            model.URL,
-		AuthType:       model.AuthType,
-		AuthKeyEnv:     model.AuthKeyEnv,
-		AuthTokenEnv:   model.AuthTokenEnv,
-		AuthClientID:   model.AuthClientID,
-		Args:           req.Args,
-		EnvVars:        req.EnvVars,
-		ForwardHeaders: req.ForwardHeaders,
-		Agents:         []string{},
+		ID:                            model.ID,
+		Name:                          model.Name,
+		Type:                          model.Type,
+		Command:                       model.Command,
+		URL:                           model.URL,
+		AuthType:                      model.AuthType,
+		AuthKeyEnv:                    model.AuthKeyEnv,
+		AuthTokenEnv:                  model.AuthTokenEnv,
+		AuthClientID:                  model.AuthClientID,
+		CatalogRefreshIntervalSeconds: model.CatalogRefreshIntervalSeconds,
+		Args:                          req.Args,
+		EnvVars:                       req.EnvVars,
+		ForwardHeaders:                req.ForwardHeaders,
+		Agents:                        []string{},
 	}, nil
 }
 
@@ -141,14 +189,15 @@ func (a *mcpServiceHTTPAdapter) UpdateMCPServer(ctx context.Context, name string
 	}
 
 	model := &models.MCPServerModel{
-		Name:         req.Name,
-		Type:         req.Type,
-		Command:      req.Command,
-		URL:          req.URL,
-		AuthType:     req.AuthType,
-		AuthKeyEnv:   req.AuthKeyEnv,
-		AuthTokenEnv: req.AuthTokenEnv,
-		AuthClientID: req.AuthClientID,
+		Name:                          req.Name,
+		Type:                          req.Type,
+		Command:                       req.Command,
+		URL:                           req.URL,
+		AuthType:                      req.AuthType,
+		AuthKeyEnv:                    req.AuthKeyEnv,
+		AuthTokenEnv:                  req.AuthTokenEnv,
+		AuthClientID:                  req.AuthClientID,
+		CatalogRefreshIntervalSeconds: req.CatalogRefreshIntervalSeconds,
 	}
 	if len(req.Args) > 0 {
 		data, _ := json.Marshal(req.Args)
@@ -168,6 +217,16 @@ func (a *mcpServiceHTTPAdapter) UpdateMCPServer(ctx context.Context, name string
 	if err := a.repo.Update(ctx, targetID, model); err != nil {
 		return nil, err
 	}
+	// finalName covers PUT-driven rename: if the body changed Name, the new
+	// row is now keyed by req.Name. The old name (URL path arg) no longer
+	// exists in the registry — Reconnect on the new name dials fresh, the
+	// stale entry under the old name is closed by Manager.ReconnectTenant
+	// at next /reload (acceptable: PUT semantics rarely rename in practice).
+	finalName := model.Name
+	if finalName == "" {
+		finalName = name
+	}
+	a.reconnectAfterCRUD(ctx, finalName)
 
 	updated, err := a.repo.List(ctx)
 	if err != nil {
@@ -183,16 +242,17 @@ func (a *mcpServiceHTTPAdapter) UpdateMCPServer(ctx context.Context, name string
 				agents = []string{}
 			}
 			resp := &deliveryhttp.MCPServerResponse{
-				ID:           s.ID,
-				Name:         s.Name,
-				Type:         s.Type,
-				Command:      s.Command,
-				URL:          s.URL,
-				AuthType:     s.AuthType,
-				AuthKeyEnv:   s.AuthKeyEnv,
-				AuthTokenEnv: s.AuthTokenEnv,
-				AuthClientID: s.AuthClientID,
-				Agents:       agents,
+				ID:                            s.ID,
+				Name:                          s.Name,
+				Type:                          s.Type,
+				Command:                       s.Command,
+				URL:                           s.URL,
+				AuthType:                      s.AuthType,
+				AuthKeyEnv:                    s.AuthKeyEnv,
+				AuthTokenEnv:                  s.AuthTokenEnv,
+				AuthClientID:                  s.AuthClientID,
+				CatalogRefreshIntervalSeconds: s.CatalogRefreshIntervalSeconds,
+				Agents:                        agents,
 			}
 			if s.Args != nil && *s.Args != "" {
 				_ = json.Unmarshal([]byte(*s.Args), &resp.Args)
@@ -229,17 +289,18 @@ func (a *mcpServiceHTTPAdapter) PatchMCPServer(ctx context.Context, name string,
 
 	// Build update struct starting from existing values.
 	update := &models.MCPServerModel{
-		Name:         existing.Name,
-		Type:         existing.Type,
-		Command:      existing.Command,
-		URL:          existing.URL,
-		AuthType:     existing.AuthType,
-		AuthKeyEnv:   existing.AuthKeyEnv,
-		AuthTokenEnv: existing.AuthTokenEnv,
-		AuthClientID: existing.AuthClientID,
-		Args:         existing.Args,
-		EnvVars:      existing.EnvVars,
-		ForwardHeaders: existing.ForwardHeaders,
+		Name:                          existing.Name,
+		Type:                          existing.Type,
+		Command:                       existing.Command,
+		URL:                           existing.URL,
+		AuthType:                      existing.AuthType,
+		AuthKeyEnv:                    existing.AuthKeyEnv,
+		AuthTokenEnv:                  existing.AuthTokenEnv,
+		AuthClientID:                  existing.AuthClientID,
+		Args:                          existing.Args,
+		EnvVars:                       existing.EnvVars,
+		ForwardHeaders:                existing.ForwardHeaders,
+		CatalogRefreshIntervalSeconds: existing.CatalogRefreshIntervalSeconds,
 	}
 
 	// Apply non-nil fields.
@@ -282,10 +343,19 @@ func (a *mcpServiceHTTPAdapter) PatchMCPServer(ctx context.Context, name string,
 		s := string(data)
 		update.ForwardHeaders = &s
 	}
+	if req.CatalogRefreshIntervalSeconds != nil {
+		// Non-nil means "set to this int". Sending NULL clear-out via PATCH
+		// is not supported in this surface — clearing requires PUT.
+		v := *req.CatalogRefreshIntervalSeconds
+		update.CatalogRefreshIntervalSeconds = &v
+	}
 
 	if err := a.repo.Update(ctx, existing.ID, update); err != nil {
 		return nil, err
 	}
+	// update.Name reflects PATCH-driven rename (defaults to existing.Name when
+	// req.Name is nil). Reconnect always uses the post-patch name.
+	a.reconnectAfterCRUD(ctx, update.Name)
 
 	agents, err := a.repo.GetAgentNamesForServer(ctx, existing.ID)
 	if err != nil {
@@ -295,16 +365,17 @@ func (a *mcpServiceHTTPAdapter) PatchMCPServer(ctx context.Context, name string,
 		agents = []string{}
 	}
 	resp := &deliveryhttp.MCPServerResponse{
-		ID:           existing.ID,
-		Name:         update.Name,
-		Type:         update.Type,
-		Command:      update.Command,
-		URL:          update.URL,
-		AuthType:     update.AuthType,
-		AuthKeyEnv:   update.AuthKeyEnv,
-		AuthTokenEnv: update.AuthTokenEnv,
-		AuthClientID: update.AuthClientID,
-		Agents:       agents,
+		ID:                            existing.ID,
+		Name:                          update.Name,
+		Type:                          update.Type,
+		Command:                       update.Command,
+		URL:                           update.URL,
+		AuthType:                      update.AuthType,
+		AuthKeyEnv:                    update.AuthKeyEnv,
+		AuthTokenEnv:                  update.AuthTokenEnv,
+		AuthClientID:                  update.AuthClientID,
+		CatalogRefreshIntervalSeconds: update.CatalogRefreshIntervalSeconds,
+		Agents:                        agents,
 	}
 	if update.Args != nil && *update.Args != "" {
 		_ = json.Unmarshal([]byte(*update.Args), &resp.Args)
@@ -318,6 +389,26 @@ func (a *mcpServiceHTTPAdapter) PatchMCPServer(ctx context.Context, name string,
 	return resp, nil
 }
 
+// RefreshMCPServer triggers a lightweight tools/list re-fetch via the MCP
+// Manager without recreating the transport. Returns the post-refresh tools
+// count. Translates Manager-level "not registered" errors into a NotFound
+// DomainError so the HTTP handler maps them to 404 — operator's POV is "this
+// server is not currently dialled, retrigger via PATCH/PUT or /config/reload".
+func (a *mcpServiceHTTPAdapter) RefreshMCPServer(ctx context.Context, name string) (int, error) {
+	if a.mcpManager == nil {
+		return 0, pkgerrors.NotFound(fmt.Sprintf("mcp server not registered: %s", name))
+	}
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+	count, err := a.mcpManager.RefreshServer(ctx, tenantID, name)
+	if err != nil {
+		return 0, pkgerrors.NotFound(fmt.Sprintf("mcp server not registered: %s", name))
+	}
+	return count, nil
+}
+
 func (a *mcpServiceHTTPAdapter) DeleteMCPServer(ctx context.Context, name string) error {
 	servers, err := a.repo.List(ctx)
 	if err != nil {
@@ -325,7 +416,11 @@ func (a *mcpServiceHTTPAdapter) DeleteMCPServer(ctx context.Context, name string
 	}
 	for _, s := range servers {
 		if s.Name == name {
-			return a.repo.Delete(ctx, s.ID)
+			if delErr := a.repo.Delete(ctx, s.ID); delErr != nil {
+				return delErr
+			}
+			a.disconnectAfterDelete(ctx, name)
+			return nil
 		}
 	}
 	return pkgerrors.NotFound(fmt.Sprintf("mcp server not found: %s", name))
