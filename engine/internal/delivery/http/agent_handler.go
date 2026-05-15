@@ -153,18 +153,6 @@ func NewAgentHandlerWithManager(manager AgentManager) *AgentHandler {
 	return &AgentHandler{lister: manager, manager: manager}
 }
 
-// Routes returns a chi router with agent endpoints mounted.
-func (h *AgentHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/", h.List)
-	r.Post("/", h.Create)
-	r.Get("/{name}", h.Get)
-	r.Put("/{name}", h.Update)
-	r.Patch("/{name}", h.Patch)
-	r.Delete("/{name}", h.Delete)
-	return r
-}
-
 // List handles GET /api/v1/agents.
 func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 	agents, err := h.lister.ListAgents(r.Context())

@@ -108,27 +108,43 @@ func TestSEC23_SessionList_APITokenScopeAdmin_200(t *testing.T) {
 		"api_token with ScopeAdmin must authorize GET /sessions; body=%s", body)
 }
 
-// TestSEC24_SessionCreate_APITokenWriteOwnUserSub — Phase 0 + Phase 2
-// impersonation guard. Non-trusted actor (api_token without ScopeAdmin)
-// trying to create a session under a different user_sub via the body field
-// gets the body silently overwritten with the caller's identity. The
-// canonical service identity is the api_token's name (info.Name), which the
-// auth middleware now stamps into ctx.UserSub.
-func TestSEC24_SessionCreate_APITokenWriteOwnUserSub(t *testing.T) {
+// TestSEC24_SessionCreate_APITokenTrustedProxy — by-design contract pinned
+// in docs/architecture/auth-scopes.md (1.1.5): api_token actors are treated
+// as trusted proxies (chirp's ai-assistant pattern) and CAN attribute
+// sessions to arbitrary end-user `user_sub` values via the body field. This
+// is intentional — the proxy sits between engine and many end-users and
+// needs to namespace sessions per its own users.
+//
+// The end-user impersonation guard runs only against regular end-user JWT
+// actors (which the CE local-admin token isn't). For that path, see the EE
+// integration suite (bytebrew-ee/tests/integration/session_acl_*.go).
+//
+// This test is the regression guard for the trusted-proxy contract: any
+// silent change that strips body.user_sub for api_tokens would break chirp
+// and any other ai-assistant proxy that relies on the documented behavior.
+//
+// 1.1.5 update: schema_id is resolved via tenant-scoped lookup before the
+// session is persisted, so the test seeds a real schema instead of passing
+// the zero UUID (which 1.1.5+ rejects with 400 InvalidInput).
+func TestSEC24_SessionCreate_APITokenTrustedProxy(t *testing.T) {
 	requireSuite(t)
 	t.Cleanup(func() { truncateTables(t) })
 
-	// Token has Sessions write scope but NOT admin. Sets up a client that
-	// could call POST /sessions but cannot impersonate other user_subs.
+	schema := createSchemaForTest(t, map[string]any{"name": "tc-sec-24-schema"})
+
+	// Token has Sessions write scope but NOT admin. Trusted-proxy pattern
+	// applies to any api_token regardless of scope — proxy identity is the
+	// actor type, not the scope bitmask.
 	const tokenName = "tc-sec-24-sessions-write"
 	tok := issueAPIToken(t, tokenName, 32768) // ScopeSessionsWrite
 
+	const endUserSub = "end-user-behind-proxy"
 	resp := do(t, http.MethodPost, "/api/v1/sessions",
 		mustJSON(map[string]any{
 			"id":        "11111111-1111-4111-a111-111111111111",
-			"user_sub":  "victim-user-sub", // attempted impersonation
-			"schema_id": "00000000-0000-0000-0000-000000000000",
-			"title":     "should belong to token name, not victim",
+			"user_sub":  endUserSub, // proxy attributing session to its end-user
+			"schema_id": schema.ID,
+			"title":     "trusted-proxy attributes session to end-user",
 		}), tok)
 	body := readBody(t, resp)
 	assertStatusAny(t, resp, http.StatusOK, http.StatusCreated)
@@ -138,11 +154,9 @@ func TestSEC24_SessionCreate_APITokenWriteOwnUserSub(t *testing.T) {
 	}
 	require.NoError(t, jsonUnmarshalOrNil(body, &created),
 		"decode created session: body=%s", body)
-	assert.Equal(t, tokenName, created.UserSub,
-		"non-admin api_token must NOT impersonate via body.user_sub; got %q want %q",
-		created.UserSub, tokenName)
-	assert.NotEqual(t, "victim-user-sub", created.UserSub,
-		"impersonation guard regression — body.user_sub leaked through")
+	assert.Equal(t, endUserSub, created.UserSub,
+		"api_token (trusted proxy) must preserve body.user_sub per docs/architecture/auth-scopes.md; got %q want %q",
+		created.UserSub, endUserSub)
 }
 
 // TestSEC25_SessionGetByID_NotExist_404 — SCC-02 GATE: non-existent session

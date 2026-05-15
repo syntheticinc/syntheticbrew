@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -169,8 +168,7 @@ func TestModelHandler_Verify(t *testing.T) {
 			handler := NewModelHandler(svc)
 
 			// Use chi router to inject URL params.
-			r := chi.NewRouter()
-			r.Mount("/api/v1/models", handler.Routes())
+			r := newModelTestRouter(handler)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/models/"+tt.modelName+"/verify", nil)
 			rec := httptest.NewRecorder()
@@ -213,8 +211,7 @@ func TestModelHandler_Verify_ErrorField(t *testing.T) {
 		},
 	}
 	handler := NewModelHandler(svc)
-	r := chi.NewRouter()
-	r.Mount("/api/v1/models", handler.Routes())
+	r := newModelTestRouter(handler)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/models/test/verify", nil)
 	rec := httptest.NewRecorder()
@@ -240,11 +237,10 @@ func TestModelHandler_List_KindFilter(t *testing.T) {
 		},
 	}
 	handler := NewModelHandler(svc)
-	r := chi.NewRouter()
-	r.Mount("/api/v1/models", handler.Routes())
+	r := newModelTestRouter(handler)
 
 	t.Run("kind=embedding returns only embedding models", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/models/?kind=embedding", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/models?kind=embedding", nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
@@ -256,7 +252,7 @@ func TestModelHandler_List_KindFilter(t *testing.T) {
 	})
 
 	t.Run("kind=chat returns only chat models", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/models/?kind=chat", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/models?kind=chat", nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
@@ -268,7 +264,7 @@ func TestModelHandler_List_KindFilter(t *testing.T) {
 	})
 
 	t.Run("no filter returns all models", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/models/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/models", nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
@@ -278,7 +274,7 @@ func TestModelHandler_List_KindFilter(t *testing.T) {
 	})
 
 	t.Run("invalid kind returns 400", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/models/?kind=unknown", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/models?kind=unknown", nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -292,12 +288,11 @@ func TestModelHandler_Create_KindValidation(t *testing.T) {
 		},
 	}
 	handler := NewModelHandler(svc)
-	r := chi.NewRouter()
-	r.Mount("/api/v1/models", handler.Routes())
+	r := newModelTestRouter(handler)
 
 	t.Run("kind absent returns 400", func(t *testing.T) {
 		body, _ := json.Marshal(CreateModelRequest{Name: "m", Type: "ollama", ModelName: "llama3"})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/models/", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/models", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
@@ -317,7 +312,7 @@ func TestModelHandler_Create_KindValidation(t *testing.T) {
 			Name: "emb", Type: "openai_compatible", ModelName: "text-embedding-3-small",
 			Kind: "embedding", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test", EmbeddingDim: 1536,
 		})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/models/", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/models", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
@@ -327,7 +322,7 @@ func TestModelHandler_Create_KindValidation(t *testing.T) {
 
 	t.Run("invalid kind returns 400", func(t *testing.T) {
 		body, _ := json.Marshal(CreateModelRequest{Name: "m", Type: "ollama", ModelName: "llama3", Kind: "reranker"})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/models/", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/models", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
@@ -407,10 +402,9 @@ func TestModelHandler_Create_OpenRouterPreset(t *testing.T) {
 			handler := NewModelHandler(svc)
 
 			body, _ := json.Marshal(tt.req)
-			r := chi.NewRouter()
-			r.Mount("/api/v1/models", handler.Routes())
+			r := newModelTestRouter(handler)
 
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/models/", bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/models", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
@@ -478,8 +472,7 @@ func TestModelHandler_Patch_NormalizesAlias(t *testing.T) {
 				},
 			}
 			h := NewModelHandler(svc)
-			r := chi.NewRouter()
-			r.Mount("/api/v1/models", h.Routes())
+			r := newModelTestRouter(h)
 
 			req := httptest.NewRequest(http.MethodPatch, "/api/v1/models"+tt.path, bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")

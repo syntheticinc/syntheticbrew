@@ -349,3 +349,18 @@ API tokens are verified the same way as session JWTs — Ed25519 signature valid
 | **Token expired after 24 hours** | 401 after inactivity | Implement automatic token refresh or re-login flow in frontend |
 | **Multi-pod local mode racing** | Inconsistent startup, pods failing | Switch to external mode for multi-replica deployments |
 
+---
+
+## See also
+
+- [`auth-scopes.md`](./auth-scopes.md) — per-endpoint scope bitmask
+  reference, actor matrix (admin JWT / api_token / end-user JWT), and
+  pinned by-design behaviours (anti-impersonation guard on `/chat`,
+  trusted-proxy session creation on `POST /sessions`).
+- [`api-contracts.md`](./api-contracts.md) — endpoint contracts +
+  request/response shapes.
+- [`security-hardening.md`](./security-hardening.md) — deployment-time
+  hardening checklist.
+- [`models-kind.md`](./models-kind.md) — model kind invariants (chat vs
+  embedding) and how they interact with KB linkage.
+

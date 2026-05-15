@@ -11,6 +11,27 @@ import (
 	"github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
 )
 
+// MCP catalog refresh interval bounds — mirrors the chk_mcp_refresh_range
+// CHECK on mcp_servers (migration 007). Defence-in-depth: API rejects out-of-
+// range values with 400 before the DB CHECK fires with a 500-equivalent.
+const (
+	mcpRefreshIntervalMinSeconds = 30
+	mcpRefreshIntervalMaxSeconds = 86400
+)
+
+// validateRefreshInterval returns an error message when interval is non-nil
+// and outside the allowed [30, 86400] range. Returns "" when valid (including
+// nil = disabled).
+func validateRefreshInterval(interval *int) string {
+	if interval == nil {
+		return ""
+	}
+	if *interval < mcpRefreshIntervalMinSeconds || *interval > mcpRefreshIntervalMaxSeconds {
+		return "catalog_refresh_interval_seconds must be between 30 and 86400, or null"
+	}
+	return ""
+}
+
 // allowedMCPTransports matches target-schema.dbml mcp_servers.type CHECK:
 //
 //	stdio | http | sse | streamable-http
@@ -49,7 +70,11 @@ type MCPServerResponse struct {
 	AuthKeyEnv     string            `json:"auth_key_env,omitempty"`
 	AuthTokenEnv   string            `json:"auth_token_env,omitempty"`
 	AuthClientID   string            `json:"auth_client_id,omitempty"`
-	Agents         []string          `json:"agents"`
+	// CatalogRefreshIntervalSeconds is the optional periodic tools/list refresh
+	// interval in seconds. NULL (omitted) disables refresh; range 30..86400
+	// validated dual-side at API + DB CHECK.
+	CatalogRefreshIntervalSeconds *int     `json:"catalog_refresh_interval_seconds,omitempty"`
+	Agents                        []string `json:"agents"`
 }
 
 // CreateMCPServerRequest is the body for POST /api/v1/mcp-servers.
@@ -65,10 +90,19 @@ type CreateMCPServerRequest struct {
 	AuthKeyEnv     string            `json:"auth_key_env,omitempty"`
 	AuthTokenEnv   string            `json:"auth_token_env,omitempty"`
 	AuthClientID   string            `json:"auth_client_id,omitempty"`
+	// CatalogRefreshIntervalSeconds enables periodic tools/list refresh.
+	// nil = disabled; non-nil values must be in [30, 86400].
+	CatalogRefreshIntervalSeconds *int `json:"catalog_refresh_interval_seconds,omitempty"`
 }
 
 // UpdateMCPServerRequest is the body for PATCH /api/v1/mcp-servers/{name}.
 // All fields are pointers: nil means "preserve existing value".
+//
+// CatalogRefreshIntervalSeconds is doubly-pointered semantics: nil = preserve.
+// Use a non-nil pointer to a non-nil int to set a value; PATCH with NULL
+// clear-out is currently expressed by sending the field omitted (preserve)
+// — explicit NULL clearing requires a follow-up. Validation: when non-nil
+// the inner int must be in [30, 86400].
 type UpdateMCPServerRequest struct {
 	Name           *string            `json:"name,omitempty"`
 	Type           *string            `json:"type,omitempty"`
@@ -81,6 +115,9 @@ type UpdateMCPServerRequest struct {
 	AuthKeyEnv     *string            `json:"auth_key_env,omitempty"`
 	AuthTokenEnv   *string            `json:"auth_token_env,omitempty"`
 	AuthClientID   *string            `json:"auth_client_id,omitempty"`
+	// CatalogRefreshIntervalSeconds: nil = preserve current value; non-nil
+	// pointer to int in [30, 86400] sets the new interval.
+	CatalogRefreshIntervalSeconds *int `json:"catalog_refresh_interval_seconds,omitempty"`
 }
 
 // MCPService provides MCP server CRUD operations.
@@ -90,6 +127,11 @@ type MCPService interface {
 	UpdateMCPServer(ctx context.Context, name string, req CreateMCPServerRequest) (*MCPServerResponse, error)
 	PatchMCPServer(ctx context.Context, name string, req UpdateMCPServerRequest) (*MCPServerResponse, error)
 	DeleteMCPServer(ctx context.Context, name string) error
+	// RefreshMCPServer re-queries tools/list for the named server without
+	// reconnecting the transport. Returns the post-refresh tools_count.
+	// Returns a NotFound DomainError when the server is not registered in
+	// the runtime registry (caller's POV: trigger PATCH/PUT to redial).
+	RefreshMCPServer(ctx context.Context, name string) (int, error)
 }
 
 // MCPHandler serves /api/v1/mcp-servers endpoints.
@@ -105,15 +147,32 @@ func NewMCPHandler(service MCPService, policy mcp.TransportPolicy) *MCPHandler {
 	return &MCPHandler{service: service, policy: policy}
 }
 
-// Routes returns a chi router with MCP server endpoints mounted.
-func (h *MCPHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/", h.List)
-	r.Post("/", h.Create)
-	r.Put("/{name}", h.Update)
-	r.Patch("/{name}", h.Patch)
-	r.Delete("/{name}", h.Delete)
-	return r
+// Refresh handles POST /api/v1/mcp-servers/{name}/refresh.
+//
+// Lightweight on-demand re-fetch of the server's tools/list catalog without
+// reconnecting the transport. Used by the Admin SPA "Refresh now" surface so
+// operators can pick up downstream rename/add/remove of tools without waiting
+// for the optional TTL refresher (or after PATCHing
+// catalog_refresh_interval_seconds = NULL).
+//
+// 200 with {name, tools_count} on success. 404 when the server is not
+// registered in the runtime registry — caller should trigger PATCH/PUT or
+// /config/reload to redial.
+func (h *MCPHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		writeJSONError(w, http.StatusBadRequest, "mcp server name is required")
+		return
+	}
+	count, err := h.service.RefreshMCPServer(r.Context(), name)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":        name,
+		"tools_count": count,
+	})
 }
 
 // List handles GET /api/v1/mcp-servers.
@@ -156,6 +215,10 @@ func (h *MCPHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if msg := validateRefreshInterval(req.CatalogRefreshIntervalSeconds); msg != "" {
+		writeJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	server, err := h.service.CreateMCPServer(r.Context(), req)
 	if err != nil {
@@ -194,6 +257,10 @@ func (h *MCPHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if msg := validateRefreshInterval(req.CatalogRefreshIntervalSeconds); msg != "" {
+		writeJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	result, err := h.service.UpdateMCPServer(r.Context(), name, req)
 	if err != nil {
@@ -228,6 +295,11 @@ func (h *MCPHandler) Patch(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+	}
+	// PATCH: nil pointer = preserve, do not validate. Non-nil must be in range.
+	if msg := validateRefreshInterval(req.CatalogRefreshIntervalSeconds); msg != "" {
+		writeJSONError(w, http.StatusBadRequest, msg)
+		return
 	}
 
 	result, err := h.service.PatchMCPServer(r.Context(), name, req)

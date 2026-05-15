@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, type AuthContextType } from '../hooks/useAuth';
 import MCPPage from './MCPPage';
@@ -12,6 +12,8 @@ vi.mock('../api/client', () => ({
     createMCPServer: vi.fn(),
     updateMCPServer: vi.fn(),
     deleteMCPServer: vi.fn(),
+    refreshMCPServer: vi.fn(),
+    resetCircuitBreaker: vi.fn(),
   },
 }));
 
@@ -69,6 +71,55 @@ describe('MCPPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('No MCP servers configured')).toBeInTheDocument();
+    });
+  });
+
+  // Refresh button: clicking it must call api.refreshMCPServer with the
+  // selected server's name. The button is rendered inside the DetailPanel
+  // actions, so we open the panel by clicking the row first.
+  it('Refresh button calls api.refreshMCPServer on success', async () => {
+    mockApi.listMCPServers.mockResolvedValue([
+      {
+        id: '1', name: 'chirp-tools', type: 'http' as const, url: 'http://upstream/v1',
+        agents: [],
+      },
+    ]);
+    mockApi.listCatalog.mockResolvedValue([]);
+    mockApi.refreshMCPServer.mockResolvedValue({ name: 'chirp-tools', tools_count: 5 });
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('chirp-tools')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('chirp-tools'));
+    const refreshBtn = await screen.findByText('Refresh');
+    fireEvent.click(refreshBtn);
+
+    await waitFor(() => {
+      expect(mockApi.refreshMCPServer).toHaveBeenCalledWith('chirp-tools');
+    });
+  });
+
+  it('Refresh button still calls api.refreshMCPServer on error path', async () => {
+    mockApi.listMCPServers.mockResolvedValue([
+      {
+        id: '1', name: 'chirp-tools', type: 'http' as const, url: 'http://upstream/v1',
+        agents: [],
+      },
+    ]);
+    mockApi.listCatalog.mockResolvedValue([]);
+    mockApi.refreshMCPServer.mockRejectedValue(new Error('not registered'));
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('chirp-tools')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('chirp-tools'));
+    const refreshBtn = await screen.findByText('Refresh');
+    fireEvent.click(refreshBtn);
+
+    await waitFor(() => {
+      expect(mockApi.refreshMCPServer).toHaveBeenCalledWith('chirp-tools');
     });
   });
 });

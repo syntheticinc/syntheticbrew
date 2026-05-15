@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -94,10 +93,8 @@ func (m *mockTaskService) SetTaskPriority(_ context.Context, _ uuid.UUID, _ int,
 	return m.err
 }
 
-func newTaskRouter(handler *TaskHandler) *chi.Mux {
-	r := chi.NewRouter()
-	r.Mount("/tasks", handler.Routes())
-	return r
+func newTaskRouter(handler *TaskHandler) http.Handler {
+	return newTaskTestRouter(handler)
 }
 
 func TestTaskHandler_Create(t *testing.T) {
@@ -110,7 +107,7 @@ func TestTaskHandler_Create(t *testing.T) {
 		Title:     "Deploy v2",
 		AgentName: "devops",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -129,7 +126,7 @@ func TestTaskHandler_Create_MissingTitle(t *testing.T) {
 	router := newTaskRouter(handler)
 
 	body, _ := json.Marshal(CreateTaskRequest{AgentName: "devops"})
-	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -141,7 +138,7 @@ func TestTaskHandler_Create_MissingAgent(t *testing.T) {
 	router := newTaskRouter(handler)
 
 	body, _ := json.Marshal(CreateTaskRequest{Title: "test"})
-	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -157,7 +154,7 @@ func TestTaskHandler_Create_TitleTooLong(t *testing.T) {
 		longTitle[i] = 'a'
 	}
 	body, _ := json.Marshal(CreateTaskRequest{Title: string(longTitle), AgentName: "devops"})
-	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -174,7 +171,7 @@ func TestTaskHandler_Create_TooManyBlockers(t *testing.T) {
 		blockers[i] = uuid.New().String()
 	}
 	body, _ := json.Marshal(CreateTaskRequest{Title: "test", AgentName: "a", BlockedBy: blockers})
-	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -190,7 +187,7 @@ func TestTaskHandler_List(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{tasks: tasks, taskCount: 2})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -207,7 +204,7 @@ func TestTaskHandler_List_WithFilters(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{tasks: []TaskResponse{}})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks?source=api&agent_name=sales&status=pending", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks?source=api&agent_name=sales&status=pending", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -223,7 +220,7 @@ func TestTaskHandler_Get(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{taskDetail: detail})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks/"+detailID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/"+detailID.String(), nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -240,7 +237,7 @@ func TestTaskHandler_Get_NotFound(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks/"+uuid.New().String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/"+uuid.New().String(), nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -251,7 +248,7 @@ func TestTaskHandler_Get_NotFound_ViaError(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{err: domain.ErrEngineTaskNotFound})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks/"+uuid.New().String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/"+uuid.New().String(), nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -262,7 +259,7 @@ func TestTaskHandler_Get_InvalidID(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks/abc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/abc", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -276,7 +273,7 @@ func TestTaskHandler_Cancel(t *testing.T) {
 	router := newTaskRouter(handler)
 
 	targetID := uuid.New()
-	req := httptest.NewRequest(http.MethodDelete, "/tasks/"+targetID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tasks/"+targetID.String(), nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -288,7 +285,7 @@ func TestTaskHandler_Cancel_Error(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{err: fmt.Errorf("not found")})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodDelete, "/tasks/"+uuid.New().String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tasks/"+uuid.New().String(), nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -303,7 +300,7 @@ func TestTaskHandler_List_NoPagination_ReturnsPaginated(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{tasks: tasks, taskCount: 2})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -323,7 +320,7 @@ func TestTaskHandler_List_WithPagination(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{tasks: tasks, taskCount: 25})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks?page=2&per_page=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks?page=2&per_page=10", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -344,7 +341,7 @@ func TestTaskHandler_List_PaginationDefaults(t *testing.T) {
 	router := newTaskRouter(handler)
 
 	// Only page param triggers pagination, per_page defaults to DefaultTaskListLimit
-	req := httptest.NewRequest(http.MethodGet, "/tasks?page=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks?page=1", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -361,7 +358,7 @@ func TestTaskHandler_List_PerPageCappedAt100(t *testing.T) {
 	handler := NewTaskHandler(&mockTaskService{tasks: []TaskResponse{}, taskCount: 0})
 	router := newTaskRouter(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/tasks?page=1&per_page=500", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks?page=1&per_page=500", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -423,7 +420,7 @@ func TestTaskHandler_Approve(t *testing.T) {
 	router := newTaskRouter(NewTaskHandler(mock))
 
 	target := uuid.New()
-	req := httptest.NewRequest(http.MethodPost, "/tasks/"+target.String()+"/approve", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+target.String()+"/approve", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -437,7 +434,7 @@ func TestTaskHandler_Start(t *testing.T) {
 	router := newTaskRouter(NewTaskHandler(mock))
 
 	target := uuid.New()
-	req := httptest.NewRequest(http.MethodPost, "/tasks/"+target.String()+"/start", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+target.String()+"/start", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -452,7 +449,7 @@ func TestTaskHandler_Complete_WithResult(t *testing.T) {
 
 	target := uuid.New()
 	body, _ := json.Marshal(CompleteTaskRequest{Result: "ok"})
-	req := httptest.NewRequest(http.MethodPost, "/tasks/"+target.String()+"/complete", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+target.String()+"/complete", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -467,7 +464,7 @@ func TestTaskHandler_Complete_EmptyBody(t *testing.T) {
 	mock := &lifecycleCapturingMock{}
 	router := newTaskRouter(NewTaskHandler(mock))
 
-	req := httptest.NewRequest(http.MethodPost, "/tasks/"+uuid.New().String()+"/complete", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+uuid.New().String()+"/complete", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -480,7 +477,7 @@ func TestTaskHandler_Fail_RequiresReason(t *testing.T) {
 	router := newTaskRouter(NewTaskHandler(&lifecycleCapturingMock{}))
 
 	body, _ := json.Marshal(FailTaskRequest{})
-	req := httptest.NewRequest(http.MethodPost, "/tasks/"+uuid.New().String()+"/fail", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+uuid.New().String()+"/fail", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -493,7 +490,7 @@ func TestTaskHandler_Fail_WithReason(t *testing.T) {
 	router := newTaskRouter(NewTaskHandler(mock))
 
 	body, _ := json.Marshal(FailTaskRequest{Reason: "timeout"})
-	req := httptest.NewRequest(http.MethodPost, "/tasks/"+uuid.New().String()+"/fail", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+uuid.New().String()+"/fail", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -509,7 +506,7 @@ func TestTaskHandler_SetPriority_ValidatesRange(t *testing.T) {
 	target := uuid.New().String()
 	for _, bad := range []int{-1, 3, 99} {
 		body, _ := json.Marshal(SetPriorityRequest{Priority: bad})
-		req := httptest.NewRequest(http.MethodPost, "/tasks/"+target+"/priority", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+target+"/priority", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -523,7 +520,7 @@ func TestTaskHandler_SetPriority_AcceptsValid(t *testing.T) {
 		router := newTaskRouter(NewTaskHandler(mock))
 
 		body, _ := json.Marshal(SetPriorityRequest{Priority: good})
-		req := httptest.NewRequest(http.MethodPost, "/tasks/"+uuid.New().String()+"/priority", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/"+uuid.New().String()+"/priority", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -543,7 +540,7 @@ func TestTaskHandler_ListSubtasks(t *testing.T) {
 	router := newTaskRouter(NewTaskHandler(mock))
 
 	parent := uuid.New()
-	req := httptest.NewRequest(http.MethodGet, "/tasks/"+parent.String()+"/subtasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/"+parent.String()+"/subtasks", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -569,7 +566,7 @@ func TestTaskHandler_Create_WithPriorityAndBlockers(t *testing.T) {
 		BlockedBy:          []string{"dep-1", "dep-2"},
 		RequireApproval:    true,
 	})
-	req := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)

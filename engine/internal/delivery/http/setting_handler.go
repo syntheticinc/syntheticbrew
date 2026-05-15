@@ -37,14 +37,6 @@ func NewSettingHandler(service SettingService) *SettingHandler {
 	return &SettingHandler{service: service}
 }
 
-// Routes returns a chi router with setting endpoints mounted.
-func (h *SettingHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/", h.List)
-	r.Put("/{key}", h.Update)
-	return r
-}
-
 // List handles GET /api/v1/settings.
 func (h *SettingHandler) List(w http.ResponseWriter, r *http.Request) {
 	settings, err := h.service.ListSettings(r.Context())

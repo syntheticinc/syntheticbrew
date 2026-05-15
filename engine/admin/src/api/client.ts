@@ -287,6 +287,16 @@ class APIClient {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/mcp-servers/${encodeURIComponent(name)}`);
   }
+  // refreshMCPServer triggers a lightweight tools/list re-fetch on the engine
+  // without recreating the MCP transport. Surfaces as the "Refresh now"
+  // button on MCPPage so operators can pick up downstream rename/add/remove
+  // of tools without waiting for the optional TTL refresher.
+  refreshMCPServer(name: string) {
+    if (this.isPrototype) return this.mock({ name, tools_count: 0 });
+    return this.request<{ name: string; tools_count: number }>(
+      'POST', `/mcp-servers/${encodeURIComponent(name)}/refresh`,
+    );
+  }
 
   // ---- Tasks ----
   listTasks(params?: Record<string, string>) {

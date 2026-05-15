@@ -125,3 +125,26 @@ func (c *Client) nextRequestID() int64 {
 	c.nextID++
 	return c.nextID
 }
+
+// RefreshTools re-runs tools/list against the underlying transport and swaps
+// the cached tool slice atomically. Used by the per-server TTL refresher to
+// pick up downstream catalog changes (rename, new tool, removed tool) without
+// recreating the transport. On error the existing tool list is preserved.
+func (c *Client) RefreshTools(ctx context.Context) error {
+	resp, err := c.transport.Send(ctx, &Request{
+		JSONRPC: "2.0",
+		ID:      c.nextRequestID(),
+		Method:  "tools/list",
+	})
+	if err != nil {
+		return fmt.Errorf("tools/list refresh: %w", err)
+	}
+	tools, err := parseToolsFromResponse(resp)
+	if err != nil {
+		return fmt.Errorf("parse refreshed tools: %w", err)
+	}
+	c.mu.Lock()
+	c.tools = tools
+	c.mu.Unlock()
+	return nil
+}

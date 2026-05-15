@@ -118,6 +118,7 @@ export interface MCPServer {
   auth_token_env?: string;
   auth_client_id?: string;
   status?: MCPServerStatus;
+  catalog_refresh_interval_seconds?: number | null;
   agents: string[];
 }
 
@@ -179,6 +180,9 @@ export interface CreateMCPServerRequest {
   auth_key_env?: string;
   auth_token_env?: string;
   auth_client_id?: string;
+  // Optional periodic tools/list refresh interval in seconds (30..86400).
+  // null = disabled. Persisted on mcp_servers.catalog_refresh_interval_seconds.
+  catalog_refresh_interval_seconds?: number | null;
 }
 
 // ============================================================================

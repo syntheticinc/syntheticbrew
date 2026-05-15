@@ -11,6 +11,7 @@ import FormField from '../components/FormField';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 import PageContainer from '../components/PageContainer';
+import { ToastProvider, useToast } from '../components/builder/Toast';
 import type { MCPServer, MCPCatalogEntry, MCPCatalogPackage, CreateMCPServerRequest, MCPCatalogCategory, CircuitBreakerState } from '../types';
 
 // ─── Category meta ──────────────────────────────────────────────────────────
@@ -35,7 +36,16 @@ const emptyForm: CreateMCPServerRequest = {
 };
 
 export default function MCPPage() {
+  return (
+    <ToastProvider>
+      <MCPPageInner />
+    </ToastProvider>
+  );
+}
+
+function MCPPageInner() {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const { data: servers, loading, error, refetch } = useApi(() => api.listMCPServers());
   const { data: catalog } = useApi(() => api.listCatalog());
   const { data: circuitBreakers, refetch: refetchCircuitBreakers } = useApi(() => api.listCircuitBreakers());
@@ -54,6 +64,10 @@ export default function MCPPage() {
   const [authEnvVar, setAuthEnvVar] = useState('');
   const [authClientId, setAuthClientId] = useState('');
   const [forwardHeadersInput, setForwardHeadersInput] = useState('');
+  // Empty string = "auto-refresh disabled"; otherwise the typed integer that
+  // the form serialises into a number on submit (validated server-side too).
+  const [refreshIntervalInput, setRefreshIntervalInput] = useState<string>('');
+  const [refreshing, setRefreshing] = useState<string | null>(null);
 
   // Catalog search/filter state
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -100,6 +114,7 @@ export default function MCPPage() {
       auth_type: server.auth_type ?? 'none',
       auth_key_env: server.auth_key_env ?? '',
       auth_client_id: server.auth_client_id ?? '',
+      catalog_refresh_interval_seconds: server.catalog_refresh_interval_seconds ?? null,
     });
     setArgsInput((server.args ?? []).join('\n'));
     setEnvInput(server.env_vars ?? {});
@@ -107,6 +122,7 @@ export default function MCPPage() {
     setAuthType(server.auth_type ?? 'none');
     setAuthEnvVar(server.auth_key_env ?? '');
     setAuthClientId(server.auth_client_id ?? '');
+    setRefreshIntervalInput(server.catalog_refresh_interval_seconds != null ? String(server.catalog_refresh_interval_seconds) : '');
     setEditTarget(server);
     setShowForm(true);
   }
@@ -125,10 +141,16 @@ export default function MCPPage() {
     setAuthEnvVar('');
     setAuthClientId('');
     setForwardHeadersInput('');
+    setRefreshIntervalInput('');
   }
 
   function buildPayload(): CreateMCPServerRequest {
     const fh = forwardHeadersInput ? forwardHeadersInput.split('\n').map((h) => h.trim()).filter(Boolean) : [];
+    // Empty string → null (disable refresh). Numeric string → integer (server
+    // validates 30..86400; out-of-range surfaces as a 400 in handleSubmit).
+    const refreshSeconds: number | null = refreshIntervalInput.trim() === ''
+      ? null
+      : Number(refreshIntervalInput.trim());
     return {
       ...customForm,
       args: argsInput ? argsInput.split('\n').map((a) => a.trim()).filter(Boolean) : [],
@@ -137,6 +159,7 @@ export default function MCPPage() {
       auth_type: authType !== 'none' ? authType : undefined,
       auth_key_env: authEnvVar || undefined,
       auth_client_id: authClientId || undefined,
+      catalog_refresh_interval_seconds: refreshSeconds,
     };
   }
 
@@ -319,6 +342,26 @@ export default function MCPPage() {
                 className="flex-1 px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
               >
                 Edit
+              </button>
+              <button
+                onClick={async () => {
+                  const target = selected.name;
+                  setRefreshing(target);
+                  try {
+                    const result = await api.refreshMCPServer(target);
+                    addToast(`Refreshed ${target}: ${result.tools_count} tools`, 'success');
+                    refetch();
+                  } catch (err) {
+                    addToast(`Refresh failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+                  } finally {
+                    setRefreshing(null);
+                  }
+                }}
+                disabled={refreshing === selected.name}
+                title="Re-query tools/list now without reconnecting the transport"
+                className="px-4 py-2 text-blue-400 border border-blue-500/30 rounded-btn text-sm font-medium hover:bg-blue-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {refreshing === selected.name ? 'Refreshing…' : 'Refresh'}
               </button>
               {(() => {
                 const cb = circuitStateMap[selected.name];
@@ -811,6 +854,24 @@ export default function MCPPage() {
               className="mt-2"
             />
           )}
+        </div>
+        <div>
+          <label htmlFor="mcp-refresh-interval" className="block text-sm font-medium text-brand-light mb-1">
+            Catalog refresh interval (seconds)
+          </label>
+          <input
+            id="mcp-refresh-interval"
+            type="number"
+            min={30}
+            max={86400}
+            value={refreshIntervalInput}
+            onChange={(e) => setRefreshIntervalInput(e.target.value)}
+            placeholder="empty = disabled"
+            className="w-full px-3 py-2 bg-brand-bg border border-brand-shade3/30 rounded-btn text-sm text-brand-light placeholder:text-brand-shade3 focus:outline-none focus:border-brand-accent"
+          />
+          <p className="mt-1 text-xs text-brand-shade3">
+            Auto-refresh the tool catalog every N seconds (30–86400). Empty = disabled (default).
+          </p>
         </div>
       </FormModal>
 

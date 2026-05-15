@@ -102,18 +102,6 @@ func NewModelHandler(service ModelService) *ModelHandler {
 	return &ModelHandler{service: service}
 }
 
-// Routes returns a chi router with model endpoints mounted.
-func (h *ModelHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/", h.List)
-	r.Post("/", h.Create)
-	r.Put("/{name}", h.Update)
-	r.Patch("/{name}", h.Patch)
-	r.Delete("/{name}", h.Delete)
-	r.Post("/{name}/verify", h.Verify)
-	return r
-}
-
 // List handles GET /api/v1/models.
 // Supports ?kind=chat (chat only), ?kind=embedding (embedding only).
 // Empty ?kind returns all models. Invalid ?kind returns 400.

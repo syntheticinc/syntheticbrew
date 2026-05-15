@@ -1,0 +1,24 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007_add_mcp_catalog_refresh_interval
+      author: bytebrew
+      comment: |
+        Adds optional per-server tools/list refresh interval. NULL = disabled
+        (default), 30..86400 seconds enforced via CHECK. Engine 1.1.9.
+        Schema convention: nullable INTEGER + CHECK constraint, additive
+        upgrade — no preflight HALT needed (the column defaults to NULL on
+        existing rows). Mirrors the schema convention used by 006 (nullable
+        column with sane default) so rollback is a clean DROP.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE mcp_servers
+                ADD COLUMN catalog_refresh_interval_seconds INTEGER NULL;
+              ALTER TABLE mcp_servers
+                ADD CONSTRAINT chk_mcp_refresh_range
+                CHECK (catalog_refresh_interval_seconds IS NULL
+                       OR catalog_refresh_interval_seconds BETWEEN 30 AND 86400);
+        - rollback:
+            sql: |
+              ALTER TABLE mcp_servers DROP CONSTRAINT IF EXISTS chk_mcp_refresh_range;
+              ALTER TABLE mcp_servers DROP COLUMN IF EXISTS catalog_refresh_interval_seconds;

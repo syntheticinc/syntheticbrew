@@ -28,12 +28,12 @@ type SessionLastFetcher interface {
 type AdminAssistantHandler struct {
 	service          ChatService
 	resolveSchema    BuilderSchemaResolver
-	forwardHeadersFn func() []string
+	forwardHeadersFn func(context.Context) []string
 	sessions         SessionLastFetcher
 }
 
 // NewAdminAssistantHandler creates a new AdminAssistantHandler.
-func NewAdminAssistantHandler(service ChatService, resolveSchema BuilderSchemaResolver, forwardHeadersFn func() []string, sessions SessionLastFetcher) *AdminAssistantHandler {
+func NewAdminAssistantHandler(service ChatService, resolveSchema BuilderSchemaResolver, forwardHeadersFn func(context.Context) []string, sessions SessionLastFetcher) *AdminAssistantHandler {
 	return &AdminAssistantHandler{service: service, resolveSchema: resolveSchema, forwardHeadersFn: forwardHeadersFn, sessions: sessions}
 }
 
@@ -224,7 +224,7 @@ func (h *AdminAssistantHandler) handleNonStreaming(w http.ResponseWriter, schema
 // buildRequestContext extracts configured forward headers from the HTTP request.
 func (h *AdminAssistantHandler) buildRequestContext(r *http.Request) context.Context {
 	ctx := r.Context()
-	forwardHeaders := h.forwardHeadersFn()
+	forwardHeaders := h.forwardHeadersFn(ctx)
 	if len(forwardHeaders) == 0 {
 		return ctx
 	}

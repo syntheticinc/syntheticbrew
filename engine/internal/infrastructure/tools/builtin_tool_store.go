@@ -48,10 +48,14 @@ func (s *BuiltinToolStore) Names() []string {
 
 // MCPClientProvider provides MCP tools for a given MCP server name.
 // Defined on the consumer side (AgentToolResolver).
+//
+// ctx carries tenant_id (Cloud) so the provider can route to the correct
+// per-tenant ClientRegistry. CE implementations may ignore ctx — the
+// singleton registry is shared across all callers.
 type MCPClientProvider interface {
 	// GetMCPTools returns Eino-compatible tools for the named MCP server.
 	// Returns nil, nil if the server is not connected.
-	GetMCPTools(name string) ([]tool.InvokableTool, error)
+	GetMCPTools(ctx context.Context, name string) ([]tool.InvokableTool, error)
 }
 
 // CapabilityToolInjector returns additional tool names based on agent capabilities.
@@ -163,6 +167,10 @@ type ResolveContext struct {
 	Inspector        GenericAgentInspector    // nil if inspect not available
 	KnowledgeSearcher KnowledgeSearcher       // nil if no knowledge DB
 	KnowledgeEmbedder KnowledgeEmbedder       // nil if no embeddings
+	// Ctx carries the per-request context so MCP tool resolution can route
+	// to the correct per-tenant ClientRegistry. Zero value (nil) is treated
+	// as context.Background() — safe in CE single-tenant mode.
+	Ctx context.Context
 }
 
 // ResolveForAgent returns tools available to a specific agent.
@@ -296,6 +304,9 @@ func (r *AgentToolResolver) ResolveForAgent(ctx context.Context, rc ResolveConte
 
 	// MCP tools — append tools from connected MCP servers configured for this agent.
 	// Circuit breaker (US-006) wrapping happens inside resolveMCPTools.
+	if rc.Ctx == nil {
+		rc.Ctx = ctx
+	}
 	mcpTools, err := r.resolveMCPTools(rc)
 	if err != nil {
 		return nil, fmt.Errorf("resolve mcp tools for agent %q: %w", rc.Agent.Record.Name, err)
@@ -418,7 +429,7 @@ func (r *AgentToolResolver) Resolve(ctx context.Context, toolNames []string, dep
 	// instead of silently dropping the agent's MCP-backed tool surface.
 	if r.mcpProvider != nil && len(deps.MCPServers) > 0 {
 		for _, serverName := range deps.MCPServers {
-			mcpTools, err := r.mcpProvider.GetMCPTools(serverName)
+			mcpTools, err := r.mcpProvider.GetMCPTools(ctx, serverName)
 			if err != nil {
 				slog.WarnContext(ctx, "MCP server unreachable, failing tool resolve",
 					"server", serverName, "error", err)
@@ -449,11 +460,16 @@ func (r *AgentToolResolver) resolveMCPTools(rc ResolveContext) ([]tool.Invokable
 		return nil, nil
 	}
 
+	mcpCtx := rc.Ctx
+	if mcpCtx == nil {
+		mcpCtx = context.Background()
+	}
+
 	var result []tool.InvokableTool
 	for _, serverName := range rc.Agent.Record.MCPServers {
-		mcpTools, err := r.mcpProvider.GetMCPTools(serverName)
+		mcpTools, err := r.mcpProvider.GetMCPTools(mcpCtx, serverName)
 		if err != nil {
-			slog.WarnContext(context.Background(), "failed to get MCP tools, skipping server",
+			slog.WarnContext(mcpCtx, "failed to get MCP tools, skipping server",
 				"server", serverName, "agent", rc.Agent.Record.Name, "error", err)
 			continue
 		}

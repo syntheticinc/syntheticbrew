@@ -70,6 +70,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 			auth_client_id VARCHAR(255),
 			enabled BOOLEAN NOT NULL DEFAULT 1,
 			tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+			catalog_refresh_interval_seconds INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

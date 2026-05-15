@@ -1,5 +1,109 @@
 # Changelog
 
+## [1.1.9] — 2026-05-15
+
+Multi-tenant correctness for the MCP subsystem. The `MCP ClientRegistry` was
+process-global keyed by server name; in multi-tenant deployments tenant A
+calling `/api/v1/config/reload` would `CloseAll()` every tenant's MCP
+clients before reconnecting only its own — a long-standing cross-tenant
+side-effect that's been silent because no Cloud customer hit the exact
+collision. This release rebuilds the boundary as `mcp.Manager` (mirroring
+`agentregistry.Manager`), adds auto-reconnect on MCP server CRUD, and adds
+an optional per-server `tools/list` refresh interval so downstream renames
+or description changes propagate without `kubectl rollout restart`.
+
+DB: changeset 007 adds nullable `mcp_servers.catalog_refresh_interval_seconds`
++ CHECK 30..86400. Additive — drop-in upgrade from 1.1.8.
+
+### Added
+- **Tenant-aware `mcp.Manager`** (`internal/infrastructure/mcp/manager.go`).
+  Process-global `ClientRegistry` is gone; the boundary is now a Manager
+  that holds either a singleton (`perTenant=false`, CE) or a lazy
+  per-tenant map (`perTenant=true`, Cloud) of `*ClientRegistry` instances.
+  `GetForContext(ctx)` resolves the registry from the request's tenant_id
+  with a double-check lock, identical pattern to `agentregistry.Manager`.
+  Tenant A's `/config/reload` (or any CRUD) can no longer affect tenant
+  B's MCP clients.
+
+- **Per-tenant `ForwardHeadersStore`**
+  (`internal/infrastructure/mcp/forward_headers.go`). The previous
+  process-global `atomic.Value` carrying the union of MCP `forward_headers`
+  was rewritten as a per-tenant slot. ChatHandler reads via
+  `GetForContext(r.Context())` so each request sees only its own tenant's
+  whitelist. CE behaviour is unchanged (`isPerTenant=false` collapses to
+  a single slot).
+
+- **Auto-reconnect after MCP server CRUD**
+  (`internal/app/http_adapters_extra.go`). Successful POST/PUT/PATCH on
+  `/api/v1/mcp-servers/{name}` triggers
+  `Manager.ReconnectServer(ctx, tenantID, name)` — close stale per-server
+  client, redial, swap. DELETE triggers `DisconnectServer`. Per-server
+  granularity (PATCH on `chirp-tools` does NOT bounce `slack-bot`).
+  Failure to reconnect is logged at WARN but does not fail the CRUD
+  response — DB is source of truth, runtime catches up at next
+  reconnect/refresh. **Closes Admin SPA "Save not applied" UX bug** —
+  `MCPPage.tsx` no longer needs to call `/api/v1/config/reload` after
+  save (it never did).
+
+- **Optional per-server periodic `tools/list` refresh**
+  (`internal/infrastructure/mcp/refresher.go`). New nullable column
+  `mcp_servers.catalog_refresh_interval_seconds INTEGER` (range 30..86400
+  enforced via DB CHECK + API validation). Refresher schedules one
+  goroutine per `(tenantID, serverName)`, bound to engine-process root
+  context. Each tick re-issues `tools/list` and atomically swaps the
+  cached tools under `Client.mu`; diff (added/removed) is logged at
+  INFO. NULL = disabled (default). Closes the chirp use case where a
+  downstream MCP image rolls with a renamed/added/described tool but
+  the engine pod kept serving the boot-time catalog. NULL-default means
+  zero behaviour change for existing rows.
+
+- **Tenant-scoped reload path**
+  (`internal/app/http_adapters.go`). `configReloaderHTTPAdapter.Reload`
+  now calls `ReconnectTenant(ctx, tenantIDFromCtx(ctx))` instead of the
+  legacy global `CloseAll() + ConnectAll()`. Reload by tenant A no
+  longer reaches tenant B.
+
+- **`POST /api/v1/mcp-servers/{name}/refresh` endpoint** + Admin SPA
+  "Refresh" action (`internal/delivery/http/mcp_handler.go`,
+  `admin/src/pages/MCPPage.tsx`). Lightweight on-demand re-fetch of
+  one server's `tools/list` without recreating the transport — cheaper
+  than the full `ReconnectServer` (close + redial) path for the case
+  "downstream rolled out renamed tools but session is alive". Returns
+  `{name, tools_count}` on 200, 404 when the server is not registered
+  in the runtime registry. The Admin SPA's MCP detail panel surfaces
+  it as a Refresh button next to Edit / Reset Breaker, with a toast on
+  success/error. Form gains a `Catalog refresh interval (seconds)`
+  input that wires `catalog_refresh_interval_seconds` end-to-end.
+
+### Changed
+- `MCPClientProvider.GetMCPTools` signature: `(name string)` →
+  `(ctx context.Context, name string)`. The two production call sites
+  in `builtin_tool_store.go` (legacy `Resolve` and `resolveMCPTools`)
+  were updated; the latter required threading `Ctx context.Context`
+  into `ResolveContext`. Tools now resolve through the per-tenant
+  registry returned by `Manager.GetForContext(ctx)`.
+- `forwardHeadersFn` signature: `func() []string` →
+  `func(context.Context) []string`. ChatHandler and admin assistant
+  pass `r.Context()`.
+- `mcpServerRepo.List(ctx)` is now a thin wrapper over the new
+  `ListForTenant(ctx, tenantID)` (called by Manager from background
+  paths that don't carry an HTTP request context).
+- Internal: removed dead `Handler.Routes()` methods, tests now mirror
+  production routing 1:1.
+
+### Operational notes
+- **Drop-in upgrade from 1.1.8.** No env vars added (per-server config
+  lives in DB). No metrics added. The 007 changeset is additive — pre-
+  existing rows get `catalog_refresh_interval_seconds = NULL` (no
+  refresh) and require no backfill.
+- **CE behaviour unchanged at runtime.** Single-tenant CE deployments
+  continue to use the sentinel tenant; the Manager's `Init()` eagerly
+  loads the singleton at boot exactly like 1.1.8 did.
+- **Cloud lazy-load.** First chat request from a cold tenant triggers
+  Manager to dial that tenant's MCP servers (same lazy pattern that
+  `agentregistry.Manager` already uses). Connect timeout in connector
+  caps worst-case latency at 10s.
+
 ## [1.1.8] — 2026-05-14
 
 Hardening for `openai_compatible` LLM routes — observability on upstream

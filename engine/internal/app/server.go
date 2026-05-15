@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -39,7 +38,6 @@ import (
 	"github.com/syntheticinc/bytebrew/engine/internal/service/capability"
 	"github.com/syntheticinc/bytebrew/engine/internal/service/eventstore"
 	"github.com/syntheticinc/bytebrew/engine/internal/service/lifecycle"
-	mcpcatalog "github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
 	memorysvc "github.com/syntheticinc/bytebrew/engine/internal/service/memory"
 
 	"github.com/syntheticinc/bytebrew/engine/internal/service/resilience"
@@ -290,10 +288,39 @@ func Run(sc ServerConfig) error {
 		knowledgeIndexer = knowledge.NewIndexer(embeddingsClient, knowledgeRepo, slog.Default())
 	}
 
-	// Initialize MCP client connections from database
-	mcpRegistry := mcp.NewClientRegistry()
-	var forwardHeadersStore atomic.Value // shared with configReloaderHTTPAdapter for dynamic updates
-	forwardHeadersStore.Store([]string(nil))
+	// Initialize MCP Manager — owns per-tenant ClientRegistry instances.
+	// Single-tenant (perTenant=false): Init eagerly loads the singleton for
+	// CETenantID. Multi-tenant (perTenant=true): Init no-ops; per-tenant
+	// registries lazy-load on first GetForContext call from a request bearing
+	// tenant_id.
+	//
+	// In legacy mode (pgDB == nil) the manager is built with a nil reader and
+	// never has Init called — the singleton is empty and all GetMCPTools
+	// return "not registered". This matches pre-1.1.9 behaviour for the
+	// ConfigPath-only fallback boot path.
+	var mcpManager *mcp.Manager
+	if pgDB != nil {
+		mcpServerRepoForManager := configrepo.NewGORMMCPServerRepository(pgDB)
+		mcpManager = mcp.NewManager(mcpServerRepoForManager, sc.Plugin.TransportPolicy(), sc.RequireTenant)
+	} else {
+		mcpManager = mcp.NewManager(nil, sc.Plugin.TransportPolicy(), sc.RequireTenant)
+	}
+
+	// Forward-headers cache — per-tenant when RequireTenant=true, single slot
+	// otherwise. Wired into the Manager so every Init / lazy-load /
+	// ReconnectTenant refreshes the affected tenant's entry. ChatHandler /
+	// AdminAssistantHandler read the request-scoped slice via
+	// GetForContext(r.Context()).
+	forwardHeadersStore := mcp.NewForwardHeadersStore(sc.RequireTenant)
+	mcpManager.SetForwardHeadersStore(forwardHeadersStore)
+
+	// Per-server TTL refresher — schedules tools/list refresh goroutines for
+	// MCP servers with catalog_refresh_interval_seconds set. Bound to the
+	// server lifetime ctx so cancellation propagates; StopAll on shutdown
+	// guarantees deterministic teardown even if Init bails early.
+	mcpRefresher := mcp.NewRefresher(mcpManager, ctx)
+	mcpManager.SetRefresher(mcpRefresher)
+	defer mcpRefresher.StopAll()
 
 	// Apply LSP installer toggle from bootstrap config (env BYTEBREW_DISABLE_LSP_DOWNLOAD).
 	// One-shot at startup; subsequent updates require restart.
@@ -324,19 +351,20 @@ func Run(sc ServerConfig) error {
 	}
 
 	if pgDB != nil {
-		mcpServerRepo := configrepo.NewGORMMCPServerRepository(pgDB)
-		mcpServers, mcpErr := mcpServerRepo.List(ctx)
-		if mcpErr != nil {
-			slog.WarnContext(context.Background(), "failed to load MCP servers from database", "error", mcpErr)
-		} else {
-			mcpcatalog.ConnectAll(ctx, mcpServers, mcpRegistry, sc.Plugin.TransportPolicy())
-			forwardHeadersStore.Store(collectForwardHeaders(mcpServers))
+		// Manager.Init: single-tenant eagerly loads CETenantID singleton
+		// (preserves pre-1.1.9 boot logs) and refreshes the forward-headers
+		// store for the CE sentinel. Multi-tenant is a no-op — per-tenant
+		// registries lazy-load on first request and refresh their own
+		// forward-headers entry.
+		if initErr := mcpManager.Init(ctx); initErr != nil {
+			slog.WarnContext(ctx, "failed to initialise MCP manager", "error", initErr)
 		}
 	}
 
-	// Wire MCP provider into AgentToolResolver
+	// Wire MCP provider into AgentToolResolver — adapter routes per-request
+	// ctx (with tenant_id) to the correct ClientRegistry.
 	if components.AgentToolResolver != nil {
-		components.AgentToolResolver.SetMCPProvider(mcpRegistry)
+		components.AgentToolResolver.SetMCPProvider(newMCPProviderAdapter(mcpManager))
 	}
 
 	// Register admin tools and reload registry.
@@ -607,8 +635,7 @@ func Run(sc ServerConfig) error {
 			KnowledgeRepo:        knowledgeRepo,
 			KnowledgeIndexer:     knowledgeIndexer,
 			EmbeddingsClient:     embeddingsClient,
-			MCPRegistry:          mcpRegistry,
-			ForwardHeadersStore:  &forwardHeadersStore,
+			MCPManager:           mcpManager,
 			CBRegistry:           cbRegistry,
 			LifecycleManager:     lifecycleManager,
 			LifecycleDispatcher:  lifecycleDispatcher,
@@ -793,9 +820,7 @@ func Run(sc ServerConfig) error {
 			chatService.schemas = schemaRepoForChat
 			chatService.sessions = configrepo.NewGORMSessionRepository(pgDB)
 		}
-		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, func() []string {
-			return forwardHeadersStore.Load().([]string)
-		})
+		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, forwardHeadersStore.GetForContext)
 
 		// Admin assistant — admin JWT required, chats against the seeded
 		// builder-schema; the schema resolver runs per-request so a late seed
@@ -804,9 +829,7 @@ func Run(sc ServerConfig) error {
 		// gate has its own test surface.
 		builderSchemaResolver := NewBuilderSchemaResolver(pgDB, builderSchemaName)
 		adminAssistantSessionRepo := configrepo.NewGORMSessionRepository(pgDB)
-		adminAssistantHandler := deliveryhttp.NewAdminAssistantHandler(chatService, builderSchemaResolver, func() []string {
-			return forwardHeadersStore.Load().([]string)
-		}, adminAssistantSessionRepo)
+		adminAssistantHandler := deliveryhttp.NewAdminAssistantHandler(chatService, builderSchemaResolver, forwardHeadersStore.GetForContext, adminAssistantSessionRepo)
 
 		chatDeps := chatRoutesDeps{
 			AuthMW:                httpAuthMW,
@@ -906,8 +929,9 @@ func Run(sc ServerConfig) error {
 	sc.Plugin.Stop()
 	slog.InfoContext(context.Background(), "plugin stopped")
 
-	// Close MCP client connections
-	mcpRegistry.CloseAll()
+	// Close MCP client connections — fans out CloseAll across every
+	// per-tenant ClientRegistry the Manager has accumulated.
+	mcpManager.Shutdown()
 	slog.InfoContext(context.Background(), "MCP clients closed")
 
 	// Remove port file on shutdown

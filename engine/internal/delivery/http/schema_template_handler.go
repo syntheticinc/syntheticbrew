@@ -70,15 +70,6 @@ func NewSchemaTemplateHandler(uc SchemaTemplateUsecase, version string) *SchemaT
 	return &SchemaTemplateHandler{uc: uc, version: version}
 }
 
-// Routes returns a chi router with schema-template endpoints mounted.
-func (h *SchemaTemplateHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/", h.List)
-	r.Get("/{name}", h.Get)
-	r.Post("/{name}/fork", h.Fork)
-	return r
-}
-
 // List handles GET /api/v1/schema-templates.
 //
 // Query params:

@@ -165,18 +165,6 @@ func (h *SessionHandler) SetEventService(svc EventService) {
 	h.eventSvc = svc
 }
 
-// Routes returns a chi router with session endpoints mounted.
-func (h *SessionHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-	r.Get("/", h.List)
-	r.Post("/", h.Create)
-	r.Get("/{id}", h.Get)
-	r.Get("/{id}/messages", h.ListMessages)
-	r.Put("/{id}", h.Update)
-	r.Delete("/{id}", h.Delete)
-	return r
-}
-
 // List handles GET /api/v1/sessions.
 //
 // Per-user filtering is applied via sessionACL.effectiveUserSubFilter:

@@ -232,22 +232,6 @@ func NewTaskHandler(service TaskService) *TaskHandler {
 	return &TaskHandler{service: service}
 }
 
-// Routes returns a chi router with task endpoints mounted.
-func (h *TaskHandler) Routes() http.Handler {
-	r := chi.NewRouter()
-	r.Post("/", h.Create)
-	r.Get("/", h.List)
-	r.Get("/{id}", h.Get)
-	r.Delete("/{id}", h.Cancel)
-	r.Get("/{id}/subtasks", h.ListSubtasks)
-	r.Post("/{id}/approve", h.Approve)
-	r.Post("/{id}/start", h.Start)
-	r.Post("/{id}/complete", h.Complete)
-	r.Post("/{id}/fail", h.Fail)
-	r.Post("/{id}/priority", h.SetPriority)
-	return r
-}
-
 // Create handles POST /api/v1/tasks.
 func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize)
