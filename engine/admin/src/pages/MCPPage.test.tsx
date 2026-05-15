@@ -100,6 +100,37 @@ describe('MCPPage', () => {
     });
   });
 
+  it('Delete failure shows error toast (no silent swallow)', async () => {
+    mockApi.listMCPServers.mockResolvedValue([
+      {
+        id: '1', name: 'doomed-mcp', type: 'stdio' as const,
+        command: 'npx', args: ['some-server'], agents: [],
+      },
+    ]);
+    mockApi.listCatalog.mockResolvedValue([]);
+    mockApi.deleteMCPServer.mockRejectedValue(new Error('cannot delete: still bound to agent foo'));
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('doomed-mcp')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('doomed-mcp'));
+    const removeBtn = await screen.findByRole('button', { name: /^remove$/i });
+    fireEvent.click(removeBtn);
+
+    // Confirm modal opens with another Remove/Confirm button.
+    const buttons = await screen.findAllByRole('button', { name: /^remove$|^confirm$|^delete$/i });
+    // Click the LAST matching one — that's the modal's confirm button.
+    const modalConfirm = buttons[buttons.length - 1];
+    expect(modalConfirm).toBeDefined();
+    fireEvent.click(modalConfirm!);
+
+    await waitFor(() => {
+      expect(mockApi.deleteMCPServer).toHaveBeenCalledWith('doomed-mcp');
+      // Toast text appears in DOM via ToastProvider's portal.
+      expect(screen.getByText(/Delete failed: cannot delete: still bound to agent foo/i)).toBeInTheDocument();
+    });
+  });
+
   it('Refresh button still calls api.refreshMCPServer on error path', async () => {
     mockApi.listMCPServers.mockResolvedValue([
       {

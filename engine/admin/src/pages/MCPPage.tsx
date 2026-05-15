@@ -176,15 +176,18 @@ function MCPPageInner() {
       closeForm();
       setSelected(null);
       refetch();
-    } catch {
-      // visible in console
+    } catch (err) {
+      addToast(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSaving(false);
     }
   }
 
   async function handleInstallCatalogEntry(entry: MCPCatalogEntry) {
-    const pkg: MCPCatalogPackage | undefined = entry.packages.find(p => p.type === 'stdio') ?? entry.packages[0];
+    // Honour the user's package choice from the catalog detail view (radio
+    // selector wired via setSelectedPkgIdx). Falls back to the first package
+    // if no selection was made yet (catalog list direct-install scenarios).
+    const pkg: MCPCatalogPackage | undefined = entry.packages[selectedPkgIdx] ?? entry.packages[0];
     if (!pkg) return;
 
     setSaving(true);
@@ -210,8 +213,8 @@ function MCPPageInner() {
       setCatalogDetail(null);
       setSelectedPkgIdx(0);
       refetch();
-    } catch {
-      // visible in console
+    } catch (err) {
+      addToast(`Install failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -224,8 +227,8 @@ function MCPPageInner() {
       setDeleteTarget(null);
       setSelected(null);
       refetch();
-    } catch {
-      // visible in console
+    } catch (err) {
+      addToast(`Delete failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   }
 
