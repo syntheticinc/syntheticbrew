@@ -259,8 +259,13 @@ configApply:
     # single apply leaves no NULL FK or silent tenant-default fallback.
     # 0.2.4 (paired with engine 1.1.7): propagates agents[].max_turn_duration
     # via differ and adds models[*].extra_body YAML pass-through.
+    # 0.2.5 (paired with engine 1.1.9): propagates
+    # mcp_servers[*].catalog_refresh_interval_seconds (30..86400, nil=disabled)
+    # so periodic tools/list refresh is GitOps-driven. Removing the YAML line
+    # is intentionally a no-op (preserve-by-absent); clear via curl PATCH null
+    # or Admin SPA.
     repository: ghcr.io/syntheticinc/brewctl
-    tag: "0.2.4"
+    tag: "0.2.5"
     pullPolicy: IfNotPresent
 
   # Inline bytebrew.yaml content. Format: bundle YAML with top-level

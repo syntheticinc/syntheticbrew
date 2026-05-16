@@ -56,7 +56,7 @@ configApply:
   # together (engine 1.1.3 + brewctl 0.2.3) and re-enables the smoke.sh
   # entry_agent_name assertion that was deferred along with this pin.
   image:
-    tag: "0.2.4"
+    tag: "0.2.5"
   tokenSecret: postgres-credentials
   apiKeysSecret: postgres-credentials
   config: |
