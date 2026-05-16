@@ -60,7 +60,7 @@ configApply:
   # 1.1.3 entry_agent_id name resolution); follow-up PR bumps both fixtures
   # together once 1.1.3 + 0.2.3 publish.
   image:
-    tag: "0.2.4"
+    tag: "0.2.5"
   tokenSecret: postgres-credentials
   apiKeysSecret: postgres-credentials
   config: |

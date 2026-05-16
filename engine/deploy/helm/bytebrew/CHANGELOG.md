@@ -7,6 +7,26 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-05-16
+
+### Changed
+- Bumps default `configApply.image.tag` to **0.2.5** (brewctl). brewctl
+  0.2.5 propagates `mcp_servers[*].catalog_refresh_interval_seconds` from
+  YAML config to the engine PATCH/CREATE body — before 0.2.5 the field was
+  silently dropped at YAML decode (the desired struct lacked it), so
+  operators driving engine 1.1.9's per-server TTL refresh from GitOps got
+  zero effect from their YAML. Drop-in upgrade — existing values that pin
+  `configApply.image.tag` to 0.2.4 continue to work, just bump them
+  manually to 0.2.5 when ready.
+
+### Compatibility
+- Chart-only release. `appVersion` stays at **1.1.9** (engine unchanged).
+- Removing the YAML line for `catalog_refresh_interval_seconds` after
+  having set it is intentionally a no-op (`brewctl 0.2.5` preserves the
+  engine value when the field is absent). To clear, use a direct curl
+  PATCH with `null` or the Admin SPA. See brewctl CHANGELOG for the
+  rationale.
+
 ## [0.6.9] - 2026-05-15
 
 ### Changed
