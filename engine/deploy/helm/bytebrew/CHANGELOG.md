@@ -7,6 +7,25 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.11] - 2026-05-16
+
+### Fixed
+- **Release pipeline no longer overrides `appVersion` with chart version.**
+  `.github/workflows/release-helm.yaml` previously passed
+  `--app-version=${{ chart tag }}` to `helm package`, forcing both versions
+  equal at publish time and shipping wrong `appVersion` metadata in every
+  chart released since 0.6.x (0.6.10 shipped as `appVersion: 0.6.10` instead
+  of `1.1.9`; 0.6.9 had the same bug; cosmetic only — `helm show chart` and
+  `helm list` reported a non-existent engine version, but image pulls were
+  unaffected because operators always set `image.tag` explicitly). The
+  workflow now reads `appVersion` from `Chart.yaml`, and a follow-up
+  verification step fails the release if the packaged tarball's `appVersion`
+  diverges from the committed `Chart.yaml`.
+
+### Compatibility
+- Chart-only release. `appVersion` stays at **1.1.9**. No image / template
+  changes vs 0.6.10 — only the published metadata is now correct.
+
 ## [0.6.10] - 2026-05-16
 
 ### Changed
