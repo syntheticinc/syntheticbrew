@@ -47,10 +47,30 @@ jobs:
 
       - name: Package chart
         run: |
+          # `--version` comes from the git tag (helm/vX.Y.Z) — chart version is
+          # release-time decision. `appVersion` is the engine version the chart
+          # targets and lives in Chart.yaml; it must NOT be overridden from the
+          # tag (chart-only releases keep the same appVersion across bumps).
+          # Earlier versions of this workflow passed `--app-version=${version}`
+          # too, which forced both equal and shipped wrong appVersion metadata
+          # in every chart since 0.6.x (cosmetic — operators always override
+          # image.tag — but misleading in `helm show chart`).
           helm package engine/deploy/helm/bytebrew \
             -d dist/ \
-            --version ${{ steps.version.outputs.version }} \
-            --app-version ${{ steps.version.outputs.version }}
+            --version ${{ steps.version.outputs.version }}
+
+      - name: Verify chart was packaged with Chart.yaml appVersion
+        run: |
+          # Guard against future re-introduction of the override bug.
+          expected_app=$(grep '^appVersion:' engine/deploy/helm/bytebrew/Chart.yaml \
+            | awk '{print $2}' | tr -d '"')
+          actual_app=$(tar -xzf dist/bytebrew-engine-${{ steps.version.outputs.version }}.tgz \
+            -O bytebrew-engine/Chart.yaml | grep '^appVersion:' | awk '{print $2}' | tr -d '"')
+          if [[ "$expected_app" != "$actual_app" ]]; then
+            echo "::error::Packaged appVersion ($actual_app) does not match Chart.yaml ($expected_app)"
+            exit 1
+          fi
+          echo "appVersion=$actual_app matches Chart.yaml"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
