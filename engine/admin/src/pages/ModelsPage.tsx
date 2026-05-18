@@ -45,6 +45,33 @@ const PROVIDER_HINTS: Record<string, string> = {
   embedding: 'OpenAI-compatible embedding API (POST /embeddings). Used for document vectorization in Knowledge capability. Recommended: text-embedding-3-small (1536 dim, $0.02/1M tokens).',
 };
 
+// Display Name on the wire is the URL slug — same DNS-label format the
+// engine enforces for every operator-facing resource (see name_validation.go).
+// Mirror the rules client-side so users see the precise rule that just got
+// violated instead of a generic backend 400.
+const NAME_REGEX = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RESERVED_NAMES = new Set([
+  'chat', 'agents', 'agent-relations', 'memory', 'files', 'health', 'auth',
+  'tasks', 'models', 'knowledge-bases', 'schemas', 'mcp-servers', 'tokens',
+  'sessions', 'metrics',
+]);
+const MAX_NAME_LENGTH = 100;
+const NAME_HINT =
+  'URL slug: lowercase letters, digits, hyphens. Must start and end with a letter or digit (e.g. "my-llama", "glm-4").';
+
+function validateModelDisplayName(name: string): string | null {
+  if (!name) return 'Display name is required.';
+  if (name.length > MAX_NAME_LENGTH) return `Display name must be at most ${MAX_NAME_LENGTH} characters.`;
+  if (/[A-Z]/.test(name)) return 'Uppercase letters are not allowed — use lowercase only (e.g. "my-llama", not "My-Llama").';
+  if (/\s/.test(name)) return 'Spaces are not allowed — use hyphens instead (e.g. "my-llama").';
+  if (/[^a-z0-9-]/.test(name)) return 'Only lowercase letters, digits, and hyphens are allowed.';
+  if (!NAME_REGEX.test(name)) return 'Must start and end with a letter or digit (no leading/trailing hyphens).';
+  if (UUID_REGEX.test(name)) return 'Display name cannot be UUID-shaped.';
+  if (RESERVED_NAMES.has(name)) return `"${name}" is reserved (collides with API route segment).`;
+  return null;
+}
+
 function providerTypeForRegistry(provider: string): string {
   if (provider === 'openrouter') return 'openrouter';
   return provider;
@@ -166,6 +193,13 @@ function ModelsPageInner() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!editTarget) {
+      const nameErr = validateModelDisplayName(form.name);
+      if (nameErr) {
+        addToast(nameErr, 'error');
+        return;
+      }
+    }
     setSaving(true);
     try {
       if (editTarget) {
@@ -215,6 +249,11 @@ function ModelsPageInner() {
   const isEdit = editTarget !== null;
   const isBaseUrlReadOnly = form.type in PROVIDER_BASE_URLS;
   const providerHint = PROVIDER_HINTS[form.type];
+  // Inline validation only fires once the user has typed something — empty
+  // field shouldn't shout "required" before they've started.
+  const nameValidationError = !isEdit && form.name.length > 0
+    ? validateModelDisplayName(form.name)
+    : null;
 
   const columns = [
     {
@@ -485,7 +524,8 @@ function ModelsPageInner() {
           required
           disabled={isEdit}
           placeholder="my-llama"
-          hint={isEdit ? 'Name cannot be changed.' : undefined}
+          hint={isEdit ? 'Name cannot be changed.' : NAME_HINT}
+          error={nameValidationError ?? undefined}
         />
 
         {/* Kind selector. Wave 5: agents require chat, KBs require embedding.

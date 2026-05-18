@@ -7,6 +7,22 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.12] - 2026-05-18
+
+### Changed
+- Bumps `appVersion` to **1.1.10**. Engine 1.1.10 is an admin SPA UX fix —
+  the "Add Model" Display Name field now shows the URL-slug rule up front
+  and renders precise inline errors (uppercase, spaces, other forbidden
+  characters, leading/trailing hyphens) instead of a generic backend
+  `invalid resource name` toast after submit. Behaviour-only; no template
+  / values / DB change.
+
+### Compatibility
+- Chart-only metadata bump (`appVersion` sync only — no template / values
+  changes). Default `image.tag` remains `"latest"` (operators are expected
+  to pin explicitly per chart convention). Pin to `1.1.10` post-publish to
+  pick up the admin SPA fix. Drop-in upgrade from 0.6.11.
+
 ## [0.6.11] - 2026-05-16
 
 ### Fixed

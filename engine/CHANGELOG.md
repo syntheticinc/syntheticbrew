@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.1.10] — 2026-05-18
+
+Admin SPA UX: clarify Display Name validation when adding a model.
+
+### Fixed
+- **Models page: "Add Model" Display Name now teaches the rule up front and
+  surfaces precise inline errors** (`engine/admin/src/pages/ModelsPage.tsx`).
+  The Display Name field is the URL slug — validated server-side against
+  the DNS-label regex `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` enforced for every
+  operator-facing resource (`name_validation.go`). Previously the form
+  shipped an unconstrained input with placeholder `my-llama` only, and any
+  violation surfaced as a generic toast `invalid resource name` from the
+  backend after submit. Users hitting the rule with `My-Llama`, `my llama`,
+  `my_llama`, or `-bad` had no way to learn what the constraint actually
+  was; uppercase rejection in particular was not discoverable.
+
+  Now mirrors `AgentsPage.tsx`: a permanent hint under the field shows the
+  rule (`URL slug: lowercase letters, digits, hyphens. Must start and end
+  with a letter or digit (e.g. "my-llama", "glm-4").`), and a client-side
+  validator (`validateModelDisplayName`) renders a distinct inline error
+  for each failure shape — uppercase, spaces, other forbidden characters,
+  leading/trailing hyphens, length cap, UUID-shape, reserved name. Submit
+  short-circuits with the same toast if the user bypasses the inline error,
+  so the backend is never asked to validate a known-bad value.
+
+  Behaviour-only fix; no API or DB change. Engine binary embeds the rebuilt
+  admin bundle. Drop-in upgrade from 1.1.9.
+
 ## [1.1.9] — 2026-05-15
 
 Multi-tenant correctness for the MCP subsystem. The `MCP ClientRegistry` was
