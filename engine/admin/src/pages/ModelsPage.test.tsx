@@ -201,4 +201,83 @@ describe('ModelsPage', () => {
       expect(screen.getByText('Google (Gemini)')).toBeInTheDocument();
     });
   });
+
+  // Inline Display Name validation — mirrors the DNS-label slug rules
+  // enforced by the backend (`name_validation.go`). Each invalid shape
+  // gets its own dedicated error message so the user knows precisely
+  // what to fix; the placeholder + hint show the rule up front.
+  describe('Display Name validation', () => {
+    async function openCreateForm() {
+      renderModelsPage();
+      const user = userEvent.setup();
+      await waitFor(() => expect(screen.getByText('Add Model')).toBeInTheDocument());
+      await user.click(screen.getByText('Add Model'));
+      await waitFor(() => expect(screen.getByText('OpenRouter')).toBeInTheDocument());
+      // Address Display Name by its DOM id (FormField derives `ff-display-name`).
+      const input = document.getElementById('ff-display-name') as HTMLInputElement;
+      expect(input).not.toBeNull();
+      return { user, input };
+    }
+
+    it('shows the slug rule hint when the field is empty', async () => {
+      await openCreateForm();
+      expect(
+        screen.getByText(/URL slug: lowercase letters, digits, hyphens/i),
+      ).toBeInTheDocument();
+    });
+
+    it('rejects uppercase letters with a dedicated message', async () => {
+      const { user, input } = await openCreateForm();
+      await user.type(input, 'My-Llama');
+      expect(
+        screen.getByText(/Uppercase letters are not allowed/i),
+      ).toBeInTheDocument();
+    });
+
+    it('rejects spaces with a dedicated message', async () => {
+      const { user, input } = await openCreateForm();
+      await user.type(input, 'my llama');
+      expect(
+        screen.getByText(/Spaces are not allowed — use hyphens instead/i),
+      ).toBeInTheDocument();
+    });
+
+    it('rejects other forbidden characters', async () => {
+      const { user, input } = await openCreateForm();
+      await user.type(input, 'my_llama');
+      expect(
+        screen.getByText(/Only lowercase letters, digits, and hyphens are allowed/i),
+      ).toBeInTheDocument();
+    });
+
+    it('rejects leading/trailing hyphens', async () => {
+      const { user, input } = await openCreateForm();
+      await user.type(input, '-bad');
+      expect(
+        screen.getByText(/Must start and end with a letter or digit/i),
+      ).toBeInTheDocument();
+    });
+
+    it('accepts a valid slug — no error rendered', async () => {
+      const { user, input } = await openCreateForm();
+      await user.type(input, 'my-llama');
+      // Error text variants from validateModelDisplayName must NOT appear.
+      expect(screen.queryByText(/Uppercase letters are not allowed/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Spaces are not allowed/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Only lowercase letters, digits, and hyphens are allowed/i)).not.toBeInTheDocument();
+    });
+
+    it('blocks submit on invalid name and never calls createModel', async () => {
+      const { user, input } = await openCreateForm();
+      await user.type(input, 'BAD');
+      await user.type(document.getElementById('ff-model-name') as HTMLInputElement, 'gpt-4o');
+      // The Add Model button inside the modal triggers form submit.
+      const buttons = screen.getAllByRole('button', { name: /^Add Model$/i });
+      // The modal footer button is the last one — header button opens the modal.
+      const submitBtn = buttons[buttons.length - 1];
+      if (!submitBtn) throw new Error('Submit button not found');
+      await user.click(submitBtn);
+      expect(mockApi.createModel).not.toHaveBeenCalled();
+    });
+  });
 });
