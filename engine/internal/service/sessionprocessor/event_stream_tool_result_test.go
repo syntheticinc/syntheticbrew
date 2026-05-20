@@ -38,7 +38,7 @@ func (m *mockStore) Append(sessionID, eventType string, evt *pb.SessionEvent, _ 
 
 func TestSend_ToolResult_UsesFullResultFromMetadata(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{})
+	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
 
 	fullResult := "device1: iPhone 14 Pro\ndevice2: Pixel 8\ndevice3: Samsung Galaxy S24\ndevice4: OnePlus 12\ndevice5: Xiaomi 14"
 	preview := "device1: iPhone 14 Pro..."
@@ -64,7 +64,7 @@ func TestSend_ToolResult_UsesFullResultFromMetadata(t *testing.T) {
 
 func TestSend_ToolResult_FallsBackToContent(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{})
+	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
 
 	content := "result without full_result metadata"
 
@@ -88,7 +88,7 @@ func TestSend_ToolResult_FallsBackToContent(t *testing.T) {
 func TestSend_Answer_SkipsSSEWhenAlreadyStreamed(t *testing.T) {
 	pub := &mockPublisher{}
 	store := &mockStore{}
-	stream := NewEventStream("session-1", pub, store)
+	stream := NewEventStream("session-1", pub, store, nil)
 
 	content := "This text was already sent via message_delta chunks"
 	err := stream.Send(&domain.AgentEvent{
@@ -111,7 +111,7 @@ func TestSend_Answer_SkipsSSEWhenAlreadyStreamed(t *testing.T) {
 
 func TestSend_Answer_PublishesWhenNotStreamed(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{})
+	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
 
 	err := stream.Send(&domain.AgentEvent{
 		Type:    domain.EventTypeAnswer,
@@ -126,7 +126,7 @@ func TestSend_Answer_PublishesWhenNotStreamed(t *testing.T) {
 
 func TestSend_ToolResult_PreservesSummary(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{})
+	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
 
 	fullResult := "device1: iPhone 14 Pro\ndevice2: Pixel 8\ndevice3: Samsung Galaxy S24"
 	summary := "3 devices found"

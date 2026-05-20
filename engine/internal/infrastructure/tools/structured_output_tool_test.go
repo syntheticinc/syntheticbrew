@@ -39,15 +39,21 @@ func TestStructuredOutput_SummaryTable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Structured output displayed to user.", result)
 
-	// Verify event was emitted
+	// Verify event was emitted as the HITL Interrupt Primitive (engine 1.2.0+).
 	require.Len(t, emitter.events, 1)
 	event := emitter.events[0]
-	assert.Equal(t, domain.EventTypeStructuredOutput, event.Type)
+	assert.Equal(t, domain.EventTypeInterruptRequest, event.Type)
+	assert.NotEmpty(t, event.Metadata["interrupt_id"], "interrupt_id required for client correlation")
+	assert.Equal(t, string(domain.InterruptKindStructuredOutput), event.Metadata["kind"])
 
-	// Verify event content is valid StructuredOutput JSON
+	// Decode the wrapped payload, then the schema body inside it.
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(event.Content), &payload))
+	assert.Equal(t, domain.InterruptKindStructuredOutput, payload.Kind)
+	assert.NotEmpty(t, payload.InterruptID)
+
 	var output domain.StructuredOutput
-	err = json.Unmarshal([]byte(event.Content), &output)
-	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
 	assert.Equal(t, "summary_table", output.OutputType)
 	assert.Equal(t, "Project Overview", output.Title)
 	assert.Equal(t, "Current project configuration", output.Description)
@@ -81,9 +87,10 @@ func TestStructuredOutput_WithActions(t *testing.T) {
 	require.Len(t, emitter.events, 1)
 	event := emitter.events[0]
 
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(event.Content), &payload))
 	var output domain.StructuredOutput
-	err = json.Unmarshal([]byte(event.Content), &output)
-	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
 	assert.Equal(t, "summary_table", output.OutputType)
 	assert.Equal(t, "Deployment Ready", output.Title)
 	require.Len(t, output.Actions, 2)
@@ -156,10 +163,12 @@ func TestStructuredOutput_FormMode(t *testing.T) {
 
 	require.Len(t, emitter.events, 1)
 	event := emitter.events[0]
-	assert.Equal(t, domain.EventTypeStructuredOutput, event.Type)
+	assert.Equal(t, domain.EventTypeInterruptRequest, event.Type)
 
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(event.Content), &payload))
 	var output domain.StructuredOutput
-	require.NoError(t, json.Unmarshal([]byte(event.Content), &output))
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
 	assert.Equal(t, "form", output.OutputType)
 	require.Len(t, output.Questions, 2)
 	assert.Equal(t, "platform", output.Questions[0].ID)
@@ -185,8 +194,10 @@ func TestStructuredOutput_FormMode_QuestionsAsJSONString(t *testing.T) {
 	assert.Equal(t, "Structured output displayed to user.", result)
 
 	require.Len(t, emitter.events, 1)
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &payload))
 	var output domain.StructuredOutput
-	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &output))
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
 	require.Len(t, output.Questions, 1)
 	assert.Equal(t, "q1", output.Questions[0].ID)
 }
@@ -281,8 +292,10 @@ func TestStructuredOutput_StringEncodedRowsAndActions(t *testing.T) {
 	assert.Equal(t, "Structured output displayed to user.", result)
 
 	require.Len(t, emitter.events, 1)
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &payload))
 	var output domain.StructuredOutput
-	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &output))
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
 	require.Len(t, output.Rows, 2)
 	assert.Equal(t, "Name", output.Rows[0].Label)
 	assert.Equal(t, "MyProject", output.Rows[0].Value)
@@ -309,8 +322,10 @@ func TestStructuredOutput_LiteralRowsAndActions(t *testing.T) {
 	assert.Equal(t, "Structured output displayed to user.", result)
 
 	require.Len(t, emitter.events, 1)
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &payload))
 	var output domain.StructuredOutput
-	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &output))
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
 	require.Len(t, output.Rows, 1)
 	assert.Equal(t, "MyProject", output.Rows[0].Value)
 	require.Len(t, output.Actions, 1)
@@ -335,8 +350,10 @@ func TestStructuredOutput_EmptyStringEncodedRowsAndActions(t *testing.T) {
 	assert.Equal(t, "Structured output displayed to user.", result)
 
 	require.Len(t, emitter.events, 1)
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &payload))
 	var output domain.StructuredOutput
-	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &output))
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
 	assert.Empty(t, output.Rows)
 	assert.Empty(t, output.Actions)
 }

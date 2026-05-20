@@ -57,6 +57,7 @@ type Processor struct {
 	factory            TurnExecutorFactory
 	agentPoolRegistrar AgentPoolRegistrar // optional, nil-safe
 	eventStore         EventStore         // persists events for reliable replay
+	interrupts         InterruptCreator   // optional, nil-safe
 
 	mu          sync.Mutex
 	active      map[string]context.CancelFunc
@@ -64,11 +65,14 @@ type Processor struct {
 }
 
 // New creates a new Processor.
-func New(registry SessionRegistry, factory TurnExecutorFactory, eventStore EventStore) *Processor {
+// interrupts may be nil for tests / no-DB mode; HITL state-tracker rows are
+// then skipped (events still publish to the client).
+func New(registry SessionRegistry, factory TurnExecutorFactory, eventStore EventStore, interrupts InterruptCreator) *Processor {
 	return &Processor{
 		registry:    registry,
 		factory:     factory,
 		eventStore:  eventStore,
+		interrupts:  interrupts,
 		active:      make(map[string]context.CancelFunc),
 		turnsActive: make(map[string]bool),
 	}
@@ -153,6 +157,11 @@ func (p *Processor) processMessages(ctx context.Context, sessionID string) {
 	}
 }
 
+// ResumeMessagePrefix marks an enqueued message as a HITL resume Q+A so
+// processMessage skips the user_message broadcast (the widget's answered
+// state already shows the user's answer).
+const ResumeMessagePrefix = "\x00bb-resume\x00"
+
 func (p *Processor) processMessage(ctx context.Context, sessionID, message string) {
 	projectRoot, platform, projectKey, userID, agentName, ok := p.registry.GetSessionContext(sessionID)
 	if !ok {
@@ -169,10 +178,16 @@ func (p *Processor) processMessage(ctx context.Context, sessionID, message strin
 		p.mu.Unlock()
 	}()
 
-	eventStream := NewEventStream(sessionID, p.registry, p.eventStore)
+	eventStream := NewEventStream(sessionID, p.registry, p.eventStore, p.interrupts)
 
-	// Broadcast user message so it appears in backfill history on reconnect.
-	eventStream.PublishUserMessage(message)
+	// Resume turns must not surface as user_message (SSE or messages-table) —
+	// the widget's answered state already represents the user's answer.
+	if strings.HasPrefix(message, ResumeMessagePrefix) {
+		message = strings.TrimPrefix(message, ResumeMessagePrefix)
+		ctx = domain.WithResumeTurn(ctx)
+	} else {
+		eventStream.PublishUserMessage(message)
+	}
 
 	eventStream.PublishProcessingStarted()
 

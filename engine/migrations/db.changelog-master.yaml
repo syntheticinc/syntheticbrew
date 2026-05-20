@@ -20,3 +20,9 @@ databaseChangeLog:
   - include:
       file: 007_add_mcp_catalog_refresh_interval.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 008_add_interrupts_table.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 009_messages_interrupt_event_types.yaml
+      relativeToChangelogFile: true

@@ -13,6 +13,10 @@ dist/
 # Test binary
 *.test
 
+# Playwright local runs
+test-results/
+.playwright-mcp/
+
 # Output of the go coverage tool
 *.out
 

@@ -365,8 +365,9 @@ func (r *AgentToolResolver) Resolve(ctx context.Context, toolNames []string, dep
 		if t == nil {
 			continue
 		}
-		riskLevel := GetContentRiskLevel(name)
-		t = NewSafeToolWrapper(t, name, riskLevel)
+		// Prompt-injection markers for untrusted tool output are applied at the
+		// message_collector layer (LLM-bound only) — keeps raw content in SSE /
+		// history / audit. See internal/service/engine/llm_content_wrap.go.
 		t = NewCancellableToolWrapper(t)
 
 		// Wrap confirm_before tools with ConfirmationWrapper (deterministic HITL confirmation)

@@ -7,6 +7,26 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-20
+
+### Changed (breaking)
+- Bumps `appVersion` to **1.2.0**. Engine 1.2.0 introduces the HITL Interrupt
+  Primitive — a breaking change to the SSE contract for downstream chat
+  clients that render widgets from `show_structured_output`. `tool_call` /
+  `tool_result` events for that tool are no longer emitted; clients now
+  receive `interrupt_request` / `interrupt_resume` events instead, and
+  submit user choices via a new optional `resume_interrupt` field on the
+  chat POST body. See the engine migration guide
+  `docs/migration/v1.2-hitl-interrupt.md` for the client diff.
+
+  The chart-level minor bump (0.6.x → 0.7.0) reflects the breaking semantic
+  change in the bundled engine API even though no chart-template values are
+  added or removed. Self-hosted operators upgrading from 0.6.x must
+  coordinate with any custom chat-client integrations they ship alongside
+  engine before adopting this chart version. Auto-applies a forward-only
+  Liquibase changeset (`008_add_interrupts_table`) on first boot to create
+  the per-tenant `interrupts` state-tracker table.
+
 ## [0.6.13] - 2026-05-18
 
 ### Changed

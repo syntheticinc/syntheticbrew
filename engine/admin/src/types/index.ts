@@ -633,9 +633,59 @@ export interface MessageResponse {
 // EventResponse represents a runtime event from the session timeline.
 export interface EventResponse {
   id: string;
-  event_type: 'user_message' | 'assistant_message' | 'tool_call' | 'tool_result' | 'reasoning' | 'system';
+  event_type:
+    | 'user_message'
+    | 'assistant_message'
+    | 'tool_call'
+    | 'tool_result'
+    | 'reasoning'
+    | 'system'
+    | 'interrupt_request'
+    | 'interrupt_resume';
   agent_id?: string;
   call_id?: string;
   payload: Record<string, unknown>;
   created_at: string;
+}
+
+// HITL Interrupt Primitive — engine 1.2.0+
+
+/** Per-question entry of a `form` interrupt schema. */
+export interface InterruptQuestion {
+  id: string;
+  label: string;
+  type: 'text' | 'select' | 'multiselect';
+  options?: { label: string; value?: string }[];
+  default?: string;
+}
+
+/** Schema body of a `structured_output` interrupt — mirrors domain.StructuredOutput. */
+export interface InterruptSchema {
+  output_type: 'summary_table' | 'form' | 'info';
+  title?: string;
+  description?: string;
+  rows?: { label: string; value: string }[];
+  actions?: { label: string; type: 'primary' | 'secondary'; value: string }[];
+  questions?: InterruptQuestion[];
+}
+
+/** Wire payload of `interrupt_request` SSE / event_log content. */
+export interface InterruptRequestPayload {
+  interrupt_id: string;
+  kind: 'structured_output';
+  schema: InterruptSchema;
+}
+
+/** Single answer in a resume submission. */
+export interface InterruptAnswer {
+  question_id: string;
+  value: string;
+  label?: string;
+}
+
+/** Wire payload of `interrupt_resume` SSE / event_log content. */
+export interface InterruptResumePayload {
+  interrupt_id: string;
+  kind: 'structured_output';
+  payload: { answers: InterruptAnswer[] };
 }

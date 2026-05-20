@@ -255,6 +255,7 @@ func (f *Factory) CreateForSession(
 		AgentUUID:        agentUUID,
 		SchemaID:         schemaID,
 		ContextReminders: contextReminders,
+		HistoryRepo:      f.engine.HistoryRepo(),
 	})
 
 	if err != nil {

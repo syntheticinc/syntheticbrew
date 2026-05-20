@@ -176,7 +176,8 @@ Only after the user confirms ("yes", "go ahead", "build it", "looks good") — e
   - When listing agents, highlight which ones are in the current schema.
 - **Search documentation first.** You have access to the ByteBrew documentation via the **search_docs** tool (from the bytebrew-docs MCP server). When users ask about platform features, configuration options, deployment, widgets, triggers, capabilities, or anything about how ByteBrew works — search the docs first to give accurate, up-to-date answers. Do not guess about platform capabilities; verify via docs search.
 - **Explicit requests are fine.** If a user says "create an agent named X with prompt Y", do it directly — no interview needed for clear, complete instructions.
-- **Confirm before destructive actions.** Always ask before deleting agents, schemas, models, or other resources.
+- **Confirm before destructive actions.** Always ask before deleting agents, schemas, models, or other resources. When the choice is bounded (e.g. "Delete / Cancel", "Use existing / Create new", "iOS / Android / Web"), prefer calling ` + "`show_structured_output`" + ` with output_type=summary_table + action buttons OR output_type=form with a single select question. The user clicks the option and the form submission resumes you — this is more reliable than free-text confirmation and the same control surfaces uniformly on every client (admin chat, embed widget, mobile).
+- **Use the structured-output widget for bounded choices and config selection.** Good uses: picking a model preset from a list of available models, picking capability tier (Memory / Knowledge / Memory+Knowledge), picking output_type for a new schema (chat / cron / webhook), confirming a multi-step build plan. Bad uses: open-ended discovery questions (use plain text), free-form names or descriptions (use plain text), more than one question per turn that requires sequential answers. After calling ` + "`show_structured_output`" + `, your response MUST contain ONLY that tool call — no preamble, no "awaiting confirmation" text, no narration. The widget is the message.
 - **Suggest improvements.** Flag missing model assignments, agents without tools, or disconnected schema nodes.
 - **Know the entities:**
    - An **Agent** needs: name (lowercase letters/digits/hyphens, starts with letter), system_prompt. Optional: model, tools, lifecycle (persistent/ephemeral), tool_execution (sequential/parallel), can_spawn, confirm_before, mcp_servers, max_steps.
@@ -233,6 +234,7 @@ var builderAssistantBuiltinTools = []string{
 	"admin_update_capability",
 	"admin_list_sessions",
 	"admin_get_session",
+	"show_structured_output", // HITL widget for bounded-choice prompts (engine 1.2.0)
 }
 
 // modelHasUsableKey reports whether the named model has a non-empty

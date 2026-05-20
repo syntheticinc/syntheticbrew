@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008_add_interrupts_table
+      author: bytebrew
+      comment: |
+        HITL Interrupt Primitive — first-class state of suspended agent.
+        Pure state-tracker linked to session_event_log rows via request_event_id
+        (request) and resolve_event_id (response). Kind / schema / payload all
+        live in the linked event rows' proto_data — no duplication. Per-tenant
+        scoped per cloud-first rule. Engine 1.2.0.
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE interrupts (
+                id                uuid         NOT NULL DEFAULT gen_random_uuid(),
+                tenant_id         uuid         NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                request_event_id  uuid         NOT NULL,
+                status            varchar(20)  NOT NULL DEFAULT 'pending',
+                resolve_event_id  uuid,
+                created_at        timestamptz  NOT NULL DEFAULT now(),
+                CONSTRAINT pk_interrupts PRIMARY KEY (id),
+                CONSTRAINT fk_interrupts_request_event FOREIGN KEY (request_event_id)
+                  REFERENCES session_event_log(id) ON DELETE CASCADE,
+                CONSTRAINT fk_interrupts_resolve_event FOREIGN KEY (resolve_event_id)
+                  REFERENCES session_event_log(id) ON DELETE SET NULL,
+                CONSTRAINT chk_interrupts_status CHECK (
+                  status IN ('pending','resolved','abandoned')
+                )
+              );
+
+              CREATE INDEX idx_interrupts_pending
+                ON interrupts (tenant_id, status)
+                WHERE status = 'pending';
+
+              CREATE INDEX idx_interrupts_request_event
+                ON interrupts (request_event_id);
+        - rollback:
+            sql: |
+              DROP TABLE IF EXISTS interrupts;
