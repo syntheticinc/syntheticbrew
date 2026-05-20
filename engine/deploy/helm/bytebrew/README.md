@@ -83,6 +83,31 @@ helm install bytebrew-engine oci://ghcr.io/syntheticinc/charts/bytebrew-engine \
 
 See `values.yaml` for the full list of parameters.
 
+## Securing self-hosted
+
+`auth.mode=local` (default) has **no real authentication** — engine signs its
+own Ed25519 keypair and any request reaching the listen address can mint an
+admin session via `POST /api/v1/auth/local-session`. This is by design for
+CE single-node dev / CI / single-developer port-forward setups, where the
+network perimeter (loopback, ClusterIP, VPN, firewall) is the actual trust
+boundary.
+
+A startup `WARN` is emitted when `auth.mode=local` and the HTTP listener
+binds to anything other than `127.0.0.1` / `::1` / `localhost`, so a public
+exposure does not go unnoticed. The recommended deployment patterns:
+
+| Scenario | Recommended setup |
+|---|---|
+| Local dev, CI, single-developer | `auth.mode=local`, keep bind on loopback or behind ClusterIP / VPN. The WARN can be ignored when you control the perimeter. |
+| Headless automation (brewctl, curl) | `BOOTSTRAP_ADMIN_TOKEN` — long-lived `bb_<hex>` API token, sent as `Authorization: Bearer <token>`. Independent of session JWTs. |
+| Production self-hosted | `auth.mode=external` + a reverse proxy that enforces identity (oauth2-proxy, Authelia, Cloudflare Access, nginx `basic_auth`, Tailscale serve, etc.). Engine validates pre-provisioned EdDSA JWTs but does not itself authenticate users. |
+
+There is intentionally no built-in admin password / login form. A single
+`admin/<password>` from `values.yaml` would be cleartext in git or k8s
+secrets — equivalent to no auth against any attacker that already reached
+the cluster, and it would not buy real defence-in-depth. Use a battle-tested
+identity proxy instead.
+
 ## Integrations
 
 ### Helmfile (similar GitOps stacks)

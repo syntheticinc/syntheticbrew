@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.1.11] — 2026-05-18
+
+Admin SPA session-expiry recovery + local-mode bind-exposure warning.
+
+### Fixed
+- **Admin SPA: stale-JWT 401 no longer redirects to a non-existent `/login`
+  route** (`engine/admin/src/api/client.ts`). The previous handler hard-coded
+  `window.location.href = '/login?reason=session_expired'` regardless of
+  basename, so after a 1h session expired the SPA bounced to `/login` —
+  outside the `/admin/` mount — and the host's Caddy/edge fell through to a
+  404. There is no `/login` route inside the admin SPA; the comment claiming
+  otherwise was stale.
+
+  Replaced `redirectToLoginOn401` with `handleUnauthorized` which routes by
+  active auth mode:
+  - `VITE_AUTH_MODE=local` (self-hosted): dynamically imports
+    `bootstrapAuth` and re-mints a fresh token via
+    `POST /api/v1/auth/local-session` inline — no page reload, no redirect.
+    A module-scoped `recovering` flag de-duplicates simultaneous 401s from
+    parallel in-flight requests.
+  - `VITE_AUTH_MODE=external` with `VITE_LANDING_URL`: redirects to
+    `${VITE_LANDING_URL}/login?return_to=<current>&reason=session_expired`
+    (unchanged from previous behaviour).
+  - `VITE_AUTH_MODE=external` without `VITE_LANDING_URL`: throws a
+    build-config error so the misconfiguration is loud rather than silently
+    routing to nowhere.
+
+  Vitest coverage (`engine/admin/src/api/client.test.ts`) adds four cases —
+  local-mode re-mint without redirect, external+landing redirect shape,
+  external-without-landing throw, and idempotency across parallel 401s.
+
+### Added
+- **Engine: startup `WARN` when `BYTEBREW_AUTH_MODE=local` and the HTTP
+  listener is bound to a non-loopback address**
+  (`engine/internal/app/server.go`). Local auth mode has no real
+  authentication — any request reaching the listen address can mint an
+  admin session — so a public bind silently exposes the admin API. The
+  warning surfaces at startup with the offending host/port so operators
+  catch the misconfiguration before the next bug report. Loopback binds
+  (`127.0.0.1` / `::1` / `localhost`) and any `AUTH_MODE=external` setup
+  remain silent. Behaviour-only; no API or DB change. Drop-in upgrade from
+  1.1.10.
+
 ## [1.1.10] — 2026-05-18
 
 Admin SPA UX: clarify Display Name validation when adding a model.
