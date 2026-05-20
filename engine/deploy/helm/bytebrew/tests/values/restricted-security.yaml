@@ -12,7 +12,7 @@ replicaCount: 1
 
 image:
   repository: bytebrew/engine
-  tag: "1.1.10"
+  tag: "1.1.11"
   pullPolicy: IfNotPresent
 
 postgresql:
@@ -54,7 +54,7 @@ migrations:
   enabled: true
   image:
     repository: bytebrew/engine-migrations
-    tag: "1.1.10"
+    tag: "1.1.11"
 
 bootstrapAdminToken:
   enabled: true
