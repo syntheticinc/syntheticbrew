@@ -255,3 +255,106 @@ func TestStructuredOutput_FormMode_SelectRequiresMinTwoOptions(t *testing.T) {
 	assert.Contains(t, result, "requires at least 2 options")
 	assert.Empty(t, emitter.events)
 }
+
+// The tool's JSON Schema declares `rows`, `actions`, and `questions` as
+// `schema.String` (with descriptions naming the inner array shape), so frontier
+// LLMs — qwen3-coder-next, gpt-5-mini, etc. — frequently emit them as
+// string-encoded JSON literals: `"rows": "[{...}]"`. The previous typed
+// Unmarshal returned `cannot unmarshal string into Go struct field ...Rows`,
+// which is non-retryable in the same shape, but model retry-loops on it
+// regardless, burning the turn until max_turn_duration. The lenient parsers
+// (parseStructuredRows, parseStructuredActions) restore the contract.
+func TestStructuredOutput_StringEncodedRowsAndActions(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	// Both rows and actions emitted as string-encoded JSON (the failure mode).
+	args := `{
+		"output_type": "summary_table",
+		"title": "Ready",
+		"rows": "[{\"label\":\"Name\",\"value\":\"MyProject\"},{\"label\":\"Lang\",\"value\":\"Go\"}]",
+		"actions": "[{\"label\":\"Deploy\",\"type\":\"primary\",\"value\":\"deploy\"}]"
+	}`
+
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Equal(t, "Structured output displayed to user.", result)
+
+	require.Len(t, emitter.events, 1)
+	var output domain.StructuredOutput
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &output))
+	require.Len(t, output.Rows, 2)
+	assert.Equal(t, "Name", output.Rows[0].Label)
+	assert.Equal(t, "MyProject", output.Rows[0].Value)
+	require.Len(t, output.Actions, 1)
+	assert.Equal(t, "Deploy", output.Actions[0].Label)
+	assert.Equal(t, "primary", output.Actions[0].Type)
+	assert.Equal(t, "deploy", output.Actions[0].Value)
+}
+
+// The literal-array shape (what the struct used to require pre-fix) must still
+// work — both paths converge.
+func TestStructuredOutput_LiteralRowsAndActions(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "summary_table",
+		"rows": [{"label":"Name","value":"MyProject"}],
+		"actions": [{"label":"Deploy","type":"primary","value":"deploy"}]
+	}`
+
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Equal(t, "Structured output displayed to user.", result)
+
+	require.Len(t, emitter.events, 1)
+	var output domain.StructuredOutput
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &output))
+	require.Len(t, output.Rows, 1)
+	assert.Equal(t, "MyProject", output.Rows[0].Value)
+	require.Len(t, output.Actions, 1)
+	assert.Equal(t, "Deploy", output.Actions[0].Label)
+}
+
+// Empty stringified arrays (a common LLM pattern when the model hesitates)
+// should be treated as absent, not as parse errors.
+func TestStructuredOutput_EmptyStringEncodedRowsAndActions(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "info",
+		"title": "No data",
+		"rows": "",
+		"actions": ""
+	}`
+
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Equal(t, "Structured output displayed to user.", result)
+
+	require.Len(t, emitter.events, 1)
+	var output domain.StructuredOutput
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &output))
+	assert.Empty(t, output.Rows)
+	assert.Empty(t, output.Actions)
+}
+
+// Malformed string-encoded JSON should produce a clear error, not silently
+// drop the field.
+func TestStructuredOutput_MalformedStringEncodedRows(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "summary_table",
+		"rows": "[{not valid json}]"
+	}`
+
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, "rows")
+	assert.Empty(t, emitter.events)
+}
