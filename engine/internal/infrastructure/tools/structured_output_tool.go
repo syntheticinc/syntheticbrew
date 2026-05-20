@@ -10,6 +10,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
+
 	"github.com/syntheticinc/bytebrew/engine/internal/domain"
 )
 
@@ -123,12 +125,27 @@ func (t *StructuredOutputTool) InvokableRun(ctx context.Context, argumentsInJSON
 		Questions:   questions,
 	}
 
-	contentJSON, err := json.Marshal(output)
+	schemaJSON, err := json.Marshal(output)
 	if err != nil {
 		return fmt.Sprintf("[ERROR] failed to serialize output: %v", err), nil
 	}
 
-	slog.InfoContext(ctx, "[structured_output] emitting event",
+	// Server-issued interrupt_id correlates the widget with resume_interrupt
+	// and is the PK in the interrupts state-tracker table.
+	interruptID := uuid.NewString()
+
+	payload := domain.InterruptRequestPayload{
+		InterruptID: interruptID,
+		Kind:        domain.InterruptKindStructuredOutput,
+		Schema:      schemaJSON,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Sprintf("[ERROR] failed to serialize interrupt payload: %v", err), nil
+	}
+
+	slog.InfoContext(ctx, "[structured_output] emitting interrupt_request event",
+		"interrupt_id", interruptID,
 		"output_type", args.OutputType,
 		"rows", len(args.Rows),
 		"actions", len(args.Actions),
@@ -136,15 +153,17 @@ func (t *StructuredOutputTool) InvokableRun(ctx context.Context, argumentsInJSON
 
 	if t.emitter != nil {
 		_ = t.emitter.Send(&domain.AgentEvent{
-			Type:      domain.EventTypeStructuredOutput,
+			Type:      domain.EventTypeInterruptRequest,
 			Timestamp: time.Now(),
-			Content:   string(contentJSON),
+			Content:   string(payloadJSON),
+			Metadata: map[string]interface{}{
+				"interrupt_id": interruptID,
+				"kind":         string(domain.InterruptKindStructuredOutput),
+			},
 		})
 	}
 
-	// Halt the react loop after this tool — user's next message resumes it.
-	// Failure means the tool was invoked outside a react graph (programming
-	// error); logged ERROR for operator alerting.
+	// Halt the react loop — user's resume_interrupt POST drives the next turn.
 	if err := react.SetReturnDirectly(ctx); err != nil {
 		slog.ErrorContext(ctx, "[structured_output] SetReturnDirectly failed — react loop may not halt", "error", err)
 	}

@@ -23,6 +23,12 @@ type EventStore interface {
 	Append(sessionID, eventType string, proto *pb.SessionEvent, jsonData map[string]interface{}) (string, error)
 }
 
+// InterruptCreator persists the interrupts row pointing at a request event.
+// Nil in no-DB / test mode.
+type InterruptCreator interface {
+	Create(ctx context.Context, interrupt *domain.Interrupt) error
+}
+
 // EventStream converts domain.AgentEvent to pb.SessionEvent, persists via EventStore,
 // and publishes via EventPublisher.
 // Implements domain.AgentEventStream.
@@ -30,16 +36,19 @@ type EventStream struct {
 	sessionID     string
 	publisher     EventPublisher
 	store         EventStore
-	totalTokens   int // accumulated from EventTypeTokenUsage, included in ProcessingStopped
-	contextTokens int // actual context window size at last model call (from ContextRewriter)
+	interrupts    InterruptCreator // optional, nil in no-DB mode; required for HITL
+	totalTokens   int              // accumulated from EventTypeTokenUsage, included in ProcessingStopped
+	contextTokens int              // actual context window size at last model call (from ContextRewriter)
 }
 
 // NewEventStream creates a new event stream that persists and publishes events.
-func NewEventStream(sessionID string, publisher EventPublisher, store EventStore) *EventStream {
+// interrupts may be nil for no-DB / test contexts.
+func NewEventStream(sessionID string, publisher EventPublisher, store EventStore, interrupts InterruptCreator) *EventStream {
 	return &EventStream{
-		sessionID: sessionID,
-		publisher: publisher,
-		store:     store,
+		sessionID:  sessionID,
+		publisher:  publisher,
+		store:      store,
+		interrupts: interrupts,
 	}
 }
 
@@ -174,9 +183,9 @@ func (s *EventStream) PublishAnswerChunk(chunk string) {
 	})
 }
 
-// persistAndPublish stores the event in the event store and publishes it.
-// The event ID is assigned by the store (auto-increment) and set on the proto
-// before publishing so subscribers see a stable numeric ID.
+// persistAndPublish stores the event, stamps the assigned id onto the proto,
+// then publishes. For INTERRUPT_REQUEST it also creates the interrupts row
+// with FK to the just-stored event so the resume path can JOIN back to it.
 func (s *EventStream) persistAndPublish(event *pb.SessionEvent) {
 	if s.store != nil {
 		jsonData := eventformat.SerializeSessionEvent(event)
@@ -188,6 +197,19 @@ func (s *EventStream) persistAndPublish(event *pb.SessionEvent) {
 		}
 		if id != "" {
 			event.EventId = id
+		}
+
+		if event.GetType() == pb.SessionEventType_SESSION_EVENT_INTERRUPT_REQUEST && s.interrupts != nil && id != "" {
+			interruptID := event.GetCallId()
+			if interruptID != "" {
+				createErr := s.interrupts.Create(context.Background(), &domain.Interrupt{
+					ID:             interruptID,
+					RequestEventID: id,
+				})
+				if createErr != nil {
+					slog.ErrorContext(context.Background(), "failed to create interrupt row", "session_id", s.sessionID, "interrupt_id", interruptID, "error", createErr)
+				}
+			}
 		}
 	}
 
@@ -354,6 +376,28 @@ func (s *EventStream) convertEvent(event *domain.AgentEvent) *pb.SessionEvent {
 			Type:    pb.SessionEventType_SESSION_EVENT_ANSWER_CHUNK,
 			Content: content,
 			AgentId: agentID,
+		}
+
+	case domain.EventTypeInterruptRequest:
+		// interrupt_id surfaces as CallId so resume can correlate.
+		callID, _ := event.Metadata["interrupt_id"].(string)
+		return &pb.SessionEvent{
+			Type:    pb.SessionEventType_SESSION_EVENT_INTERRUPT_REQUEST,
+			Content: SanitizeUTF8(event.Content),
+			CallId:  callID,
+			AgentId: agentID,
+			Step:    int32(event.Step),
+		}
+
+	case domain.EventTypeInterruptResume:
+		// User submitted resume — Content carries InterruptResumePayload JSON.
+		callID, _ := event.Metadata["interrupt_id"].(string)
+		return &pb.SessionEvent{
+			Type:    pb.SessionEventType_SESSION_EVENT_INTERRUPT_RESUME,
+			Content: SanitizeUTF8(event.Content),
+			CallId:  callID,
+			AgentId: agentID,
+			Step:    int32(event.Step),
 		}
 
 	default:

@@ -1,5 +1,98 @@
 # Changelog
 
+## [1.2.0] — 2026-05-20
+
+HITL Interrupt Primitive + Bug 1 wrap-LLM-only refactor (Chirp 2026-05-20 report).
+
+### Breaking changes
+- **`show_structured_output` no longer emits `tool_call` / `tool_result` SSE
+  events to the client.** Engine 1.1.x clients that rendered widgets from the
+  tool_call event arguments will see the widget never appear. Replaced by the
+  new `interrupt_request` / `interrupt_resume` SSE events — see migration
+  guide `docs/migration/v1.2-hitl-interrupt.md`. LLM-context flow is preserved
+  (eino still sees the tool result for accumulated messages), so the agent's
+  internal reasoning is unchanged; only the wire format to chat clients moved.
+- Two new `SessionEventType` enum values added to `flow_service.pb.go`:
+  `SESSION_EVENT_INTERRUPT_REQUEST = 12`, `SESSION_EVENT_INTERRUPT_RESUME = 13`.
+  Existing clients silently ignore them (verified — admin SPA, embed widget,
+  and chirp's parser all have no-default switches on unknown event types).
+- POST `/api/v1/schemas/{name}/chat` accepts a new optional `resume_interrupt`
+  field as a mutually-exclusive alternative to `message`. Sending both → 400.
+  Sending neither → 400. Existing clients sending only `message` keep working.
+
+### Added
+- **HITL Interrupt Primitive** as a first-class concept (server-issued halt
+  point with explicit resume). New domain entities in
+  `internal/domain/interrupt.go`:
+  - `Interrupt` — pure state-tracker row (id, tenant_id, request_event_id,
+    status, resolve_event_id, created_at); kind/schema/payload live in linked
+    session_event_log rows
+  - `InterruptStatus` (pending / resolved / abandoned)
+  - `InterruptKind` discriminator (currently only `structured_output`;
+    extensible to file_pick / voice / wizard without protocol changes)
+  - `InterruptRequestPayload` / `InterruptResumePayload` wire envelopes
+- **New `interrupts` table** (Liquibase changeset 008) — 6-column pure state
+  tracker with FK linkage to `session_event_log(id)` for request and resolve
+  events. Indexed on `(tenant_id, status) WHERE status='pending'` for fast
+  resume-validation lookup and on `request_event_id` for the JOIN that
+  recovers kind/schema. Cloud-first scoping enforced via per-tenant column +
+  `tenantScope` helper.
+- `GORMInterruptRepository` (`internal/infrastructure/persistence/configrepo/interrupt_repository.go`)
+  with `Create`, `Get`, `LoadWithRequestEvent` (single-JOIN lookup that returns
+  Interrupt + its request event row in one round-trip), `MarkResolved`
+  (atomic conditional UPDATE on status='pending' to safely handle concurrent
+  resume races → 409), `MarkAbandonedForSession`.
+- `chatServiceHTTPAdapter.ResumeInterrupt` — validates tenant + session +
+  status, persists the `interrupt_resume` event row, atomically marks the
+  interrupts row resolved, reconstructs a Q+A user message from the original
+  widget schema + answers (preferring human labels over raw codes), and
+  resumes the React loop by injecting that message.
+- `wrapContentForLLMContext` helper in `internal/service/engine/llm_content_wrap.go` —
+  applies prompt-injection markers ONLY when assembling
+  `schema.Message{Role:Tool}` for the next LLM iteration. SSE / history /
+  audit consumers receive raw content from the tool. Closes Chirp Bug 1
+  ("SafeToolWrapper markers leak into the client SSE stream").
+- `EventStream.persistAndPublish` auto-creates the `interrupts` state-tracker
+  row when persisting an `interrupt_request` event, wiring `request_event_id`
+  FK in the same transaction as the event row insert.
+- Admin SPA `InterruptWidget.tsx` reference renderer (form / summary_table /
+  info modes). Embeddable widget bundle (`engine/widget/`) ships matching DOM
+  rendering — both swallow widget-submit through `POST resume_interrupt` and
+  surface the just-emitted `interrupt_resume` SSE event as an "answered"
+  visual state, never a duplicate chat bubble. Closes Chirp Bug 2 ("widget
+  submit duplicates value in chat").
+- AI Builder Assistant agent now has `show_structured_output` in its
+  available tools and a prompt section guiding when to use it (bounded
+  confirmation, capability tier selection, model preset picking) vs plain
+  text (open discovery questions, free-form names).
+
+### Removed
+- `SafeToolWrapper` struct + `NewSafeToolWrapper` + `wrapContent` from
+  `internal/infrastructure/tools/safe_tool_wrapper.go`. Its only sibling,
+  `CancellableToolWrapper`, remains. The 8 wrapping behaviours from the old
+  test file are now exercised by
+  `internal/service/engine/llm_content_wrap_test.go` at the new layer.
+- `internal/service/engine/message_collector.go::stripToolOutputMarkers` —
+  no longer needed since tool callbacks now receive raw content directly.
+- `domain.EventTypeStructuredOutput` removed; replaced by
+  `EventTypeInterruptRequest`. Persisted 1.1.x rows with this type fall
+  through `convertEvent` default (returns nil).
+
+### Changed
+- `NewEventStream` and `sessionprocessor.New` now accept an `InterruptCreator`
+  (nil-safe — passes through when no DB is wired). Test callers updated to
+  pass nil.
+- `ChatService` interface gains a second method `ResumeInterrupt`. The
+  in-tree `chatServiceHTTPAdapter` and the BYOK test fake both implement it.
+
+### Migration
+See `docs/migration/v1.2-hitl-interrupt.md` for downstream client guidance —
+the suppression of `tool_call`/`tool_result` SSE events for
+`show_structured_output` requires clients to render widgets from the new
+`interrupt_request` event instead, and submit via
+`POST {resume_interrupt: {interrupt_id, payload}}` instead of forging a
+synthetic user message.
+
 ## [1.1.11] — 2026-05-18
 
 Admin SPA session-expiry recovery + local-mode bind-exposure warning.

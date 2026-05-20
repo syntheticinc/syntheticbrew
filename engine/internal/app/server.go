@@ -28,6 +28,7 @@ import (
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/repository"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/platform"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/portfile"
 	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/taskrunner"
@@ -764,8 +765,20 @@ func Run(sc ServerConfig) error {
 		}
 	}
 
+	// HITL interrupt state-tracker repo — wired only when DB is available.
+	// Shared between SessionProcessor (writes rows when interrupt_request events
+	// are emitted) and the chat HTTP adapter (reads + resolves on resume).
+	var interruptRepo *configrepo.GORMInterruptRepository
+	if pgDB != nil {
+		interruptRepo = configrepo.NewGORMInterruptRepository(pgDB)
+	}
+
 	// Create shared SessionProcessor
-	sessProcessor := sessionprocessor.New(sessionRegistry, factory, eventStore)
+	var interruptCreator sessionprocessor.InterruptCreator
+	if interruptRepo != nil {
+		interruptCreator = interruptRepo
+	}
+	sessProcessor := sessionprocessor.New(sessionRegistry, factory, eventStore, interruptCreator)
 
 	// Wire TurnExecutorFactory into poolBasedRunner so chat agents delegated via
 	// lifecycle.Manager use the SSE path instead of the code-agent pool path.
@@ -824,6 +837,9 @@ func Run(sc ServerConfig) error {
 			schemaRepoForChat = configrepo.NewGORMSchemaRepository(pgDB)
 			chatService.schemas = schemaRepoForChat
 			chatService.sessions = configrepo.NewGORMSessionRepository(pgDB)
+			chatService.interrupts = interruptRepo
+			chatService.eventStore = eventStore
+			chatService.history = repository.NewMessageRepositoryImpl(pgDB)
 		}
 		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, forwardHeadersStore.GetForContext)
 

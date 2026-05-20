@@ -8,6 +8,7 @@ import SchemaSelector from './SchemaSelector';
 import TestFlowTab from './TestFlowTab';
 import ContextUsageBar from './ContextUsageBar';
 import BrewingSpinner from './BrewingSpinner';
+import { InterruptWidget } from './InterruptWidget';
 import { api } from '../api/client';
 
 const CURSOR = <span className="inline-block w-1.5 h-3 bg-brand-accent ml-0.5 animate-pulse align-middle" />;
@@ -110,7 +111,7 @@ export default function BottomPanel() {
   const effectiveSchema = lockedSchema ?? selectedSchema ?? undefined;
 
   const resolveBuilderSession = useCallback(() => api.getBuilderLastSession(), []);
-  const { messages, sendMessage, isStreaming, isRestoring, resetSession, tokenUsage, contextTokens } = useSSEChat({
+  const { messages, sendMessage, sendInterruptResume, isStreaming, isRestoring, resetSession, tokenUsage, contextTokens } = useSSEChat({
     endpoint: `/api/v1/admin/assistant/chat`,
     schemaContext: effectiveSchema === 'builder-schema' ? undefined : effectiveSchema,
     resolveSessionId: resolveBuilderSession,
@@ -398,6 +399,23 @@ export default function BottomPanel() {
                                     <div key={si} className="flex justify-start">
                                       <div className="max-w-[80%] px-3 py-2 rounded-card text-xs font-mono break-words bg-brand-dark border border-brand-shade3/20 text-brand-shade2">
                                         {renderMarkdown(stripped, !!msg.streaming && isLastSeg)}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                if (seg.type === 'widget') {
+                                  return (
+                                    <div key={si} className="flex justify-start">
+                                      <div className="max-w-[80%]">
+                                        <InterruptWidget
+                                          interruptId={seg.widget.interruptId}
+                                          schema={seg.widget.schema}
+                                          state={seg.widget.state}
+                                          answers={seg.widget.answers}
+                                          onSubmit={(id, answers) => {
+                                            void sendInterruptResume(id, answers);
+                                          }}
+                                        />
                                       </div>
                                     </div>
                                   );

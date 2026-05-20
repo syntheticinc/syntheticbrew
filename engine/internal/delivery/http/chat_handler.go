@@ -38,8 +38,10 @@ func propagateBYOK(ctx context.Context) context.Context {
 //
 // V2: chat is addressed by schema id, not agent name. The schema's
 // entry_agent_id resolves the orchestrator; chat_enabled gates access.
+// ResumeInterrupt handles the HITL `resume_interrupt` POST body branch.
 type ChatService interface {
 	Chat(ctx context.Context, schemaID, message, userSub, sessionID string) (<-chan SSEEvent, error)
+	ResumeInterrupt(ctx context.Context, schemaID, userSub, sessionID, interruptID string, payload json.RawMessage) (<-chan SSEEvent, error)
 }
 
 // ChatHandler serves POST /api/v1/schemas/{name}/chat with SSE streaming.
@@ -66,11 +68,18 @@ func NewChatHandler(service ChatService, schemas SchemaNameResolver, forwardHead
 }
 
 type chatRequest struct {
-	Message   string            `json:"message"`
-	UserSub   string            `json:"user_sub"`            // fallback when no JWT present (tests/CE-local)
-	SessionID string            `json:"session_id"`
-	Stream    *bool             `json:"stream,omitempty"`    // default true
-	Headers   map[string]string `json:"headers,omitempty"`   // optional headers forwarded to MCP tool calls
+	Message         string                 `json:"message"`
+	UserSub         string                 `json:"user_sub"`                   // fallback when no JWT present (tests/CE-local)
+	SessionID       string                 `json:"session_id"`
+	Stream          *bool                  `json:"stream,omitempty"`           // default true
+	Headers         map[string]string      `json:"headers,omitempty"`          // optional headers forwarded to MCP tool calls
+	ResumeInterrupt *resumeInterruptRequest `json:"resume_interrupt,omitempty"` // HITL resume — mutually exclusive with Message
+}
+
+// resumeInterruptRequest is the HITL `resume_interrupt` POST body branch.
+type resumeInterruptRequest struct {
+	InterruptID string          `json:"interrupt_id"`
+	Payload     json.RawMessage `json:"payload"`
 }
 
 type nonStreamResponse struct {
@@ -106,8 +115,19 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Message == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message required"})
+	// Caller must send exactly one of `message` / `resume_interrupt`.
+	hasMessage := req.Message != ""
+	hasResume := req.ResumeInterrupt != nil && req.ResumeInterrupt.InterruptID != ""
+	switch {
+	case hasMessage && hasResume:
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "message and resume_interrupt are mutually exclusive",
+		})
+		return
+	case !hasMessage && !hasResume:
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "message or resume_interrupt required",
+		})
 		return
 	}
 
@@ -136,9 +156,18 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		ctx = domain.WithRequestContext(ctx, &domain.RequestContext{Headers: merged})
 	}
 
-	events, err := h.service.Chat(ctx, schemaID, req.Message, userSub, req.SessionID)
-	if err != nil {
-		writeDomainError(w, err)
+	var events <-chan SSEEvent
+	var err2 error
+	if hasResume {
+		events, err2 = h.service.ResumeInterrupt(
+			ctx, schemaID, userSub, req.SessionID,
+			req.ResumeInterrupt.InterruptID, req.ResumeInterrupt.Payload,
+		)
+	} else {
+		events, err2 = h.service.Chat(ctx, schemaID, req.Message, userSub, req.SessionID)
+	}
+	if err2 != nil {
+		writeDomainError(w, err2)
 		return
 	}
 
@@ -239,16 +268,14 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, schemaID string,
 				}
 			}
 		case "assistant_retract":
-			// Drop fabricated prose from a HITL turn. errMsg stays — real
-			// operational failures must reach the client.
+			// Drop fabricated prose from a HITL turn (errMsg preserved).
 			message = ""
 		case "tool_call":
 			toolName, _ := data["tool"].(string)
 			input, _ := data["content"].(string)
 			lastTool = toolName
 			toolCalls = append(toolCalls, toolCallEntry{Tool: toolName, Input: input})
-			// Belt-and-suspenders: retract on HITL tool_call directly in case
-			// the retract event hasn't arrived yet.
+			// Belt-and-suspenders retract in case the retract event hasn't arrived.
 			if domain.IsHITLTool(toolName) {
 				message = ""
 			}

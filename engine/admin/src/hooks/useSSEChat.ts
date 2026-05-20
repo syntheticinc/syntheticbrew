@@ -1,12 +1,26 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { parseSSELine, type ToolCall } from '../lib/sse';
-import type { EventResponse } from '../types';
+import type {
+  EventResponse,
+  InterruptAnswer,
+  InterruptRequestPayload,
+  InterruptResumePayload,
+  InterruptSchema,
+} from '../types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+export interface WidgetSegmentData {
+  interruptId: string;
+  schema: InterruptSchema;
+  state: 'pending' | 'answered';
+  answers?: InterruptAnswer[];
+}
+
 export type MessageSegment =
   | { type: 'text'; content: string }
-  | { type: 'tool_call'; toolCall: ToolCall };
+  | { type: 'tool_call'; toolCall: ToolCall }
+  | { type: 'widget'; widget: WidgetSegmentData };
 
 export interface SSEMessage {
   id: string;
@@ -45,6 +59,8 @@ export interface UseSSEChatConfig {
 export interface UseSSEChatReturn {
   messages: SSEMessage[];
   sendMessage: (text: string) => Promise<void>;
+  /** Submit a HITL widget answer (engine 1.2.0+). No-op while streaming. */
+  sendInterruptResume: (interruptId: string, answers: InterruptAnswer[]) => Promise<void>;
   isStreaming: boolean;
   isRestoring: boolean;
   error: string | null;
@@ -139,10 +155,13 @@ function mapEventsToMessages(events: EventResponse[]): SSEMessage[] {
       }
 
       case 'tool_call': {
+        const toolName = (payload.tool as string) ?? '';
+        // HITL widget surfaces via interrupt_request — skip raw tool_call.
+        if (toolName === 'show_structured_output') break;
         const a = ensureAssistant(ev.id);
         const args = payload.arguments as Record<string, unknown> | undefined;
         const tc: ToolCall = {
-          tool: (payload.tool as string) ?? '',
+          tool: toolName,
           input: args ? JSON.stringify(args) : '',
         };
         a.toolCalls = [...(a.toolCalls ?? []), tc];
@@ -196,11 +215,83 @@ function mapEventsToMessages(events: EventResponse[]): SSEMessage[] {
           streaming: false,
         });
         break;
+
+      case 'interrupt_request': {
+        const wp = parseInterruptRequestPayload(payload);
+        if (!wp) break;
+        const a = ensureAssistant(ev.id);
+        a.segments = [
+          ...(a.segments ?? []),
+          {
+            type: 'widget',
+            widget: { interruptId: wp.interrupt_id, schema: wp.schema, state: 'pending' },
+          },
+        ];
+        lastSegmentIsText = false;
+        break;
+      }
+
+      case 'interrupt_resume': {
+        const rp = parseInterruptResumePayload(payload);
+        if (!rp) break;
+        markWidgetAnswered(messages, currentAssistant, rp.interrupt_id, rp.payload.answers);
+        break;
+      }
     }
   }
 
   flushAssistant();
   return messages;
+}
+
+/** Parse the `content` string carried on interrupt_request SSE events. */
+function parseInterruptRequestPayload(payload: Record<string, unknown>): InterruptRequestPayload | null {
+  const raw = (payload.content as string) ?? '';
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as InterruptRequestPayload;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse the `content` string carried on interrupt_resume SSE events. */
+function parseInterruptResumePayload(payload: Record<string, unknown>): InterruptResumePayload | null {
+  const raw = (payload.content as string) ?? '';
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as InterruptResumePayload;
+  } catch {
+    return null;
+  }
+}
+
+/** Flip a widget segment to answered. Used by history restore and live SSE. */
+function markWidgetAnswered(
+  messages: SSEMessage[],
+  current: SSEMessage | null,
+  interruptId: string,
+  answers: InterruptAnswer[] | undefined,
+): void {
+  const apply = (msg: SSEMessage): boolean => {
+    if (!msg.segments) return false;
+    let changed = false;
+    msg.segments = msg.segments.map((seg) => {
+      if (seg.type === 'widget' && seg.widget.interruptId === interruptId) {
+        changed = true;
+        return {
+          type: 'widget',
+          widget: { ...seg.widget, state: 'answered', answers: answers ?? [] },
+        };
+      }
+      return seg;
+    });
+    return changed;
+  };
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (apply(messages[i]!)) return;
+  }
+  if (current) apply(current);
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
@@ -321,18 +412,38 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
     );
   }, []);
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isStreaming) return;
+  // Shared dispatcher for sendMessage / sendInterruptResume.
+  type Submission =
+    | { kind: 'message'; text: string }
+    | { kind: 'resume'; interruptId: string; answers: InterruptAnswer[] };
+
+  const internalSubmit = useCallback(async (submission: Submission) => {
+    if (isStreaming) return;
+    if (submission.kind === 'message' && !submission.text.trim()) return;
 
     setIsStreaming(true);
     setError(null);
     abortRef.current = new AbortController();
 
-    const userMsg: SSEMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: text,
-    };
+    // Plain message → push user bubble. Resume → widget shows the answer.
+    if (submission.kind === 'message') {
+      const userMsg: SSEMessage = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: submission.text,
+      };
+      const assistantMsgId = crypto.randomUUID();
+      const assistantMsg: SSEMessage = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        toolCalls: [],
+        streaming: true,
+      };
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      await runSubmitStream(assistantMsgId, submission);
+      return;
+    }
 
     const assistantMsgId = crypto.randomUUID();
     const assistantMsg: SSEMessage = {
@@ -342,8 +453,14 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
       toolCalls: [],
       streaming: true,
     };
+    setMessages((prev) => [...prev, assistantMsg]);
+    await runSubmitStream(assistantMsgId, submission);
+  }, [isStreaming, endpoint, schemaName, getHeaders, persistenceKey]);
 
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+  // Shared SSE consumption: configure throttled patches against the assistant
+  // bubble we just inserted, POST the chat endpoint with the per-submission
+  // body shape, and process the streamed events.
+  const runSubmitStream = useCallback(async (assistantMsgId: string, submission: Submission) => {
 
     // Throttled state updates: accumulate patches, flush at most every 250ms.
     // This prevents re-rendering the entire message list + markdown on every SSE chunk.
@@ -391,15 +508,23 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
         setError('chat endpoint not configured');
         return;
       }
+      const body: Record<string, unknown> = {
+        session_id: sessionIdRef.current || undefined,
+        ...(schemaContext ? { schema_context: schemaContext } : {}),
+      };
+      if (submission.kind === 'message') {
+        body.message = submission.text;
+      } else {
+        body.resume_interrupt = {
+          interrupt_id: submission.interruptId,
+          payload: { answers: submission.answers },
+        };
+      }
       const res = await fetch(url, {
         method: 'POST',
         headers: allHeaders,
-        body: JSON.stringify({
-          message: text,
-          session_id: sessionIdRef.current || undefined,
-          ...(schemaContext ? { schema_context: schemaContext } : {}),
-        }),
-        signal: abortRef.current.signal,
+        body: JSON.stringify(body),
+        signal: abortRef.current!.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -528,6 +653,46 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
               setError(errContent);
               break;
             }
+            case 'interrupt_request': {
+              const wp = parseInterruptRequestPayload(parsed);
+              if (!wp) break;
+              currentSegments = [
+                ...currentSegments,
+                {
+                  type: 'widget',
+                  widget: { interruptId: wp.interrupt_id, schema: wp.schema, state: 'pending' },
+                },
+              ];
+              lastSegmentIsText = false;
+              updateAssistantNow({ segments: currentSegments });
+              break;
+            }
+            case 'interrupt_resume': {
+              const rp = parseInterruptResumePayload(parsed);
+              if (!rp) break;
+              // The matching widget lives in a PREVIOUS assistant message (the
+              // turn that emitted the interrupt_request). Update it directly
+              // in setMessages — currentSegments belongs to the new assistant
+              // turn we just started and never holds the pending widget.
+              setMessages((prev) =>
+                prev.map((m) => {
+                  if (!m.segments) return m;
+                  let changed = false;
+                  const segs = m.segments.map((seg) => {
+                    if (seg.type === 'widget' && seg.widget.interruptId === rp.interrupt_id) {
+                      changed = true;
+                      return {
+                        type: 'widget' as const,
+                        widget: { ...seg.widget, state: 'answered' as const, answers: rp.payload.answers },
+                      };
+                    }
+                    return seg;
+                  });
+                  return changed ? { ...m, segments: segs } : m;
+                }),
+              );
+              break;
+            }
           }
           currentEvent = '';
         }
@@ -545,7 +710,18 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
       setIsStreaming(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStreaming, endpoint, schemaName, getHeaders, persistenceKey]);
+  }, [endpoint, schemaName, schemaContext, getHeaders, persistenceKey]);
+
+  const sendMessage = useCallback(
+    async (text: string) => internalSubmit({ kind: 'message', text }),
+    [internalSubmit],
+  );
+
+  const sendInterruptResume = useCallback(
+    async (interruptId: string, answers: InterruptAnswer[]) =>
+      internalSubmit({ kind: 'resume', interruptId, answers }),
+    [internalSubmit],
+  );
 
   const loadSession = useCallback(async (targetSessionId: string) => {
     abortRef.current?.abort();
@@ -584,5 +760,5 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
     }
   }, [persistenceKey, fetchMessages]);
 
-  return { messages, sendMessage, isStreaming, isRestoring, error, sessionId, tokenUsage, contextTokens, resetSession, stopStreaming, loadSession };
+  return { messages, sendMessage, sendInterruptResume, isStreaming, isRestoring, error, sessionId, tokenUsage, contextTokens, resetSession, stopStreaming, loadSession };
 }

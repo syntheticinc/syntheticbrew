@@ -17,6 +17,9 @@ const (
 	MessageTypeToolResult       MessageType = "tool_result"
 	MessageTypeReasoning        MessageType = "reasoning"
 	MessageTypeSystem           MessageType = "system"
+	// HITL Interrupt Primitive — engine 1.2.0.
+	MessageTypeInterruptRequest MessageType = "interrupt_request"
+	MessageTypeInterruptResume  MessageType = "interrupt_resume"
 )
 
 // ToolCallInfo represents a tool call made by the assistant (used in payloads).
@@ -159,6 +162,43 @@ func NewSystemEvent(sessionID, content string) (*Message, error) {
 		Payload:   payload,
 		CreatedAt: time.Now(),
 	}, nil
+}
+
+// NewInterruptRequestMessage persists a HITL interrupt_request to chat
+// history so reload can re-render the widget. Content is the raw
+// InterruptRequestPayload JSON.
+func NewInterruptRequestMessage(sessionID, interruptID, content string) (*Message, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+	return &Message{
+		SessionID: sessionID,
+		Type:      MessageTypeInterruptRequest,
+		CallID:    interruptID,
+		Payload:   json.RawMessage(`{"content":` + jsonString(content) + `}`),
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+// NewInterruptResumeMessage persists a HITL interrupt_resume. On reload the
+// client matches it to its interrupt_request peer by call_id and marks the
+// widget answered.
+func NewInterruptResumeMessage(sessionID, interruptID, content string) (*Message, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+	return &Message{
+		SessionID: sessionID,
+		Type:      MessageTypeInterruptResume,
+		CallID:    interruptID,
+		Payload:   json.RawMessage(`{"content":` + jsonString(content) + `}`),
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 // --- Payload accessors ---

@@ -22,6 +22,7 @@ import (
 // AgentEngine executes agents with persistence
 type AgentEngine interface {
 	Execute(ctx context.Context, cfg engine.ExecutionConfig) (*engine.ExecutionResult, error)
+	HistoryRepo() engine.HistoryRepository
 }
 
 // FlowProvider provides flow configurations
@@ -74,6 +75,8 @@ type EngineAdapter struct {
 	toolCallRecorder ToolCallRecorder
 	// Schema scope for memory tools (empty = no explicit schema context)
 	schemaID string
+	// HistoryRepo for HITL interrupt event mirroring into messages table.
+	historyRepo HistoryRepository
 }
 
 // Config holds configuration for EngineAdapter
@@ -93,6 +96,7 @@ type Config struct {
 	ToolCallRecorder ToolCallRecorder
 	// Schema scope (empty = no explicit schema context)
 	SchemaID string
+	HistoryRepo HistoryRepository // mirrors HITL events into messages table; nil disables
 }
 
 // NewEngineAdapter creates a new EngineAdapter
@@ -128,6 +132,7 @@ func NewEngineAdapter(cfg Config) (*EngineAdapter, error) {
 		contextReminders: cfg.ContextReminders,
 		toolCallRecorder: cfg.ToolCallRecorder,
 		schemaID:         cfg.SchemaID,
+		historyRepo:      cfg.HistoryRepo,
 	}, nil
 }
 
@@ -150,6 +155,14 @@ func (e *EngineAdapter) ExecuteTurn(
 	toolDeps.MCPServers = flow.MCPServers
 	// Set schema scope for memory tools (0 = no explicit schema context)
 	toolDeps.SchemaID = e.schemaID
+	// Wraps per-turn eventCallback so tools can publish session events directly
+	// (Eino's MessageCollector chain is downstream and never sees them).
+	toolDeps.EventEmitter = &eventCallbackEmitter{
+		cb:          eventCallback,
+		historyRepo: e.historyRepo,
+		sessionID:   sessionID,
+		agentID:     e.agentUUID,
+	}
 
 	toolDeps.ConfirmBefore = flow.ConfirmBefore
 
@@ -287,4 +300,43 @@ func convertToolCallRecorderToEngine(recorder ToolCallRecorder) react.ToolCallRe
 		return nil
 	}
 	return &toolCallRecorderEngineAdapter{recorder: recorder}
+}
+
+// eventCallbackEmitter wraps the per-turn eventCallback so tool-emitted
+// events (currently only show_structured_output → interrupt_request) reach
+// both the SSE event stream (via cb → session_event_log) and the messages
+// table (via historyRepo → reload replay).
+type eventCallbackEmitter struct {
+	cb          func(event *domain.AgentEvent) error
+	historyRepo HistoryRepository
+	sessionID   string
+	agentID     string
+}
+
+type HistoryRepository = engine.HistoryRepository
+
+func (e *eventCallbackEmitter) Send(event *domain.AgentEvent) error {
+	// Best-effort history mirror — failures log but never fail Send.
+	if e.historyRepo != nil {
+		switch event.Type {
+		case domain.EventTypeInterruptRequest:
+			interruptID, _ := event.Metadata["interrupt_id"].(string)
+			msg, err := domain.NewInterruptRequestMessage(e.sessionID, interruptID, event.Content)
+			if err == nil {
+				msg.AgentID = e.agentID
+				_ = e.historyRepo.Create(context.Background(), msg)
+			}
+		case domain.EventTypeInterruptResume:
+			interruptID, _ := event.Metadata["interrupt_id"].(string)
+			msg, err := domain.NewInterruptResumeMessage(e.sessionID, interruptID, event.Content)
+			if err == nil {
+				msg.AgentID = e.agentID
+				_ = e.historyRepo.Create(context.Background(), msg)
+			}
+		}
+	}
+	if e.cb == nil {
+		return nil
+	}
+	return e.cb(event)
 }

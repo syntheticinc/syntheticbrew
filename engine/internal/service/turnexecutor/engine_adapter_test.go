@@ -28,6 +28,12 @@ func (m *mockEngine) Execute(ctx context.Context, cfg engine.ExecutionConfig) (*
 	return m.executeFn(ctx, cfg)
 }
 
+// HistoryRepo returns nil — tests don't exercise the messages-table persistence
+// path; production wires the real GORM-backed repo in server.go.
+func (m *mockEngine) HistoryRepo() engine.HistoryRepository {
+	return nil
+}
+
 type mockFlowProvider struct {
 	flow *domain.Flow
 	err  error

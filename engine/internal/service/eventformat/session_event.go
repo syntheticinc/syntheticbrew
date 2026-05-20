@@ -110,6 +110,22 @@ func SerializeSessionEvent(event *pb.SessionEvent) map[string]interface{} {
 			"agent_id":  event.GetAgentId(),
 		}
 
+	case pb.SessionEventType_SESSION_EVENT_INTERRUPT_REQUEST:
+		return map[string]interface{}{
+			"type":         "InterruptRequest",
+			"interrupt_id": event.GetCallId(),
+			"content":      event.GetContent(),
+			"agent_id":     event.GetAgentId(),
+		}
+
+	case pb.SessionEventType_SESSION_EVENT_INTERRUPT_RESUME:
+		return map[string]interface{}{
+			"type":         "InterruptResume",
+			"interrupt_id": event.GetCallId(),
+			"content":      event.GetContent(),
+			"agent_id":     event.GetAgentId(),
+		}
+
 	default:
 		slog.WarnContext(context.Background(), "unknown session event type for serialization", "type", event.GetType().String())
 		return nil
@@ -141,6 +157,10 @@ func EventTypeString(t pb.SessionEventType) string {
 		return "error"
 	case pb.SessionEventType_SESSION_EVENT_PLAN_UPDATE:
 		return "plan_update"
+	case pb.SessionEventType_SESSION_EVENT_INTERRUPT_REQUEST:
+		return "interrupt_request"
+	case pb.SessionEventType_SESSION_EVENT_INTERRUPT_RESUME:
+		return "interrupt_resume"
 	default:
 		return "unknown"
 	}

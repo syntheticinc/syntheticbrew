@@ -281,6 +281,8 @@ func TestEventTypeString(t *testing.T) {
 		{pb.SessionEventType_SESSION_EVENT_ASK_USER, "ask_user"},
 		{pb.SessionEventType_SESSION_EVENT_ERROR, "error"},
 		{pb.SessionEventType_SESSION_EVENT_PLAN_UPDATE, "plan_update"},
+		{pb.SessionEventType_SESSION_EVENT_INTERRUPT_REQUEST, "interrupt_request"},
+		{pb.SessionEventType_SESSION_EVENT_INTERRUPT_RESUME, "interrupt_resume"},
 		{pb.SessionEventType(9999), "unknown"},
 		{pb.SessionEventType(0), "unknown"},
 	}

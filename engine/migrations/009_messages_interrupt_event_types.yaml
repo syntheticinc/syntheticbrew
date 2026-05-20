@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009_messages_interrupt_event_types
+      author: bytebrew
+      comment: |
+        Extends messages.event_type CHECK constraint with the HITL Interrupt
+        Primitive event types (engine 1.2.0). Without this, the messages
+        adapter's INSERT for `interrupt_request` / `interrupt_resume` is
+        rejected by the constraint and the events never reach the
+        GET /sessions/{id}/messages history endpoint — they only land in
+        session_event_log (the proto-backed SSE replay store).
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE messages
+                DROP CONSTRAINT IF EXISTS chk_messages_event_type;
+              ALTER TABLE messages
+                ADD CONSTRAINT chk_messages_event_type CHECK (
+                  event_type IN (
+                    'user_message',
+                    'assistant_message',
+                    'tool_call',
+                    'tool_result',
+                    'reasoning',
+                    'system',
+                    'interrupt_request',
+                    'interrupt_resume'
+                  )
+                );
+        - rollback:
+            sql: |
+              ALTER TABLE messages
+                DROP CONSTRAINT IF EXISTS chk_messages_event_type;
+              ALTER TABLE messages
+                ADD CONSTRAINT chk_messages_event_type CHECK (
+                  event_type IN (
+                    'user_message',
+                    'assistant_message',
+                    'tool_call',
+                    'tool_result',
+                    'reasoning',
+                    'system'
+                  )
+                );

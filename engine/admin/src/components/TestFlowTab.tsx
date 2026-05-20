@@ -7,6 +7,7 @@ import type { AgentDetail, SessionSummary, Schema } from '../types';
 import HeadersEditor, { type HeaderEntry } from './HeadersEditor';
 import ContextUsageBar from './ContextUsageBar';
 import BrewingSpinner from './BrewingSpinner';
+import { InterruptWidget } from './InterruptWidget';
 
 // ─── Mock streaming for prototype mode ──────────────────────────────────────
 
@@ -83,8 +84,9 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
   const isStreaming = isPrototype ? protoStreaming : sseChat.isStreaming;
 
   // Resolve the schema to a real Schema record, then fetch its entry agent.
-  // When lockedSchemaId (UUID from canvas URL) is provided, look up by ID.
-  // Otherwise fall back to selectedSchema name from BottomPanel context.
+  // The canvas URL carries the schema NAME (engine 1.1.0+ name-keyed routes),
+  // so we match either by id or by name — whichever lockedSchemaId happens
+  // to be. Otherwise fall back to selectedSchema name from BottomPanel context.
   useEffect(() => {
     let cancelled = false;
 
@@ -99,7 +101,7 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
         const list = await api.listSchemas();
         if (cancelled) return;
         const match = hasLocked
-          ? (list.find((s) => s.id === lockedSchemaId) ?? null)
+          ? (list.find((s) => s.id === lockedSchemaId || s.name === lockedSchemaId) ?? null)
           : (list.find((s) => s.name === selectedSchema) ?? null);
         setSchema(match);
         if (match?.entry_agent_name) {
@@ -468,6 +470,21 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
                           {msg.streaming && i === msg.segments!.length - 1 && (
                             <span className="inline-block w-1.5 h-3 bg-brand-accent ml-0.5 animate-pulse" />
                           )}
+                        </div>
+                      );
+                    }
+                    if (seg.type === 'widget') {
+                      return (
+                        <div key={i} className="text-xs">
+                          <InterruptWidget
+                            interruptId={seg.widget.interruptId}
+                            schema={seg.widget.schema}
+                            state={seg.widget.state}
+                            answers={seg.widget.answers}
+                            onSubmit={(id, answers) => {
+                              void sseChat.sendInterruptResume(id, answers);
+                            }}
+                          />
                         </div>
                       );
                     }

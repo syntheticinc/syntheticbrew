@@ -92,6 +92,13 @@ func New(snapshotRepo SnapshotRepository, historyRepo HistoryRepository) *Engine
 	}
 }
 
+// HistoryRepo exposes the underlying history repository so downstream
+// adapters (turnexecutor engine_adapter) can mirror tool-emitted events into
+// the messages table without re-wiring DI from server.go.
+func (e *Engine) HistoryRepo() HistoryRepository {
+	return e.historyRepo
+}
+
 // Execute runs an agent with full persistence support
 func (e *Engine) Execute(ctx context.Context, cfg ExecutionConfig) (*ExecutionResult, error) {
 	if err := e.validateConfig(cfg); err != nil {
@@ -159,8 +166,11 @@ func (e *Engine) Execute(ctx context.Context, cfg ExecutionConfig) (*ExecutionRe
 	collector := NewMessageCollector(ctx, cfg.SessionID, cfg.AgentID, e.historyRepo)
 	wrappedEventCb := collector.WrapEventCallback(cfg.EventCallback)
 
-	// 3b. Persist user message to history (so it appears on session reload)
-	collector.CollectUserMessage(ctx, cfg.Input)
+	// 3b. Persist user message to history. Skip on HITL resume — widget's
+	// answered state already represents the user's answer.
+	if !domain.IsResumeTurn(ctx) {
+		collector.CollectUserMessage(ctx, cfg.Input)
+	}
 
 	// 4. Create and run agent
 	agent, err := react.NewAgent(ctx, *agentConfig)

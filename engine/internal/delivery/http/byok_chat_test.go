@@ -43,6 +43,14 @@ func (f *fakeChatService) Chat(ctx context.Context, schemaID, _, userSub, _ stri
 	return ch, nil
 }
 
+// ResumeInterrupt is unused by the BYOK tests but required by the
+// ChatService interface (HITL resume path added in engine 1.2.0).
+func (f *fakeChatService) ResumeInterrupt(_ context.Context, _, _, _, _ string, _ json.RawMessage) (<-chan SSEEvent, error) {
+	ch := make(chan SSEEvent)
+	close(ch)
+	return ch, nil
+}
+
 // fakeForwardHeaders returns no header forwarding — focus is BYOK only.
 func fakeForwardHeaders(_ context.Context) []string { return nil }
 

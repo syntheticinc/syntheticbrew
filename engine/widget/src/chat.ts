@@ -1,8 +1,51 @@
+/** HITL Interrupt Primitive — engine 1.2.0 */
+
+/** Schema body of a `structured_output` interrupt — mirrors the engine
+ *  domain.StructuredOutput / admin InterruptSchema shape. */
+export interface InterruptSchema {
+  output_type: 'summary_table' | 'form' | 'info';
+  title?: string;
+  description?: string;
+  rows?: { label: string; value: string }[];
+  actions?: { label: string; type: 'primary' | 'secondary'; value: string }[];
+  questions?: {
+    id: string;
+    label: string;
+    type: 'text' | 'select' | 'multiselect';
+    options?: { label: string; value?: string }[];
+    default?: string;
+  }[];
+}
+
+/** Single answer in a resume submission. */
+export interface InterruptAnswer {
+  question_id: string;
+  value: string;
+  label?: string;
+}
+
+export interface InterruptRequestPayload {
+  interrupt_id: string;
+  kind: 'structured_output';
+  schema: InterruptSchema;
+}
+
+export interface InterruptResumePayload {
+  interrupt_id: string;
+  kind: 'structured_output';
+  payload: { answers: InterruptAnswer[] };
+}
+
 /** Callback events emitted during streaming */
 export interface ChatCallbacks {
   onDelta: (content: string) => void;
   onToolCallStart: (tool: string, input: string) => void;
   onToolCallResult: (tool: string, result: string) => void;
+  /** HITL halt — render widget from schema, route user click to ChatClient.sendInterruptResume. */
+  onInterruptRequest: (payload: InterruptRequestPayload) => void;
+  /** Echo of user's resume submission — mark widget as answered, do NOT
+   *  surface as a chat bubble. */
+  onInterruptResume: (payload: InterruptResumePayload) => void;
   onDone: (sessionId: string) => void;
   onError: (error: string) => void;
 }
@@ -54,6 +97,31 @@ export class ChatClient {
   }
 
   async send(message: string, callbacks: ChatCallbacks): Promise<void> {
+    await this.dispatch({ message }, callbacks);
+  }
+
+  /** Submit a HITL widget answer (engine 1.2.0+). The interrupt_id must come
+   *  from a previously emitted onInterruptRequest payload. */
+  async sendInterruptResume(
+    interruptId: string,
+    answers: InterruptAnswer[],
+    callbacks: ChatCallbacks,
+  ): Promise<void> {
+    await this.dispatch(
+      {
+        resume_interrupt: {
+          interrupt_id: interruptId,
+          payload: { answers },
+        },
+      },
+      callbacks,
+    );
+  }
+
+  private async dispatch(
+    extra: Record<string, unknown>,
+    callbacks: ChatCallbacks,
+  ): Promise<void> {
     this.abort();
     this.abortController = new AbortController();
 
@@ -67,7 +135,7 @@ export class ChatClient {
       headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
 
-    const body: Record<string, string> = { message };
+    const body: Record<string, unknown> = { ...extra };
     if (this.sessionId) {
       body['session_id'] = this.sessionId;
     }
@@ -179,9 +247,34 @@ export class ChatClient {
         callbacks.onDone(String(data.session_id ?? ''));
         break;
 
+      case 'interrupt_request': {
+        const payload = this.parseInterruptPayload<InterruptRequestPayload>(data);
+        if (payload) callbacks.onInterruptRequest(payload);
+        break;
+      }
+
+      case 'interrupt_resume': {
+        const payload = this.parseInterruptPayload<InterruptResumePayload>(data);
+        if (payload) callbacks.onInterruptResume(payload);
+        break;
+      }
+
       case 'error':
         callbacks.onError(String(data.message ?? data.error ?? 'Unknown server error'));
         break;
+    }
+  }
+
+  /** Decode the `content` JSON string carried on interrupt_request/resume SSE
+   *  events. Engine emits the full payload string so the wire format is the
+   *  same across clients (admin, embed, mobile). */
+  private parseInterruptPayload<T>(data: Record<string, unknown>): T | null {
+    const raw = data.content;
+    if (typeof raw !== 'string' || !raw) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
     }
   }
 }

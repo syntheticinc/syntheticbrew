@@ -1,4 +1,11 @@
-import { ChatClient, type ChatCallbacks } from './chat';
+import {
+  ChatClient,
+  type ChatCallbacks,
+  type InterruptAnswer,
+  type InterruptRequestPayload,
+  type InterruptResumePayload,
+  type InterruptSchema,
+} from './chat';
 import { renderMarkdown } from './markdown';
 import { buildStyles, getTheme } from './styles';
 
@@ -36,6 +43,7 @@ export class WidgetUI {
   private isOpen = false;
   private isStreaming = false;
   private currentAssistantEl: HTMLElement | null = null;
+  private interruptWidgets = new Map<string, HTMLElement>();
   private currentAssistantContent = '';
 
   constructor(config: WidgetConfig) {
@@ -294,6 +302,21 @@ export class WidgetUI {
         }
       },
 
+      onInterruptRequest: (payload) => {
+        if (!assistantStarted) {
+          typingEl.remove();
+          assistantStarted = true;
+        }
+        this.addInterruptWidget(payload, callbacks);
+      },
+
+      onInterruptResume: (payload) => {
+        // User's just-submitted resume is echoed back; mark the matching
+        // widget answered. Do NOT add a chat bubble — the widget's selected
+        // state is the user-visible record.
+        this.markInterruptAnswered(payload);
+      },
+
       onDone: () => {
         typingEl.remove();
         this.setStreaming(false);
@@ -324,5 +347,207 @@ export class WidgetUI {
       this.setStreaming(false);
       this.currentAssistantEl = null;
     }
+  }
+
+  // ─── HITL Interrupt Primitive — DOM rendering ─────────────────────────────
+
+  /** Render a HITL widget from the engine's interrupt_request schema. Stores
+   *  the rendered container by interrupt_id so the matching interrupt_resume
+   *  can flip controls into disabled / answered state. */
+  private addInterruptWidget(payload: InterruptRequestPayload, callbacks: ChatCallbacks): void {
+    const container = document.createElement('div');
+    container.className = 'bb-msg bb-msg-assistant bb-interrupt';
+    container.dataset.interruptId = payload.interrupt_id;
+    container.dataset.state = 'pending';
+    this.renderInterruptBody(container, payload.schema, payload.interrupt_id, callbacks, 'pending', []);
+    this.messagesEl.appendChild(container);
+    this.interruptWidgets.set(payload.interrupt_id, container);
+    this.scrollToBottom();
+  }
+
+  /** Replace the widget's body with an answered view — selected option
+   *  highlighted, controls disabled. Idempotent: called once per resume. */
+  private markInterruptAnswered(payload: InterruptResumePayload): void {
+    const container = this.interruptWidgets.get(payload.interrupt_id);
+    if (!container) return;
+    const schema = this.recoverSchemaFromDOM(container);
+    if (!schema) return;
+    container.dataset.state = 'answered';
+    container.innerHTML = '';
+    // No-op callbacks — controls won't fire submits any more.
+    const noopCallbacks: ChatCallbacks = {
+      onDelta: () => {},
+      onToolCallStart: () => {},
+      onToolCallResult: () => {},
+      onInterruptRequest: () => {},
+      onInterruptResume: () => {},
+      onDone: () => {},
+      onError: () => {},
+    };
+    this.renderInterruptBody(container, schema, payload.interrupt_id, noopCallbacks, 'answered', payload.payload.answers);
+  }
+
+  /** Schema is stashed onto the container as a JSON-encoded data attribute so
+   *  marking-answered can rebuild the answered view without holding the full
+   *  payload in a separate map. */
+  private recoverSchemaFromDOM(container: HTMLElement): InterruptSchema | null {
+    const raw = container.dataset.schema;
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as InterruptSchema;
+    } catch {
+      return null;
+    }
+  }
+
+  private renderInterruptBody(
+    container: HTMLElement,
+    schema: InterruptSchema,
+    interruptId: string,
+    callbacks: ChatCallbacks,
+    state: 'pending' | 'answered',
+    answers: InterruptAnswer[],
+  ): void {
+    container.dataset.schema = JSON.stringify(schema);
+    const disabled = state === 'answered';
+
+    if (schema.title) {
+      const titleEl = document.createElement('div');
+      titleEl.className = 'bb-interrupt-title';
+      titleEl.textContent = schema.title;
+      container.appendChild(titleEl);
+    }
+    if (schema.description) {
+      const descEl = document.createElement('div');
+      descEl.className = 'bb-interrupt-desc';
+      descEl.textContent = schema.description;
+      container.appendChild(descEl);
+    }
+
+    if (schema.output_type === 'summary_table') {
+      if (schema.rows && schema.rows.length > 0) {
+        const tableEl = document.createElement('div');
+        tableEl.className = 'bb-interrupt-table';
+        for (const row of schema.rows) {
+          const rowEl = document.createElement('div');
+          rowEl.className = 'bb-interrupt-row';
+          const label = document.createElement('span');
+          label.className = 'bb-interrupt-row-label';
+          label.textContent = row.label;
+          const value = document.createElement('span');
+          value.className = 'bb-interrupt-row-value';
+          value.textContent = row.value;
+          rowEl.append(label, value);
+          tableEl.appendChild(rowEl);
+        }
+        container.appendChild(tableEl);
+      }
+      if (schema.actions && schema.actions.length > 0) {
+        const actionsEl = document.createElement('div');
+        actionsEl.className = 'bb-interrupt-actions';
+        const selectedValue = answers[0]?.value;
+        for (const action of schema.actions) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = `bb-interrupt-btn bb-interrupt-btn-${action.type}`;
+          btn.textContent = action.label;
+          btn.disabled = disabled;
+          if (disabled && selectedValue === action.value) {
+            btn.classList.add('bb-interrupt-btn-selected');
+          }
+          btn.addEventListener('click', () => {
+            void this.client.sendInterruptResume(
+              interruptId,
+              [{ question_id: 'action', value: action.value, label: action.label }],
+              callbacks,
+            );
+          });
+          actionsEl.appendChild(btn);
+        }
+        container.appendChild(actionsEl);
+      }
+      return;
+    }
+
+    if (schema.output_type === 'form') {
+      const formEl = document.createElement('div');
+      formEl.className = 'bb-interrupt-form';
+      const inputs = new Map<string, () => InterruptAnswer>();
+
+      for (const q of schema.questions ?? []) {
+        const fieldEl = document.createElement('div');
+        fieldEl.className = 'bb-interrupt-field';
+        const labelEl = document.createElement('label');
+        labelEl.className = 'bb-interrupt-field-label';
+        labelEl.textContent = q.label;
+        fieldEl.appendChild(labelEl);
+
+        const existing = answers.find((a) => a.question_id === q.id);
+
+        if (q.type === 'text') {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'bb-interrupt-input';
+          input.value = existing?.value ?? q.default ?? '';
+          input.disabled = disabled;
+          fieldEl.appendChild(input);
+          inputs.set(q.id, () => ({ question_id: q.id, value: input.value }));
+        } else {
+          // select / multiselect — render as clickable chips
+          let current = existing?.value ?? q.default ?? '';
+          const multi = q.type === 'multiselect';
+          const selected = new Set<string>(multi && current ? current.split('\n') : current ? [current] : []);
+          const chips = document.createElement('div');
+          chips.className = 'bb-interrupt-chips';
+          for (const opt of q.options ?? []) {
+            const optVal = opt.value ?? opt.label;
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'bb-interrupt-chip';
+            chip.textContent = opt.label;
+            chip.disabled = disabled;
+            if (selected.has(optVal)) chip.classList.add('bb-interrupt-chip-selected');
+            chip.addEventListener('click', () => {
+              if (disabled) return;
+              if (multi) {
+                if (selected.has(optVal)) selected.delete(optVal);
+                else selected.add(optVal);
+              } else {
+                selected.clear();
+                selected.add(optVal);
+                for (const sibling of chips.querySelectorAll<HTMLButtonElement>('.bb-interrupt-chip')) {
+                  sibling.classList.remove('bb-interrupt-chip-selected');
+                }
+              }
+              if (selected.has(optVal)) chip.classList.add('bb-interrupt-chip-selected');
+              else chip.classList.remove('bb-interrupt-chip-selected');
+              current = multi ? Array.from(selected).join('\n') : optVal;
+            });
+            chips.appendChild(chip);
+          }
+          fieldEl.appendChild(chips);
+          inputs.set(q.id, () => {
+            const label = (q.options ?? []).find((o) => (o.value ?? o.label) === current)?.label;
+            return { question_id: q.id, value: current, label };
+          });
+        }
+        formEl.appendChild(fieldEl);
+      }
+
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'button';
+      submitBtn.className = 'bb-interrupt-btn bb-interrupt-btn-primary';
+      submitBtn.textContent = disabled ? 'Submitted' : 'Submit';
+      submitBtn.disabled = disabled;
+      submitBtn.addEventListener('click', () => {
+        const collected: InterruptAnswer[] = [];
+        for (const get of inputs.values()) collected.push(get());
+        void this.client.sendInterruptResume(interruptId, collected, callbacks);
+      });
+      formEl.appendChild(submitBtn);
+
+      container.appendChild(formEl);
+    }
+    // output_type === 'info' renders title + description only (no controls).
   }
 }

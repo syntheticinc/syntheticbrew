@@ -105,6 +105,13 @@ const (
 	SessionEventType_SESSION_EVENT_PROCESSING_STOPPED   SessionEventType = 9
 	SessionEventType_SESSION_EVENT_ERROR                SessionEventType = 10
 	SessionEventType_SESSION_EVENT_USER_MESSAGE         SessionEventType = 11
+	// HITL Interrupt Primitive — engine 1.2.0.
+	// Agent halted at a HITL halt point; client expected to render a widget
+	// from the carried schema (Content carries InterruptRequestPayload JSON).
+	SessionEventType_SESSION_EVENT_INTERRUPT_REQUEST SessionEventType = 12
+	// User submitted a response to a previously emitted INTERRUPT_REQUEST;
+	// Content carries InterruptResumePayload JSON.
+	SessionEventType_SESSION_EVENT_INTERRUPT_RESUME SessionEventType = 13
 )
 
 // Enum value maps for SessionEventType.
@@ -122,6 +129,8 @@ var (
 		9:  "SESSION_EVENT_PROCESSING_STOPPED",
 		10: "SESSION_EVENT_ERROR",
 		11: "SESSION_EVENT_USER_MESSAGE",
+		12: "SESSION_EVENT_INTERRUPT_REQUEST",
+		13: "SESSION_EVENT_INTERRUPT_RESUME",
 	}
 	SessionEventType_value = map[string]int32{
 		"SESSION_EVENT_UNSPECIFIED":          0,
@@ -136,6 +145,8 @@ var (
 		"SESSION_EVENT_PROCESSING_STOPPED":   9,
 		"SESSION_EVENT_ERROR":                10,
 		"SESSION_EVENT_USER_MESSAGE":         11,
+		"SESSION_EVENT_INTERRUPT_REQUEST":    12,
+		"SESSION_EVENT_INTERRUPT_RESUME":     13,
 	}
 )
 
