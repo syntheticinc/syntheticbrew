@@ -28,12 +28,17 @@ func NewStructuredOutputTool(emitter ToolEventEmitter, sessionID string) tool.In
 }
 
 type structuredOutputArgs struct {
-	OutputType  string                    `json:"output_type"`
-	Title       string                    `json:"title,omitempty"`
-	Description string                    `json:"description,omitempty"`
-	Rows        []domain.StructuredRow    `json:"rows,omitempty"`
-	Actions     []domain.StructuredAction `json:"actions,omitempty"`
-	Questions   json.RawMessage           `json:"questions,omitempty"` // accept array or JSON-encoded string
+	OutputType  string          `json:"output_type"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+	// Rows / Actions / Questions are declared as schema.String in the tool's
+	// JSON Schema (a deliberate concession — LLMs frequently emit string-typed
+	// schema fields for array values), so the unmarshalled form is delayed
+	// until parseStructured{Rows,Actions,Questions} runs and tries both the
+	// string-encoded JSON and the literal-array shapes.
+	Rows      json.RawMessage `json:"rows,omitempty"`
+	Actions   json.RawMessage `json:"actions,omitempty"`
+	Questions json.RawMessage `json:"questions,omitempty"`
 }
 
 const (
@@ -90,6 +95,16 @@ func (t *StructuredOutputTool) InvokableRun(ctx context.Context, argumentsInJSON
 		return "[ERROR] output_type is required", nil
 	}
 
+	rows, err := parseStructuredRows(args.Rows)
+	if err != nil {
+		return fmt.Sprintf("[ERROR] %s", err), nil
+	}
+
+	actions, err := parseStructuredActions(args.Actions)
+	if err != nil {
+		return fmt.Sprintf("[ERROR] %s", err), nil
+	}
+
 	questions, err := parseStructuredQuestions(args.Questions)
 	if err != nil {
 		return fmt.Sprintf("[ERROR] %s", err), nil
@@ -103,8 +118,8 @@ func (t *StructuredOutputTool) InvokableRun(ctx context.Context, argumentsInJSON
 		OutputType:  args.OutputType,
 		Title:       args.Title,
 		Description: args.Description,
-		Rows:        args.Rows,
-		Actions:     args.Actions,
+		Rows:        rows,
+		Actions:     actions,
 		Questions:   questions,
 	}
 
@@ -135,6 +150,64 @@ func (t *StructuredOutputTool) InvokableRun(ctx context.Context, argumentsInJSON
 	}
 
 	return "Structured output displayed to user.", nil
+}
+
+// parseStructuredRows accepts either a raw JSON array or a string-encoded JSON
+// array. Mirrors parseStructuredQuestions — the tool's JSON Schema declares
+// `rows` as a String (with description "JSON array of rows"), so frontier LLMs
+// emit it as a stringified JSON literal (`"rows": "[{...}]"`) and fail at the
+// downstream typed Unmarshal. Lenient parsing here is what makes the schema
+// declaration consistent with the struct shape.
+func parseStructuredRows(raw json.RawMessage) ([]domain.StructuredRow, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	// Try string-encoded JSON first (typical LLM output for schema.String fields).
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		if asString == "" {
+			return nil, nil
+		}
+		var rows []domain.StructuredRow
+		if err := json.Unmarshal([]byte(asString), &rows); err != nil {
+			return nil, fmt.Errorf("failed to parse rows string: %w", err)
+		}
+		return rows, nil
+	}
+
+	// Fallback: direct array.
+	var rows []domain.StructuredRow
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil, fmt.Errorf("failed to parse rows: %w", err)
+	}
+	return rows, nil
+}
+
+// parseStructuredActions accepts either a raw JSON array or a string-encoded
+// JSON array. Same rationale as parseStructuredRows.
+func parseStructuredActions(raw json.RawMessage) ([]domain.StructuredAction, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		if asString == "" {
+			return nil, nil
+		}
+		var actions []domain.StructuredAction
+		if err := json.Unmarshal([]byte(asString), &actions); err != nil {
+			return nil, fmt.Errorf("failed to parse actions string: %w", err)
+		}
+		return actions, nil
+	}
+
+	var actions []domain.StructuredAction
+	if err := json.Unmarshal(raw, &actions); err != nil {
+		return nil, fmt.Errorf("failed to parse actions: %w", err)
+	}
+	return actions, nil
 }
 
 // parseStructuredQuestions accepts either a raw JSON array or a string-encoded
