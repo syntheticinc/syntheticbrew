@@ -7,6 +7,31 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.6.13] - 2026-05-18
+
+### Changed
+- Bumps `appVersion` to **1.1.11**. Engine 1.1.11 fixes the admin SPA's
+  `/login` 404 after session expiry — local-mode 401 now re-mints a fresh
+  token inline via `/api/v1/auth/local-session` without page reload, and
+  external-mode redirect to the landing's `/login?return_to=` is preserved.
+  Engine also emits a startup `WARN` when `auth.mode=local` and the HTTP
+  listener binds to a non-loopback address, so operators can spot
+  unauthenticated admin-API exposure during deployment.
+
+### Added
+- README **Securing self-hosted** section documents the trust model for
+  `auth.mode=local` (dev / CI / VPN), recommends `auth.mode=external`
+  fronted by an identity proxy (oauth2-proxy, Authelia, Cloudflare Access,
+  etc.) for production self-hosted, and points headless automation at the
+  long-lived `BOOTSTRAP_ADMIN_TOKEN` API token.
+
+### Compatibility
+- Chart-only metadata bump (`appVersion` sync + README). Default
+  `image.tag` remains `"latest"` (operators are expected to pin
+  explicitly per chart convention). Pin to `1.1.11` post-publish to pick
+  up the admin SPA fix and the new startup warning. Drop-in upgrade from
+  0.6.12.
+
 ## [0.6.12] - 2026-05-18
 
 ### Changed

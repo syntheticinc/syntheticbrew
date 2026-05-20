@@ -62,32 +62,33 @@ import { mockSchemas, mockAgentRelations } from '../mocks/schemas';
 
 const BASE_URL = '/api/v1';
 
-// redirectToLoginOn401 bounces the user to the correct login entrypoint for
-// the active auth mode. Called after clearing a stale token on a 401 response.
-//
-//   - VITE_AUTH_MODE=local (default, self-hosted): /login lives inside this
-//     SPA, so a same-origin redirect is fine.
-//   - VITE_AUTH_MODE=external (Cloud): this SPA has no /login route and lives
-//     on app.bytebrew.ai. Without VITE_LANDING_URL we'd send users to
-//     app.bytebrew.ai/login → Caddy fallthrough → confusing blank page. Use
-//     the landing URL with a return_to so the external IdP can mint a fresh
-//     token and hand us back in.
-//
-// Idempotent: no-op when we're already on /login to avoid redirect loops.
-function redirectToLoginOn401(): void {
+// handleUnauthorized recovers from a 401 according to the active auth mode.
+// The SPA has no /login route — local mode re-mints inline, external mode
+// bounces to the landing IdP, and missing landing config is a build error.
+let recovering = false;
+function handleUnauthorized(): void {
   if (typeof window === 'undefined') return;
-  if (window.location.pathname.startsWith('/login')) return;
 
   const mode = import.meta.env.VITE_AUTH_MODE;
   const landing = import.meta.env.VITE_LANDING_URL as string | undefined;
 
-  if (mode === 'external' && landing) {
+  if (mode === 'external') {
+    if (!landing) {
+      throw new Error('VITE_AUTH_MODE=external requires VITE_LANDING_URL');
+    }
     const returnTo = encodeURIComponent(window.location.href);
     window.location.href = `${landing}/login?return_to=${returnTo}&reason=session_expired`;
     return;
   }
 
-  window.location.href = '/login?reason=session_expired';
+  // local mode: re-mint via /api/v1/auth/local-session. The guard drops
+  // duplicate calls when several in-flight requests all 401 at once.
+  if (recovering) return;
+  recovering = true;
+  void import('../hooks/useAuth')
+    .then(({ bootstrapAuth }) => bootstrapAuth())
+    .catch((err) => console.error('auth recovery failed', err))
+    .finally(() => { recovering = false; });
 }
 const PROTOTYPE_KEY = 'bytebrew_prototype_mode';
 // Build-time gate. A production build with VITE_PROTOTYPE_ENABLED unset cannot
@@ -149,7 +150,7 @@ class APIClient {
 
     if (res.status === 401 && path !== '/auth/local-session') {
       this.clearToken();
-      redirectToLoginOn401();
+      handleUnauthorized();
       throw new Error('Unauthorized');
     }
 
@@ -861,7 +862,7 @@ class APIClient {
     });
     if (res.status === 401) {
       this.clearToken();
-      redirectToLoginOn401();
+      handleUnauthorized();
       throw new Error('Unauthorized');
     }
     if (!res.ok) {
@@ -968,7 +969,7 @@ class APIClient {
     });
     if (res.status === 401) {
       this.clearToken();
-      redirectToLoginOn401();
+      handleUnauthorized();
       throw new Error('Unauthorized');
     }
     if (!res.ok) {
@@ -1041,7 +1042,7 @@ class APIClient {
 
     if (res.status === 401) {
       this.clearToken();
-      redirectToLoginOn401();
+      handleUnauthorized();
       throw new Error('Unauthorized');
     }
 

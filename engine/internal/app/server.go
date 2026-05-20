@@ -498,6 +498,11 @@ func Run(sc ServerConfig) error {
 		}
 		internalHTTPPort = bootstrapCfg.Engine.InternalPort // 0 = single-port mode
 
+		// AUTH_MODE=local has no real authentication — anyone reaching the
+		// listen address gets admin access. Warn loudly when the bind is not
+		// loopback so operators don't accidentally expose admin API publicly.
+		warnUnsafeLocalBind(ctx, bootstrapCfg.Security.AuthMode, bootstrapCfg.Engine.Host, httpPort)
+
 		if internalHTTPPort > 0 {
 			// Two-port mode: external gets configurable CORS, internal gets permissive CORS
 			httpServer = deliveryhttp.NewServerWithCORS(httpPort, bootstrapCfg.Engine.CORSOrigins)
@@ -978,4 +983,33 @@ func ensureManagedDirs(dataDir string) error {
 		}
 	}
 	return nil
+}
+
+// isLoopbackBind reports whether host binds the HTTP listener to the local
+// machine only. Empty string is Go's net.Listen "all interfaces" default and
+// is treated as non-loopback (which is why AUTH_MODE=local with an empty
+// host triggers the public-bind warning).
+func isLoopbackBind(host string) bool {
+	switch host {
+	case "127.0.0.1", "::1", "localhost":
+		return true
+	}
+	return false
+}
+
+// warnUnsafeLocalBind emits a startup WARN when AUTH_MODE=local is paired with
+// a non-loopback bind. Extracted from Run() so the gate is unit-testable
+// against a captured slog handler.
+func warnUnsafeLocalBind(ctx context.Context, authMode, host string, port int) {
+	if authMode != config.AuthModeLocal {
+		return
+	}
+	if isLoopbackBind(host) {
+		return
+	}
+	slog.WarnContext(ctx,
+		"AUTH_MODE=local with non-loopback bind — admin API is unauthenticated; anyone reaching this address has admin access. Use AUTH_MODE=external for production or restrict bind to 127.0.0.1.",
+		"listen_host", host,
+		"listen_port", port,
+	)
 }
