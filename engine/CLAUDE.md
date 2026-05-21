@@ -1,4 +1,4 @@
-# ByteBrew Server (Go)
+# SyntheticBrew Server (Go)
 
 ## Stack
 - Go 1.25+, HTTP REST + SSE chat
@@ -8,7 +8,7 @@
 
 ## Structure
 ```
-bytebrew/engine/
+syntheticinc/syntheticbrew/
 ├── cmd/ce/                # Production entry point (Community Edition)
 ├── internal/
 │   ├── domain/            # Pure entities (NO external deps, NO tags)

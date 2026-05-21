@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // ModelCacheInvalidator allows invalidating cached model clients when models are modified.

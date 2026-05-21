@@ -1,15 +1,15 @@
-# ByteBrew Engine
+# SyntheticBrew Engine
 
-[![Build](https://img.shields.io/github/actions/workflow/status/syntheticinc/bytebrew/chart-test.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=build)](https://github.com/syntheticinc/bytebrew/actions/workflows/chart-test.yml)
+[![Build](https://img.shields.io/github/actions/workflow/status/syntheticinc/syntheticbrew/chart-test.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=build)](https://github.com/syntheticinc/syntheticbrew/actions/workflows/chart-test.yml)
 [![License](https://img.shields.io/badge/license-BSL%201.1-blue?style=flat-square)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/syntheticinc/bytebrew?filename=engine%2Fgo.mod&style=flat-square&logo=go&logoColor=white&label=go)](engine/go.mod)
-[![Go Report Card](https://goreportcard.com/badge/github.com/syntheticinc/bytebrew/engine?style=flat-square)](https://goreportcard.com/report/github.com/syntheticinc/bytebrew/engine)
-[![Release](https://img.shields.io/github/v/release/syntheticinc/bytebrew?style=flat-square&logo=github&label=release)](https://github.com/syntheticinc/bytebrew/releases/latest)
-[![Docker Pulls](https://img.shields.io/docker/pulls/bytebrew/engine?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/bytebrew/engine)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/syntheticinc/syntheticbrew?filename=engine%2Fgo.mod&style=flat-square&logo=go&logoColor=white&label=go)](engine/go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/syntheticinc/syntheticbrew/engine?style=flat-square)](https://goreportcard.com/report/github.com/syntheticinc/syntheticbrew/engine)
+[![Release](https://img.shields.io/github/v/release/syntheticinc/syntheticbrew?style=flat-square&logo=github&label=release)](https://github.com/syntheticinc/syntheticbrew/releases/latest)
+[![Docker Pulls](https://img.shields.io/docker/pulls/syntheticinc/syntheticbrew?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/syntheticinc/syntheticbrew)
 
 **Open-source AI agent runtime.** Build, deploy, and orchestrate autonomous AI agents with multi-agent coordination, MCP tool integration, and a visual admin dashboard.
 
-> Not another AI chatbot. ByteBrew is the agent brewery.
+> Not another AI chatbot. SyntheticBrew is the agent brewery.
 
 ## Features
 
@@ -27,7 +27,7 @@
 
 ```bash
 # Start with Docker Compose
-curl -fsSL https://bytebrew.ai/releases/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://syntheticbrew.ai/releases/docker-compose.yml -o docker-compose.yml
 docker compose up -d
 
 # Open admin dashboard
@@ -39,13 +39,13 @@ Or build from source:
 
 ```bash
 cd engine
-go build -o bytebrew ./cmd/ce
-./bytebrew
+go build -o syntheticbrew ./cmd/ce
+./syntheticbrew
 ```
 
 ## Configuration
 
-ByteBrew can be configured via:
+SyntheticBrew can be configured via:
 
 | Method | Use Case |
 |--------|----------|
@@ -56,7 +56,7 @@ ByteBrew can be configured via:
 Key environment variables:
 
 ```bash
-DATABASE_URL=postgresql://user:pass@host:5432/bytebrew
+DATABASE_URL=postgresql://user:pass@host:5432/syntheticbrew
 ADMIN_USER=admin
 ADMIN_PASSWORD=changeme
 ```
@@ -67,7 +67,7 @@ read LLM credentials from env or config files.
 
 ## Architecture
 
-ByteBrew follows Clean Architecture with strict layer separation. All Go code lives under `engine/`:
+SyntheticBrew follows Clean Architecture with strict layer separation. All Go code lives under `engine/`:
 
 ```
 engine/
@@ -94,9 +94,9 @@ engine/
 
 ## Documentation
 
-- **Website:** https://bytebrew.ai
-- **Docs:** https://bytebrew.ai/docs/
-- **API Reference:** https://bytebrew.ai/docs/api/
+- **Website:** https://syntheticbrew.ai
+- **Docs:** https://syntheticbrew.ai/docs/
+- **API Reference:** https://syntheticbrew.ai/docs/api/
 
 ## Contributing
 
@@ -107,4 +107,4 @@ We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before 
 
 ## License
 
-Licensed under [Business Source License 1.1](LICENSE). Contact [info@bytebrew.ai](mailto:info@bytebrew.ai) for alternative licensing.
+Licensed under [Business Source License 1.1](LICENSE). Contact [info@syntheticbrew.ai](mailto:info@syntheticbrew.ai) for alternative licensing.

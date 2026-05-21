@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	pluginpkg "github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // SchemaListerByTenant lists schemas scoped by `tenant_id` from the context.

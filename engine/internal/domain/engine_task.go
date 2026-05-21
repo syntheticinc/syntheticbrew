@@ -29,7 +29,7 @@ const (
 	TaskModeBackground  TaskMode = "background"
 )
 
-// EngineTask is the universal unit of work in ByteBrew Engine.
+// EngineTask is the universal unit of work in SyntheticBrew Engine.
 // Created by agents, cron triggers, webhooks, API, or dashboard.
 // Subtasks are EngineTask with ParentTaskID set (no separate entity).
 //

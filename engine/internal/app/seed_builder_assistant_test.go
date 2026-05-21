@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 // TestEnsureDefaultModel_EmptyDB_PersistsNothing guards the invariant that

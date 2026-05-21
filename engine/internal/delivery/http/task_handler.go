@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // isClientErr returns true for errors that represent invalid user input

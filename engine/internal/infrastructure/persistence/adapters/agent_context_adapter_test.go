@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

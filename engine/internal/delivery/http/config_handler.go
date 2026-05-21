@@ -89,7 +89,7 @@ func (h *ConfigHandler) Export(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/x-yaml")
-	w.Header().Set("Content-Disposition", "attachment; filename=bytebrew-config.yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=syntheticbrew-config.yaml")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {
 		slog.ErrorContext(r.Context(), "write export response failed", "error", err)

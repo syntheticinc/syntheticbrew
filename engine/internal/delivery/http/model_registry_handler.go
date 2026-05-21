@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm/registry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm/registry"
 )
 
 // ModelRegistry provides read-only access to the built-in model catalog.

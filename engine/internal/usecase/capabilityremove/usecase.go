@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // CapabilityRepository defines the repository interface for removing capabilities.

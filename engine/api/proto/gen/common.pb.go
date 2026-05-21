@@ -4,11 +4,6 @@
 // 	protoc        v4.25.1
 // source: common.proto
 
-// NOTE: Frozen along with flow_service.pb.go after the Wave 1 legacy cleanup
-// (2026-04-26). The .proto source is retained, but no regeneration pipeline
-// runs — surviving types back SSE chat persistence and structured event
-// payloads. See plan 1-2-golden-teapot.md.
-
 package bytebrewv1
 
 import (
@@ -451,7 +446,7 @@ const file_common_proto_rawDesc = "" +
 	"\x0eSTATUS_SUCCESS\x10\x01\x12\x16\n" +
 	"\x12STATUS_IN_PROGRESS\x10\x02\x12\x11\n" +
 	"\rSTATUS_FAILED\x10\x03\x12\x14\n" +
-	"\x10STATUS_CANCELLED\x10\x04BBZ@github.com/syntheticinc/bytebrew/engine/api/proto/gen;bytebrewv1b\x06proto3"
+	"\x10STATUS_CANCELLED\x10\x04B@Z>github.com/syntheticinc/syntheticbrew/api/proto/gen;bytebrewv1b\x06proto3"
 
 var (
 	file_common_proto_rawDescOnce sync.Once

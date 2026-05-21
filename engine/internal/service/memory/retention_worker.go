@@ -12,8 +12,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 // RetentionWorker drives the periodic memory retention cleanup loop.

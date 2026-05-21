@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agentregistry"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
 
 // BuiltinToolFactory creates a tool instance given dependencies.

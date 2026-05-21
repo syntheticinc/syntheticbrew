@@ -13,8 +13,8 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/authprim"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/authprim"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 )
 
 // setupTokenTestDB creates an in-memory SQLite DB with only the api_tokens table.

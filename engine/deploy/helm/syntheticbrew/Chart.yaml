@@ -1,0 +1,19 @@
+apiVersion: v2
+name: syntheticbrew-engine
+description: SyntheticBrew AI Agent Engine (Community Edition) — Helm chart for Kubernetes
+type: application
+version: 0.7.0
+appVersion: "1.2.0"
+keywords:
+  - ai
+  - agents
+  - llm
+  - react-agent
+  - mcp
+maintainers:
+  - name: SyntheticBrew Team
+    url: https://syntheticbrew.ai
+home: https://syntheticbrew.ai
+icon: https://syntheticbrew.ai/favicon.png
+sources:
+  - https://github.com/syntheticinc/syntheticbrew

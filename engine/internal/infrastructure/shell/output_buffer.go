@@ -13,7 +13,7 @@ import (
 
 const DefaultMaxSize = 1024 * 1024 // 1 MB
 
-var markerRegex = regexp.MustCompile(`__BYTEBREW_DONE_([a-f0-9]+)_(-?\d+)__`)
+var markerRegex = regexp.MustCompile(`__SYNTHETICBREW_DONE_([a-f0-9]+)_(-?\d+)__`)
 
 // MarkerResult holds the parsed result of a command execution marker.
 type MarkerResult struct {
@@ -137,7 +137,7 @@ func (b *OutputBuffer) CancelPending() {
 func WrapCommand(command string) (string, string) {
 	markerID := randomHex(12)
 	wrapped := fmt.Sprintf(
-		"%s 2>&1; __vexit=$?; printf '\\n__BYTEBREW_DONE_%s_%%d__\\n' $__vexit",
+		"%s 2>&1; __vexit=$?; printf '\\n__SYNTHETICBREW_DONE_%s_%%d__\\n' $__vexit",
 		command, markerID,
 	)
 	return markerID, wrapped

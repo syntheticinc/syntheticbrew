@@ -1,0 +1,79 @@
+# Test scenario: restricted security profile.
+# - readOnlyRootFilesystem: true → chart auto-mounts /tmp emptyDir for engine
+#   (server.port via HOME=/tmp), Liquibase parser cache, and brewctl temp.
+#   Verified end-to-end on kind: engine boots clean, migrations succeed,
+#   configApply Job applies, /api/v1/health returns OK.
+# - NetworkPolicy enabled → render-only validation on kind. The default kind
+#   CNI does NOT enforce NetworkPolicy, so install succeeds but actual
+#   ingress/egress restrictions are not exercised here. Real enforcement
+#   happens on Calico / Cilium / Weave clusters (out of scope for CI).
+# Everything else mirrors single-shot.yaml (GitOps-style flow).
+replicaCount: 1
+
+image:
+  repository: syntheticinc/syntheticbrew
+  tag: "1.1.11"
+  pullPolicy: IfNotPresent
+
+postgresql:
+  external:
+    existingSecret: postgres-credentials
+    existingSecretKey: DATABASE_URL
+
+config:
+  auth:
+    mode: local
+    jwtKeysPath: /var/lib/syntheticbrew/keys
+
+persistence:
+  keys:
+    enabled: true
+    size: 1Mi
+    storageClass: standard
+
+ingress:
+  enabled: false
+httpRoute:
+  enabled: false
+
+# Hardened security profile.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - podSelector: {}
+
+migrations:
+  enabled: true
+  image:
+    repository: syntheticinc/syntheticbrew-migrations
+    tag: "1.1.11"
+
+bootstrapAdminToken:
+  enabled: true
+  existingSecret: postgres-credentials
+  existingSecretKey: token
+
+configApply:
+  enabled: true
+  tokenSecret: postgres-credentials
+  # No-op brewctl bundle — restricted-security suite validates engine boots
+  # with readOnlyRootFilesystem=true; the brewctl-creates-resources path
+  # is covered by the single-shot scenario.
+  config: |
+    models: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

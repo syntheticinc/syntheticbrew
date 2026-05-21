@@ -4,16 +4,16 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/taskrunner"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	agentservice "github.com/syntheticinc/bytebrew/engine/internal/service/agent"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/engine"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
-	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
-	pluginpkg "github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/taskrunner"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	agentservice "github.com/syntheticinc/syntheticbrew/internal/service/agent"
+	"github.com/syntheticinc/syntheticbrew/internal/service/engine"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
+	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 	"gorm.io/gorm"
 )
 
@@ -42,7 +42,7 @@ type InfraComponentsConfig struct {
 	DB     *gorm.DB // PostgreSQL GORM DB for runtime storage
 	// ModelDebugDir, when non-empty, makes wrapWithDebugModel attach a
 	// request/response logger to every chat model. Sourced from the
-	// bootstrap config (Debug.ModelDebugDir, env BYTEBREW_DEBUG_MODEL).
+	// bootstrap config (Debug.ModelDebugDir, env SYNTHETICBREW_DEBUG_MODEL).
 	ModelDebugDir string
 	// Plugin is the runtime extension point. nil defaults to pluginpkg.Noop{}.
 	// CE uses Noop so PrepareModelSelector is a no-op.

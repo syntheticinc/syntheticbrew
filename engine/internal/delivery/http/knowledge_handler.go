@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // KnowledgeStats provides knowledge base statistics for an agent.

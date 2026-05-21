@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/metrics"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/metrics"
 )
 
 // gatherCounter extracts the counter value for the given label set from the default registry.
@@ -69,7 +69,7 @@ func TestMetricsMiddleware_IncrementsCounter(t *testing.T) {
 	path := "/api/v1/health"
 
 	// Capture baseline.
-	baseline := gatherCounter(t, "bytebrew_http_requests_total", map[string]string{
+	baseline := gatherCounter(t, "syntheticbrew_http_requests_total", map[string]string{
 		"method": "GET", "path": path, "status": "200",
 	})
 
@@ -81,7 +81,7 @@ func TestMetricsMiddleware_IncrementsCounter(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	after := gatherCounter(t, "bytebrew_http_requests_total", map[string]string{
+	after := gatherCounter(t, "syntheticbrew_http_requests_total", map[string]string{
 		"method": "GET", "path": path, "status": "200",
 	})
 
@@ -91,7 +91,7 @@ func TestMetricsMiddleware_IncrementsCounter(t *testing.T) {
 func TestMetricsMiddleware_RecordsDuration(t *testing.T) {
 	path := "/api/v1/config/export"
 
-	baseline := gatherHistogramCount(t, "bytebrew_http_request_duration_seconds", map[string]string{
+	baseline := gatherHistogramCount(t, "syntheticbrew_http_request_duration_seconds", map[string]string{
 		"method": "GET", "path": path,
 	})
 
@@ -103,7 +103,7 @@ func TestMetricsMiddleware_RecordsDuration(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	after := gatherHistogramCount(t, "bytebrew_http_request_duration_seconds", map[string]string{
+	after := gatherHistogramCount(t, "syntheticbrew_http_request_duration_seconds", map[string]string{
 		"method": "GET", "path": path,
 	})
 
@@ -113,7 +113,7 @@ func TestMetricsMiddleware_RecordsDuration(t *testing.T) {
 func TestMetricsMiddleware_CapturesStatusCode(t *testing.T) {
 	path := "/api/v1/agents"
 
-	baseline404 := gatherCounter(t, "bytebrew_http_requests_total", map[string]string{
+	baseline404 := gatherCounter(t, "syntheticbrew_http_requests_total", map[string]string{
 		"method": "POST", "path": path, "status": "404",
 	})
 
@@ -125,7 +125,7 @@ func TestMetricsMiddleware_CapturesStatusCode(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	after404 := gatherCounter(t, "bytebrew_http_requests_total", map[string]string{
+	after404 := gatherCounter(t, "syntheticbrew_http_requests_total", map[string]string{
 		"method": "POST", "path": path, "status": "404",
 	})
 
@@ -136,7 +136,7 @@ func TestMetricsMiddleware_DefaultStatusIs200(t *testing.T) {
 	// Handler that writes body without explicit WriteHeader — Go defaults to 200.
 	path := "/api/v1/health"
 
-	baseline := gatherCounter(t, "bytebrew_http_requests_total", map[string]string{
+	baseline := gatherCounter(t, "syntheticbrew_http_requests_total", map[string]string{
 		"method": "GET", "path": path, "status": "200",
 	})
 
@@ -148,7 +148,7 @@ func TestMetricsMiddleware_DefaultStatusIs200(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	after := gatherCounter(t, "bytebrew_http_requests_total", map[string]string{
+	after := gatherCounter(t, "syntheticbrew_http_requests_total", map[string]string{
 		"method": "GET", "path": path, "status": "200",
 	})
 
@@ -296,10 +296,10 @@ func TestMetricsRegistered(t *testing.T) {
 		names[f.GetName()] = true
 	}
 
-	assert.True(t, names["bytebrew_http_requests_total"], "bytebrew_http_requests_total should be registered")
-	assert.True(t, names["bytebrew_http_request_duration_seconds"], "bytebrew_http_request_duration_seconds should be registered")
-	assert.True(t, names["bytebrew_active_sessions"], "bytebrew_active_sessions should be registered")
-	assert.True(t, names["bytebrew_tool_calls_total"], "bytebrew_tool_calls_total should be registered")
-	assert.True(t, names["bytebrew_llm_requests_total"], "bytebrew_llm_requests_total should be registered")
-	assert.True(t, names["bytebrew_llm_request_duration_seconds"], "bytebrew_llm_request_duration_seconds should be registered")
+	assert.True(t, names["syntheticbrew_http_requests_total"], "syntheticbrew_http_requests_total should be registered")
+	assert.True(t, names["syntheticbrew_http_request_duration_seconds"], "syntheticbrew_http_request_duration_seconds should be registered")
+	assert.True(t, names["syntheticbrew_active_sessions"], "syntheticbrew_active_sessions should be registered")
+	assert.True(t, names["syntheticbrew_tool_calls_total"], "syntheticbrew_tool_calls_total should be registered")
+	assert.True(t, names["syntheticbrew_llm_requests_total"], "syntheticbrew_llm_requests_total should be registered")
+	assert.True(t, names["syntheticbrew_llm_request_duration_seconds"], "syntheticbrew_llm_request_duration_seconds should be registered")
 }

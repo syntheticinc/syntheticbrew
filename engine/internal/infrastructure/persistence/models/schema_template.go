@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // SchemaTemplateModel maps to the "schema_templates" table.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 type mockEventStream struct {

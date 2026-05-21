@@ -7,25 +7,25 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/authprim"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/internal/authprim"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
 
 // bootstrapSeeds runs the full bootstrap seed cascade against the global DB.
 // Called from Run() after the database is open and before MCP connect.
 //
-// Order matters: seedByteBrewDocsMCP MUST run before seedBuilderAssistant
+// Order matters: seedSyntheticBrewDocsMCP MUST run before seedBuilderAssistant
 // (so the builder-assistant agent's MCPServers list resolves on first boot).
 // All seeders are idempotent and safe to re-run on every startup.
 //
-// docsMCPURL overrides the seeded bytebrew-docs MCP server URL when non-empty
-// (sourced from BootstrapConfig.MCP.DocsURL / env BYTEBREW_DOCS_MCP_URL).
+// docsMCPURL overrides the seeded syntheticbrew-docs MCP server URL when non-empty
+// (sourced from BootstrapConfig.MCP.DocsURL / env SYNTHETICBREW_DOCS_MCP_URL).
 //
 // bootstrapAdminToken, when non-empty, seeds an admin API token (idempotent).
-// Sourced from BootstrapConfig.Seed.BootstrapAdminToken / env BYTEBREW_BOOTSTRAP_ADMIN_TOKEN.
+// Sourced from BootstrapConfig.Seed.BootstrapAdminToken / env SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN.
 //
 // Returns an error only for hard misconfiguration (e.g. invalid bootstrap
 // admin token format). Soft seed failures (DB list/create errors on
@@ -34,7 +34,7 @@ func bootstrapSeeds(ctx context.Context, db *gorm.DB, byok config.BYOKConfig, do
 	if db == nil {
 		return nil
 	}
-	seedByteBrewDocsMCP(ctx, db, docsMCPURL)
+	seedSyntheticBrewDocsMCP(ctx, db, docsMCPURL)
 	seedBuilderAssistant(ctx, db)
 	seedBuilderSchema(ctx, db)
 	// V2 Commit Group C (§5.5): the system-wide MCP catalog is now a
@@ -105,10 +105,10 @@ func seedBootstrapAdminToken(ctx context.Context, db *gorm.DB, bootstrapAdminTok
 
 const builderAssistantName = "builder-assistant"
 
-// ByteBrew docs MCP server — public, no API key required.
-const bytebrewDocsMCPName = "bytebrew-docs"
+// SyntheticBrew docs MCP server — public, no API key required.
+const syntheticbrewDocsMCPName = "syntheticbrew-docs"
 
-const builderAssistantPrompt = `You are the ByteBrew Builder Assistant — an AI architect embedded in the Admin Dashboard. Your role is to help users design, configure, and manage their ByteBrew multi-agent systems.
+const builderAssistantPrompt = `You are the SyntheticBrew Builder Assistant — an AI architect embedded in the Admin Dashboard. Your role is to help users design, configure, and manage their SyntheticBrew multi-agent systems.
 
 ## CRITICAL RULES (never violate)
 
@@ -174,7 +174,7 @@ Only after the user confirms ("yes", "go ahead", "build it", "looks good") — e
   - When NO schema context is provided, and the user asks to create agents or build a system, create a NEW schema with a descriptive name (e.g., "support-flow", "iot-pipeline"), then create agents inside it.
   - If the user explicitly asks "create a schema", always create a new one — never reuse builder-schema.
   - When listing agents, highlight which ones are in the current schema.
-- **Search documentation first.** You have access to the ByteBrew documentation via the **search_docs** tool (from the bytebrew-docs MCP server). When users ask about platform features, configuration options, deployment, widgets, triggers, capabilities, or anything about how ByteBrew works — search the docs first to give accurate, up-to-date answers. Do not guess about platform capabilities; verify via docs search.
+- **Search documentation first.** You have access to the SyntheticBrew documentation via the **search_docs** tool (from the syntheticbrew-docs MCP server). When users ask about platform features, configuration options, deployment, widgets, triggers, capabilities, or anything about how SyntheticBrew works — search the docs first to give accurate, up-to-date answers. Do not guess about platform capabilities; verify via docs search.
 - **Explicit requests are fine.** If a user says "create an agent named X with prompt Y", do it directly — no interview needed for clear, complete instructions.
 - **Confirm before destructive actions.** Always ask before deleting agents, schemas, models, or other resources. When the choice is bounded (e.g. "Delete / Cancel", "Use existing / Create new", "iOS / Android / Web"), prefer calling ` + "`show_structured_output`" + ` with output_type=summary_table + action buttons OR output_type=form with a single select question. The user clicks the option and the form submission resumes you — this is more reliable than free-text confirmation and the same control surfaces uniformly on every client (admin chat, embed widget, mobile).
 - **Use the structured-output widget for bounded choices and config selection.** Good uses: picking a model preset from a list of available models, picking capability tier (Memory / Knowledge / Memory+Knowledge), picking output_type for a new schema (chat / cron / webhook), confirming a multi-step build plan. Bad uses: open-ended discovery questions (use plain text), free-form names or descriptions (use plain text), more than one question per turn that requires sequential answers. After calling ` + "`show_structured_output`" + `, your response MUST contain ONLY that tool call — no preamble, no "awaiting confirmation" text, no narration. The widget is the message.
@@ -311,41 +311,41 @@ func builderAssistantDefaults() *configrepo.AgentRecord {
 		MaxContextSize: 16000,
 		IsSystem:       true,
 		BuiltinTools:   builderAssistantBuiltinTools,
-		MCPServers:     []string{bytebrewDocsMCPName},
+		MCPServers:     []string{syntheticbrewDocsMCPName},
 	}
 }
 
-// seedByteBrewDocsMCP ensures the bytebrew-docs MCP server exists in the database.
+// seedSyntheticBrewDocsMCP ensures the syntheticbrew-docs MCP server exists in the database.
 // Idempotent — skips if a server with the same name already exists.
 //
 // When url is empty the seeder is a no-op. Operators can supply a URL via
-// BYTEBREW_DOCS_MCP_URL or via a plugin's DocsMCPEndpoint() implementation.
-func seedByteBrewDocsMCP(ctx context.Context, db *gorm.DB, url string) {
+// SYNTHETICBREW_DOCS_MCP_URL or via a plugin's DocsMCPEndpoint() implementation.
+func seedSyntheticBrewDocsMCP(ctx context.Context, db *gorm.DB, url string) {
 	if url == "" || db == nil {
 		return
 	}
 	mcpRepo := configrepo.NewGORMMCPServerRepository(db)
 	servers, err := mcpRepo.List(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "seed bytebrew-docs MCP: failed to list", "error", err)
+		slog.WarnContext(ctx, "seed syntheticbrew-docs MCP: failed to list", "error", err)
 		return
 	}
 	for _, s := range servers {
-		if s.Name == bytebrewDocsMCPName {
-			slog.InfoContext(ctx, "bytebrew-docs MCP server already exists, skipping seed")
+		if s.Name == syntheticbrewDocsMCPName {
+			slog.InfoContext(ctx, "syntheticbrew-docs MCP server already exists, skipping seed")
 			return
 		}
 	}
 	server := &models.MCPServerModel{
-		Name: bytebrewDocsMCPName,
+		Name: syntheticbrewDocsMCPName,
 		Type: models.MCPServerTypeSSE,
 		URL:  url,
 	}
 	if err := mcpRepo.Create(ctx, server); err != nil {
-		slog.ErrorContext(ctx, "failed to seed bytebrew-docs MCP server", "error", err)
+		slog.ErrorContext(ctx, "failed to seed syntheticbrew-docs MCP server", "error", err)
 		return
 	}
-	slog.InfoContext(ctx, "seeded bytebrew-docs MCP server", "url", url)
+	slog.InfoContext(ctx, "seeded syntheticbrew-docs MCP server", "url", url)
 }
 
 // seedBuilderAssistant ensures the builder-assistant agent exists in the database.
@@ -522,10 +522,10 @@ func restoreBuilderSchema(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("database not available")
 	}
 
-	// 0. Ensure bytebrew-docs MCP server exists (may have been deleted by user).
+	// 0. Ensure syntheticbrew-docs MCP server exists (may have been deleted by user).
 	// Restore path uses the canonical hosted URL — if the operator overrode
 	// it on first boot via env, they can edit the URL in Admin afterward.
-	seedByteBrewDocsMCP(ctx, db, "")
+	seedSyntheticBrewDocsMCP(ctx, db, "")
 
 	// 1. Restore builder-assistant agent to factory defaults.
 	if err := restoreBuilderAssistant(ctx, db); err != nil {

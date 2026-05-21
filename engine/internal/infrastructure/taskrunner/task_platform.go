@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/task"
+	"github.com/syntheticinc/syntheticbrew/internal/service/task"
 )
 
 // StartBackgroundWorker creates a TaskWorker with the given executor + concurrency.

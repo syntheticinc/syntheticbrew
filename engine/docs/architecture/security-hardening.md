@@ -1,7 +1,7 @@
 # Security Hardening
 
 This document describes the security headers, CORS policy, and observability
-controls applied by the ByteBrew engine HTTP layer.
+controls applied by the SyntheticBrew engine HTTP layer.
 
 ## Security Gate Mapping (SCC-01..SCC-06)
 
@@ -14,7 +14,7 @@ and middleware that satisfy each gate. Used by QA when running
 | **SCC-01** | GATE | Unauthenticated → 401 | `JWTAuthMiddleware` on all `/api/v1/*` protected routes. Absent or invalid `Authorization: Bearer` → `401 Unauthorized`. |
 | **SCC-02** | GATE | Cross-tenant → 403/404 | `TenantMiddleware` resolves `tenant_id` from JWT `sub` + `kid`. All repository queries are scoped by `tenant_id`. A valid JWT for tenant A cannot read resources of tenant B — returns 404 (resource not found for that tenant). |
 | **SCC-03** | GATE | Invalid input → 400 not 500 | Handler-level input validation before any business logic. Malformed JSON, missing required fields, oversized bodies (1 MB cap via `maxBodySize` middleware) → `400 Bad Request`. |
-| **SCC-04** | ADVISORY | File/shell tools blocked (Cloud) | EE binary: `deriveRuntimeTools` excludes `file_*`, `shell_exec` tool registrations. Cloud mode enforced via `BYTEBREW_AUTH_MODE=external` build path — no file-system tools exposed through MCP or native tool registry. |
+| **SCC-04** | ADVISORY | File/shell tools blocked (Cloud) | EE binary: `deriveRuntimeTools` excludes `file_*`, `shell_exec` tool registrations. Cloud mode enforced via `SYNTHETICBREW_AUTH_MODE=external` build path — no file-system tools exposed through MCP or native tool registry. |
 | **SCC-05** | ADVISORY | Expired JWT → 401 + WWW-Authenticate | EdDSA verifier checks `exp` claim; expired token → `401` with `WWW-Authenticate: Bearer error="invalid_token"` header. |
 | **SCC-06** | ADVISORY | Rate limit → 429 | `httprate.LimitByIP(100, time.Minute)` on `/api/v1/*` group (cloud-api). Engine: configurable via `engine.rate_limit` config key (default 200 req/min per IP). |
 
@@ -175,8 +175,8 @@ downtime.
 
 | Variable | Required | Description |
 |---|---|---|
-| `BYTEBREW_METERING_HMAC_CURRENT` | yes (Cloud mode) | Active signing secret. Engine always signs with this key. |
-| `BYTEBREW_METERING_HMAC_PREVIOUS` | rotation only | Accepted by the verifier during the rotation window. The engine ignores this variable. |
+| `SYNTHETICBREW_METERING_HMAC_CURRENT` | yes (Cloud mode) | Active signing secret. Engine always signs with this key. |
+| `SYNTHETICBREW_METERING_HMAC_PREVIOUS` | rotation only | Accepted by the verifier during the rotation window. The engine ignores this variable. |
 
 **Landing (cloud-api — verifier)**
 
@@ -201,7 +201,7 @@ downtime.
 
 3. **Roll engine** — set only the new current secret, redeploy:
    ```
-   BYTEBREW_METERING_HMAC_CURRENT=<S2>
+   SYNTHETICBREW_METERING_HMAC_CURRENT=<S2>
    ```
    Engine signs all new requests with S2. Landing validates them via `CURRENT`.
 

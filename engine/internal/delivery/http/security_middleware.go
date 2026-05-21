@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 const (

@@ -10,7 +10,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, email us at **[info@bytebrew.ai](mailto:info@bytebrew.ai)** with:
+Instead, email us at **[info@syntheticbrew.ai](mailto:info@syntheticbrew.ai)** with:
 
 1. Description of the vulnerability
 2. Steps to reproduce
@@ -26,7 +26,7 @@ Instead, email us at **[info@bytebrew.ai](mailto:info@bytebrew.ai)** with:
 
 ### Scope
 
-- ByteBrew Engine (this repository)
+- SyntheticBrew Engine (this repository)
 - Admin Dashboard (embedded in this repository)
 - Docker images published by Synthetic AI Inc.
 

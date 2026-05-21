@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/embedded"
+	"github.com/syntheticinc/syntheticbrew/internal/embedded"
 )
 
 // EnsureManagedDefaults writes the embedded prompts.yaml and flows.yaml into

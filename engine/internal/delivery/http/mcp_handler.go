@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/service/mcp"
 )
 
 // MCP catalog refresh interval bounds — mirrors the chk_mcp_refresh_range

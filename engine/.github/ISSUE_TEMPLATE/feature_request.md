@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a feature for ByteBrew
+about: Suggest a feature for SyntheticBrew
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

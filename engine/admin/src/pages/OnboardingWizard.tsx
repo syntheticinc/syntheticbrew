@@ -316,7 +316,7 @@ function Step1ConnectLLM({
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-brand-light mb-1">Connect your LLM</h1>
         <p className="text-sm text-brand-shade2">
-          ByteBrew is bring-your-own-key. Paste an API key from your LLM provider to continue —
+          SyntheticBrew is bring-your-own-key. Paste an API key from your LLM provider to continue —
           keys live on your Engine, not in our cloud.
         </p>
       </div>
@@ -454,7 +454,7 @@ function Step1ConnectLLM({
       {/* Actions */}
       <div className="mt-6 flex items-center justify-between">
         <p className="text-xs text-brand-shade3">
-          Your key is stored on your Engine's database, never transmitted to bytebrew.ai.
+          Your key is stored on your Engine's database, never transmitted to syntheticbrew.ai.
         </p>
         <div className="flex items-center gap-3">
           <button
@@ -670,7 +670,7 @@ export default function OnboardingWizard() {
       <div className="min-h-full flex flex-col">
         <div className="px-6 py-4 border-b border-brand-shade3/10 bg-brand-dark-surface">
           <div className="max-w-3xl mx-auto flex items-center justify-between">
-            <div className="text-sm font-semibold text-brand-light">ByteBrew setup</div>
+            <div className="text-sm font-semibold text-brand-light">SyntheticBrew setup</div>
             <div className="text-xs text-brand-shade3">BYOK — bring your own key</div>
           </div>
         </div>

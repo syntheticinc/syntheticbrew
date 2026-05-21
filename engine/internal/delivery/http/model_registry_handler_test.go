@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm/registry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm/registry"
 )
 
 type mockModelRegistry struct {

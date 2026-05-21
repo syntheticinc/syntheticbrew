@@ -1,0 +1,48 @@
+# Test scenario: AWS IRSA (IAM Roles for Service Accounts).
+# Render-validated ONLY — actual IRSA requires an EKS cluster with an OIDC
+# provider configured against the IAM role ARN. We have no AWS credentials
+# in CI, so this scenario stays in the "Beta" tier per OSS testing
+# transparency in CLAUDE.md.
+#
+# What we verify in CI: chart renders the SA with the correct annotation
+# (`eks.amazonaws.com/role-arn`), and the engine Deployment references
+# that SA.
+replicaCount: 1
+
+image:
+  repository: syntheticinc/syntheticbrew
+  tag: "1.1.11"
+
+postgresql:
+  external:
+    existingSecret: postgres-credentials
+    existingSecretKey: DATABASE_URL
+
+config:
+  auth:
+    mode: local
+    jwtKeysPath: /var/lib/syntheticbrew/keys
+
+persistence:
+  keys:
+    enabled: true
+    size: 1Mi
+    storageClass: standard
+
+ingress: { enabled: false }
+httpRoute: { enabled: false }
+
+# IRSA: ServiceAccount carries the role-arn annotation. Pods scheduled under
+# this SA receive a projected token automatically by the EKS pod-identity
+# webhook and can call AWS APIs (e.g. S3 for KB attachments) without static
+# credentials. The annotation MUST literally be `eks.amazonaws.com/role-arn`.
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/syntheticbrew-engine-test"
+
+migrations:
+  enabled: true
+  image:
+    repository: syntheticinc/syntheticbrew-migrations
+    tag: "1.1.11"

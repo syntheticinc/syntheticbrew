@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/orchestrator"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/service/orchestrator"
 )
 
 // SessionRegistry provides session context and message channel (consumer-side interface).

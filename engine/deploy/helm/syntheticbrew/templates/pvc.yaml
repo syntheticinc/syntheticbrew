@@ -1,0 +1,35 @@
+{{- if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "syntheticbrew-engine.fullname" . }}-keys
+  labels:
+    {{- include "syntheticbrew-engine.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.keys.accessMode }}
+  {{- if .Values.persistence.keys.storageClass }}
+  storageClassName: {{ .Values.persistence.keys.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.keys.size }}
+{{- end }}
+---
+{{- if .Values.persistence.knowledge.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "syntheticbrew-engine.fullname" . }}-knowledge
+  labels:
+    {{- include "syntheticbrew-engine.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.knowledge.accessMode }}
+  {{- if .Values.persistence.knowledge.storageClass }}
+  storageClassName: {{ .Values.persistence.knowledge.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.knowledge.size }}
+{{- end }}

@@ -26,10 +26,10 @@ The `adminSession` worker-fixture does steps 1-4 once per worker. Any test using
 **~112 of 312 tests skipped** due to missing SMTP mock in the stack. To enable:
 
 - Add `mailhog` to `docker-compose-cloud-full.yml` + update fixtures to fetch verification token from its API
-- OR add `BYTEBREW_TEST_AUTO_VERIFY_EMAIL=true` to cloud-api env
-- OR add admin-only `POST /api/v1/internal/test/verify-email` handler behind the existing `BYTEBREW_TEST_AUTO_SUBSCRIPTION` flag
+- OR add `SYNTHETICBREW_TEST_AUTO_VERIFY_EMAIL=true` to cloud-api env
+- OR add admin-only `POST /api/v1/internal/test/verify-email` handler behind the existing `SYNTHETICBREW_TEST_AUTO_SUBSCRIPTION` flag
 
-**EE-only tests** (license activate/refresh/revoke) are skipped by default — enable `BYTEBREW_EE=true` in compose to include them.
+**EE-only tests** (license activate/refresh/revoke) are skipped by default — enable `SYNTHETICBREW_EE=true` in compose to include them.
 
 **Metering fail-closed tests** require docker-level manipulation (`docker stop landing`) and are marked manual-only.
 

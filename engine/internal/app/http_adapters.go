@@ -9,14 +9,14 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"gorm.io/gorm"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agentregistry"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/audit"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	mcpcatalog "github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/audit"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	mcpcatalog "github.com/syntheticinc/syntheticbrew/internal/service/mcp"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // agentCounterHTTPAdapter bridges AgentRegistry to the http.AgentCounter interface.

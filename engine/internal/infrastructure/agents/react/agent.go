@@ -11,11 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents/callbacks"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
-	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents/callbacks"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 )

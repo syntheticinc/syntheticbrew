@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
 
 // NoopAgentService implements AgentService interface for FlowHandler

@@ -2,7 +2,7 @@
 
 ## Why the split exists
 
-ByteBrew agents require a **chat** model (one that accepts a system prompt and
+SyntheticBrew agents require a **chat** model (one that accepts a system prompt and
 generates streamed completions). Knowledge bases require an **embedding** model
 (one that converts text into dense vectors for similarity search).
 
@@ -100,7 +100,7 @@ Operators do not need to re-create models.
 
 ## BYOK model
 
-ByteBrew Cloud does **not** pre-seed embedding models. Operators bring their
+SyntheticBrew Cloud does **not** pre-seed embedding models. Operators bring their
 own provider and API key — the same as chat models. Typical choices:
 
 - **OpenAI** — `text-embedding-3-small` (1536 dims), `text-embedding-3-large` (3072 dims)

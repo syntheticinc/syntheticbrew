@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 
-const STORAGE_KEY = 'bytebrew_prototype_mode';
+const STORAGE_KEY = 'syntheticbrew_prototype_mode';
 const PROTOTYPE_ENABLED = import.meta.env.VITE_PROTOTYPE_ENABLED === 'true'
   || import.meta.env.DEV;
 

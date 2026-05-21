@@ -51,7 +51,7 @@ export default function ConfigPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'bytebrew-config.yaml';
+    a.download = 'syntheticbrew-config.yaml';
     a.click();
     URL.revokeObjectURL(url);
   }

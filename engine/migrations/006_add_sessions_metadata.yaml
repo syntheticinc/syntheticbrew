@@ -1,11 +1,11 @@
 databaseChangeLog:
   - changeSet:
       id: 006_add_sessions_metadata
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Adds opaque per-session JSONB metadata column. Engine itself never reads
         the contents — it persists and returns the raw blob. Use case: clients
-        that build a multi-tenant layer on top of a single ByteBrew tenant can
+        that build a multi-tenant layer on top of a single SyntheticBrew tenant can
         attach their own org/user mapping (e.g. {"org_id": "...", ...}) directly
         to the session row instead of maintaining a separate edge table.
         Engine 1.1.4 + chart 0.6.4. ALTER ADD COLUMN with DEFAULT '{}'::jsonb

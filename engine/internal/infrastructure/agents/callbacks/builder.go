@@ -7,8 +7,8 @@ import (
 	"github.com/cloudwego/eino/flow/agent"
 	ucb "github.com/cloudwego/eino/utils/callbacks"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
 )
 
 // BuilderConfig holds configuration for constructing the callback builder.

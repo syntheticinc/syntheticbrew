@@ -6,7 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN echo "build: version=${VERSION} cache-bust=${CACHE_BUST}" && \
-    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o bytebrew-ce ./cmd/ce
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o syntheticbrew-ce ./cmd/ce
 
 FROM node:22-alpine AS admin-builder
 WORKDIR /admin
@@ -18,11 +18,11 @@ RUN npm run build
 FROM alpine:3.19
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
-COPY --from=builder /app/bytebrew-ce /usr/local/bin/
-COPY --from=admin-builder /admin/dist /usr/share/bytebrew/admin
+COPY --from=builder /app/syntheticbrew-ce /usr/local/bin/
+COPY --from=admin-builder /admin/dist /usr/share/syntheticbrew/admin
 
 # Embeddable widget bundle is optional — copied in by CI/CD when present.
 # Place built widget asset under widget/dist/widget.js to include it locally.
 
 EXPOSE 8443 8444
-ENTRYPOINT ["bytebrew-ce"]
+ENTRYPOINT ["syntheticbrew-ce"]

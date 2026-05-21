@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import type { UsageMetric } from '../types';
 
-const DISMISS_KEY = 'bytebrew_quota_banner_dismissed';
+const DISMISS_KEY = 'syntheticbrew_quota_banner_dismissed';
 
 export default function QuotaBanner() {
   const [metrics, setMetrics] = useState<UsageMetric[]>([]);
@@ -74,7 +74,7 @@ export default function QuotaBanner() {
             <span className="text-brand-light">{worstMetric.metric.label}</span> limit.
           </p>
           <p className="text-xs text-brand-shade3 mb-6 font-mono">
-            Upgrade your plan to continue using ByteBrew without interruption.
+            Upgrade your plan to continue using SyntheticBrew without interruption.
           </p>
           <div className="flex items-center gap-3">
             <button

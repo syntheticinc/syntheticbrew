@@ -32,9 +32,9 @@ func TestMCPIntegration_StdioEchoServer(t *testing.T) {
 	t.Logf("AC-3.1 PASS: Connected, discovered %d tools: %s", len(tools), tools[0].Name)
 
 	// AC-3.2: Call tool
-	result, _, err := client.CallTool(ctx, "echo", map[string]interface{}{"message": "hello from ByteBrew"})
+	result, _, err := client.CallTool(ctx, "echo", map[string]interface{}{"message": "hello from SyntheticBrew"})
 	require.NoError(t, err, "AC-3.2: Tool call should succeed")
-	assert.Contains(t, result, "Echo: hello from ByteBrew")
+	assert.Contains(t, result, "Echo: hello from SyntheticBrew")
 	t.Logf("AC-3.2 PASS: Tool result: %s", result)
 
 	// Cleanup

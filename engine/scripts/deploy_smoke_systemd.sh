@@ -2,7 +2,7 @@
 # deploy_smoke_systemd.sh — systemd (bare-metal / VPS) deploy smoke test.
 #
 # Requires: docker (to spin up a privileged systemd container), curl
-# Usage: bash bytebrew/engine/scripts/deploy_smoke_systemd.sh
+# Usage: bash syntheticinc/syntheticbrew/scripts/deploy_smoke_systemd.sh
 #
 # The script:
 #   1. Builds the engine binary (local Go build)
@@ -20,10 +20,10 @@
 
 set -euo pipefail
 
-CONTAINER_NAME="bytebrew-systemd-smoke"
+CONTAINER_NAME="syntheticbrew-systemd-smoke"
 HOST_PORT="18444"
-BINARY_PATH="bytebrew/engine/bin/bytebrew-engine-smoke"
-UNIT_SRC="bytebrew/engine/deploy/systemd/bytebrew-engine.service"
+BINARY_PATH="syntheticinc/syntheticbrew/bin/syntheticbrew-engine-smoke"
+UNIT_SRC="syntheticinc/syntheticbrew/deploy/systemd/syntheticbrew-engine.service"
 
 # ── Prerequisite checks ──────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ fi
 
 if [[ ! -f "$UNIT_SRC" ]]; then
   echo "SKIPPED: systemd unit file not found at $UNIT_SRC"
-  echo "Create it first: bytebrew/engine/deploy/systemd/bytebrew-engine.service"
+  echo "Create it first: syntheticinc/syntheticbrew/deploy/systemd/syntheticbrew-engine.service"
   exit 1
 fi
 
@@ -57,7 +57,7 @@ trap cleanup EXIT
 echo "==> Building engine binary (linux/amd64)..."
 mkdir -p "$(dirname "$BINARY_PATH")"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOWORK=off \
-  go build -C bytebrew/engine \
+  go build -C syntheticinc/syntheticbrew \
   -ldflags "-s -w" \
   -o "../../$BINARY_PATH" \
   ./cmd/ce 2>&1 | tail -5
@@ -81,28 +81,28 @@ sleep 5
 # ── 3. Install binary + unit ─────────────────────────────────────────────────
 
 echo "==> Installing binary into container..."
-docker cp "$BINARY_PATH" "$CONTAINER_NAME"://usr/local/bin/bytebrew-engine
-docker exec "$CONTAINER_NAME" chmod +x //usr/local/bin/bytebrew-engine
+docker cp "$BINARY_PATH" "$CONTAINER_NAME"://usr/local/bin/syntheticbrew-engine
+docker exec "$CONTAINER_NAME" chmod +x //usr/local/bin/syntheticbrew-engine
 
 echo "==> Installing systemd unit..."
-docker cp "$UNIT_SRC" "$CONTAINER_NAME"://etc/systemd/system/bytebrew-engine.service
+docker cp "$UNIT_SRC" "$CONTAINER_NAME"://etc/systemd/system/syntheticbrew-engine.service
 
 # Override ExecStart to use our binary path and local auth mode
 docker exec "$CONTAINER_NAME" bash -c "
-  sed -i 's|ExecStart=.*|ExecStart=/usr/local/bin/bytebrew-engine --mode local --port 8443|' \
-    /etc/systemd/system/bytebrew-engine.service
-  mkdir -p /var/lib/bytebrew/keys /etc/bytebrew
+  sed -i 's|ExecStart=.*|ExecStart=/usr/local/bin/syntheticbrew-engine --mode local --port 8443|' \
+    /etc/systemd/system/syntheticbrew-engine.service
+  mkdir -p /var/lib/syntheticbrew/keys /etc/syntheticbrew
   systemctl daemon-reload
 "
 
 # ── 4. Start service + wait ──────────────────────────────────────────────────
 
-echo "==> Starting bytebrew-engine service..."
-docker exec "$CONTAINER_NAME" systemctl start bytebrew-engine
+echo "==> Starting syntheticbrew-engine service..."
+docker exec "$CONTAINER_NAME" systemctl start syntheticbrew-engine
 
 # Poll for up to 30s
 for i in $(seq 1 15); do
-  STATUS=$(docker exec "$CONTAINER_NAME" systemctl is-active bytebrew-engine 2>/dev/null || true)
+  STATUS=$(docker exec "$CONTAINER_NAME" systemctl is-active syntheticbrew-engine 2>/dev/null || true)
   if [[ "$STATUS" == "active" ]]; then
     echo "==> Service is active"
     break
@@ -111,10 +111,10 @@ for i in $(seq 1 15); do
   sleep 2
 done
 
-STATUS=$(docker exec "$CONTAINER_NAME" systemctl is-active bytebrew-engine 2>/dev/null || true)
+STATUS=$(docker exec "$CONTAINER_NAME" systemctl is-active syntheticbrew-engine 2>/dev/null || true)
 if [[ "$STATUS" != "active" ]]; then
   echo "FAIL: Service failed to start (status=$STATUS)"
-  docker exec "$CONTAINER_NAME" journalctl -u bytebrew-engine -n 30 --no-pager 2>/dev/null || true
+  docker exec "$CONTAINER_NAME" journalctl -u syntheticbrew-engine -n 30 --no-pager 2>/dev/null || true
   exit 2
 fi
 
@@ -129,7 +129,7 @@ if [[ "$HTTP_CODE" == "200" ]]; then
   echo "PASS: GET /api/v1/health → $HTTP_CODE"
 else
   echo "FAIL: GET /api/v1/health → $HTTP_CODE (expected 200)"
-  docker exec "$CONTAINER_NAME" journalctl -u bytebrew-engine -n 20 --no-pager 2>/dev/null || true
+  docker exec "$CONTAINER_NAME" journalctl -u syntheticbrew-engine -n 20 --no-pager 2>/dev/null || true
   exit 2
 fi
 

@@ -1,7 +1,7 @@
 import { WidgetUI, type WidgetConfig } from './ui';
 
 /**
- * ByteBrew embeddable chat widget.
+ * SyntheticBrew embeddable chat widget.
  *
  * Usage:
  *   <script src="https://your-engine/widget.js"
@@ -54,7 +54,7 @@ function readConfig(scriptEl: HTMLScriptElement): WidgetConfig {
   // declared in their configApply bundle.
   const schemaName = scriptEl.dataset.schema;
   if (!schemaName) {
-    throw new Error('[ByteBrew Widget] data-schema attribute is required');
+    throw new Error('[SyntheticBrew Widget] data-schema attribute is required');
   }
 
   const endpoint = resolveEndpoint(scriptEl, scriptEl.dataset.endpoint ?? null);
@@ -75,7 +75,7 @@ function readConfig(scriptEl: HTMLScriptElement): WidgetConfig {
 function init(): void {
   const scriptEl = findScriptTag();
   if (!scriptEl) {
-    console.error('[ByteBrew Widget] Could not find widget script tag');
+    console.error('[SyntheticBrew Widget] Could not find widget script tag');
     return;
   }
 

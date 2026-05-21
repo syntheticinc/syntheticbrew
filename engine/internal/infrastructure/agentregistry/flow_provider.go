@@ -3,7 +3,7 @@ package agentregistry
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // FlowProvider is defined here (not in turnexecutor) to avoid an import cycle:

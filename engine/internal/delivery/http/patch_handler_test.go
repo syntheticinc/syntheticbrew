@@ -268,7 +268,7 @@ func newMCPTestRouterWithPatch(svc *stubMCPServiceWithPatch) http.Handler {
 }
 
 func TestMCPHandler_Put_MissingType_Returns400(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "ce")
+	t.Setenv("SYNTHETICBREW_MODE", "ce")
 	svc := &stubMCPServiceWithPatch{}
 	r := newMCPTestRouterWithPatch(svc)
 
@@ -287,7 +287,7 @@ func TestMCPHandler_Put_MissingType_Returns400(t *testing.T) {
 }
 
 func TestMCPHandler_Patch_PreservesUnspecifiedFields(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "ce")
+	t.Setenv("SYNTHETICBREW_MODE", "ce")
 	var capturedReq UpdateMCPServerRequest
 	svc := &stubMCPServiceWithPatch{
 		patchFunc: func(_ context.Context, name string, req UpdateMCPServerRequest) (*MCPServerResponse, error) {
@@ -312,7 +312,7 @@ func TestMCPHandler_Patch_PreservesUnspecifiedFields(t *testing.T) {
 }
 
 func TestMCPHandler_Patch_Cloud_BlocksStdioType(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "cloud")
+	t.Setenv("SYNTHETICBREW_MODE", "cloud")
 	svc := &stubMCPServiceWithPatch{}
 	r := newMCPTestRouterWithPatch(svc)
 

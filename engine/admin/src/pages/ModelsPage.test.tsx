@@ -117,7 +117,7 @@ describe('ModelsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset the persisted kind filter so each test starts with "All".
-    localStorage.removeItem('bytebrew_models_kind_filter');
+    localStorage.removeItem('syntheticbrew_models_kind_filter');
     // Filter-aware mock: mirror the backend behavior so the kind-filter tests
     // can assert the table re-renders with the right slice.
     mockApi.listModels.mockImplementation((params?: { kind?: 'chat' | 'embedding' }) => {

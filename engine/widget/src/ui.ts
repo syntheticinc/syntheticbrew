@@ -56,7 +56,7 @@ export class WidgetUI {
 
     // Create host element
     this.host = document.createElement('div');
-    this.host.id = 'bytebrew-widget';
+    this.host.id = 'syntheticbrew-widget';
     this.shadow = this.host.attachShadow({ mode: 'closed' });
 
     // Inject styles

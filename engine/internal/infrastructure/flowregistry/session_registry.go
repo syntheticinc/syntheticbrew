@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/eventstore"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	"github.com/syntheticinc/syntheticbrew/internal/service/eventstore"
 )
 
 const (

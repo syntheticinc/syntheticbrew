@@ -1,14 +1,14 @@
-# ByteBrew Engine — Developer Pipeline Example
+# SyntheticBrew Engine — Developer Pipeline Example
 # Import via: POST /api/v1/config/import (Phase 5)
 # Or use as reference for admin dashboard configuration.
 
 engine:
   host: "0.0.0.0"
   port: 8443
-  data_dir: "/var/lib/bytebrew"
+  data_dir: "/var/lib/syntheticbrew"
 
 database:
-  url: "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/bytebrew"
+  url: "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/syntheticbrew"
 
 security:
   # Wave 1+7 (2026-04-21): jwt_secret + admin CLI removed. Engine signs admin

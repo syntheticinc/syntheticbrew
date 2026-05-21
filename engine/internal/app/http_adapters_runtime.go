@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/resilience"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 )
 
 // circuitBreakerRegistryAdapter bridges resilience.CircuitBreakerRegistry to tools.CircuitBreakerRegistry.

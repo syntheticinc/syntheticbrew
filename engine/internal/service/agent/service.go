@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents/react"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/turnexecutor"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
-	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents/react"
+	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"github.com/cloudwego/eino/components/model"
 )
 

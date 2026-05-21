@@ -3,7 +3,7 @@ package admin
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/service/mcp"
 )
 
 // NOTE: Admin tools operate without tenant scoping (CE = single-tenant by design).

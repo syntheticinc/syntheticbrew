@@ -30,7 +30,7 @@ export const MOCK_AGENTS: Record<string, AgentDetail> = {
     has_knowledge: true,
     model_id: '2',
     system_prompt:
-      'You are a helpful support agent for ByteBrew. Your role is to assist users with billing, account, and subscription questions. Always be professional and empathetic. Use available tools to look up account information before responding.',
+      'You are a helpful support agent for SyntheticBrew. Your role is to assist users with billing, account, and subscription questions. Always be professional and empathetic. Use available tools to look up account information before responding.',
     tools: ['ask_user', 'show_structured_output', 'manage_tasks', 'spawn_agent'],
     can_spawn: ['escalation'],
     lifecycle: 'persistent',

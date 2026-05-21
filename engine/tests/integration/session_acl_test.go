@@ -21,7 +21,7 @@ import (
 // mount; ScopeAdmin (=16) still passes via the superscope bypass inside
 // RequireScope. These tests exercise the scope enforcement layer on the
 // authoritative single-tenant CE stack — multi-tenant cross-user ACL lives
-// in EE integration tests (see bytebrew-ee/tests/integration/session_acl_*.go).
+// in EE integration tests (see syntheticbrew-ee/tests/integration/session_acl_*.go).
 
 // helper — issues an api_token via the admin route, returns the raw token.
 // Skips the test if /api/v1/auth/tokens is not registered in this build.
@@ -117,7 +117,7 @@ func TestSEC23_SessionList_APITokenScopeAdmin_200(t *testing.T) {
 //
 // The end-user impersonation guard runs only against regular end-user JWT
 // actors (which the CE local-admin token isn't). For that path, see the EE
-// integration suite (bytebrew-ee/tests/integration/session_acl_*.go).
+// integration suite (syntheticbrew-ee/tests/integration/session_acl_*.go).
 //
 // This test is the regression guard for the trusted-proxy contract: any
 // silent change that strips body.user_sub for api_tokens would break chirp

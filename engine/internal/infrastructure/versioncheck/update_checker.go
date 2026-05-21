@@ -14,9 +14,9 @@ import (
 
 // defaultVersionsURL is the canonical hosted endpoint that returns the
 // current latest engine version. Used when no override is supplied.
-const defaultVersionsURL = "https://api.bytebrew.ai/api/v1/versions/engine"
+const defaultVersionsURL = "https://api.syntheticbrew.ai/api/v1/versions/engine"
 
-// UpdateChecker periodically checks api.bytebrew.ai for newer Engine versions.
+// UpdateChecker periodically checks api.syntheticbrew.ai for newer Engine versions.
 // It checks immediately on start, then every 24 hours. Errors are silently
 // ignored (air-gap safe — no internet = no problem).
 type UpdateChecker struct {
@@ -28,7 +28,7 @@ type UpdateChecker struct {
 
 // NewUpdateChecker creates an UpdateChecker for the given current version.
 // versionsURL overrides the default hosted endpoint when non-empty
-// (sourced from BootstrapConfig.Updates.VersionsURL / env BYTEBREW_VERSIONS_URL).
+// (sourced from BootstrapConfig.Updates.VersionsURL / env SYNTHETICBREW_VERSIONS_URL).
 func NewUpdateChecker(currentVersion, versionsURL string) *UpdateChecker {
 	url := strings.TrimSpace(versionsURL)
 	if url == "" {
@@ -117,7 +117,7 @@ func (uc *UpdateChecker) checkFromURL(url string) {
 
 	if isNewerVersion(latest, uc.currentVersion) {
 		slog.Warn(
-			fmt.Sprintf("A newer version of ByteBrew Engine is available: %s. Download: %s", latest, body.Data.DownloadURL),
+			fmt.Sprintf("A newer version of SyntheticBrew Engine is available: %s. Download: %s", latest, body.Data.DownloadURL),
 		)
 	}
 }

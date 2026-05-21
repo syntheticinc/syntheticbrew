@@ -3,10 +3,10 @@ package e2e
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/agent"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/orchestrator"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/service/agent"
+	"github.com/syntheticinc/syntheticbrew/internal/service/orchestrator"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )

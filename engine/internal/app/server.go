@@ -15,38 +15,38 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agentregistry"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents/callbacks"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/audit"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/auth"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/flowregistry"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/indexing"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/knowledge"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/lsp"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/repository"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/platform"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/portfile"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/taskrunner"
-	admintools "github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools/admin"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/turnexecutorfactory"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/versioncheck"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents/callbacks"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/audit"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/auth"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/flowregistry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/lsp"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/repository"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/platform"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/portfile"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/taskrunner"
+	admintools "github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools/admin"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/turnexecutorfactory"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/versioncheck"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/capability"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/eventstore"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/lifecycle"
-	memorysvc "github.com/syntheticinc/bytebrew/engine/internal/service/memory"
+	"github.com/syntheticinc/syntheticbrew/internal/service/capability"
+	"github.com/syntheticinc/syntheticbrew/internal/service/eventstore"
+	"github.com/syntheticinc/syntheticbrew/internal/service/lifecycle"
+	memorysvc "github.com/syntheticinc/syntheticbrew/internal/service/memory"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/resilience"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/sessionprocessor"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/turnexecutor"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
-	"github.com/syntheticinc/bytebrew/engine/pkg/logger"
-	pluginpkg "github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
+	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
+	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/pkg/logger"
+	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -80,7 +80,7 @@ type ServerConfig struct {
 	Date    string
 }
 
-// Run starts the ByteBrew server with the given configuration.
+// Run starts the SyntheticBrew server with the given configuration.
 // Called from cmd/ce (CE binary) and pkg/server.Run (integration tests).
 func Run(sc ServerConfig) error {
 	if sc.Plugin == nil {
@@ -190,7 +190,7 @@ func Run(sc ServerConfig) error {
 	slog.SetDefault(loggerInstance.Logger)
 
 	ctx := context.Background()
-	loggerInstance.InfoContext(ctx, "Starting ByteBrew Server",
+	loggerInstance.InfoContext(ctx, "Starting SyntheticBrew Server",
 		"version", sc.Version,
 		"commit", sc.Commit,
 		"built", sc.Date,
@@ -323,17 +323,17 @@ func Run(sc ServerConfig) error {
 	mcpManager.SetRefresher(mcpRefresher)
 	defer mcpRefresher.StopAll()
 
-	// Apply LSP installer toggle from bootstrap config (env BYTEBREW_DISABLE_LSP_DOWNLOAD).
+	// Apply LSP installer toggle from bootstrap config (env SYNTHETICBREW_DISABLE_LSP_DOWNLOAD).
 	// One-shot at startup; subsequent updates require restart.
 	if bootstrapCfg != nil {
 		lsp.SetInstallDisabled(bootstrapCfg.LSP.DisableDownload)
 	}
 
 	// Seed bootstrap data (builder-assistant, MCP catalog, schema templates, BYOK).
-	// Must run BEFORE the MCP connect pass so the seeded bytebrew-docs entry is
+	// Must run BEFORE the MCP connect pass so the seeded syntheticbrew-docs entry is
 	// included in the first connect cycle. Helper lives in seed.go.
 	//
-	// docsMCPURL precedence: env override (BYTEBREW_DOCS_MCP_URL via bootstrap)
+	// docsMCPURL precedence: env override (SYNTHETICBREW_DOCS_MCP_URL via bootstrap)
 	// wins over plugin default. CE's Noop returns "" so the seeder no-ops when
 	// nothing is configured.
 	var docsMCPURL string
@@ -603,7 +603,7 @@ func Run(sc ServerConfig) error {
 		auditLogger := audit.NewLogger(pgDB)
 
 		// Update checker (non-blocking, air-gap safe).
-		// Endpoint override comes from bootstrap config (env BYTEBREW_VERSIONS_URL).
+		// Endpoint override comes from bootstrap config (env SYNTHETICBREW_VERSIONS_URL).
 		updateChecker := versioncheck.NewUpdateChecker(sc.Version, bootstrapCfg.Updates.VersionsURL)
 		updateChecker.Start(ctx)
 
@@ -663,14 +663,14 @@ func Run(sc ServerConfig) error {
 		})
 
 		// Serve Admin Dashboard SPA — internal only (extracted to spa_handler.go).
-		mountSPA(internalRouter, "/admin", "/usr/share/bytebrew/admin")
+		mountSPA(internalRouter, "/admin", "/usr/share/syntheticbrew/admin")
 
 		// Serve widget.js (static file) — external only (or both in single-port mode).
 		// V2: the admin generates a <script src="…/widget.js" data-agent="…" …>
 		// snippet client-side (docs/architecture/agent-first-runtime.md §4.3),
 		// so only the static bundle is served here — no dynamic /widget/{id}.js
 		// bootstrap endpoint and no server-side widget configuration.
-		widgetPath := "/usr/share/bytebrew/widget/widget.js"
+		widgetPath := "/usr/share/syntheticbrew/widget/widget.js"
 		if _, statErr := os.Stat(widgetPath); statErr == nil {
 			widgetFileHandler := func(w http.ResponseWriter, req *http.Request) {
 				w.Header().Set("Content-Type", "application/javascript")
@@ -900,7 +900,7 @@ func Run(sc ServerConfig) error {
 		}
 	}
 
-	loggerInstance.InfoContext(ctx, "ByteBrew Server started successfully",
+	loggerInstance.InfoContext(ctx, "SyntheticBrew Server started successfully",
 		"host", cfg.Server.Host,
 		"http_port", httpPort,
 		"internal_port", internalHTTPPort,
@@ -944,7 +944,7 @@ func Run(sc ServerConfig) error {
 	loggerInstance.InfoContext(ctx, "Received shutdown signal", "signal", sig)
 	cancel()
 
-	loggerInstance.InfoContext(ctx, "Shutting down ByteBrew Server...")
+	loggerInstance.InfoContext(ctx, "Shutting down SyntheticBrew Server...")
 
 	// Stop plugin resources — no-op in CE.
 	sc.Plugin.Stop()
@@ -975,7 +975,7 @@ func Run(sc ServerConfig) error {
 		}
 	}
 
-	loggerInstance.InfoContext(ctx, "ByteBrew Server stopped")
+	loggerInstance.InfoContext(ctx, "SyntheticBrew Server stopped")
 	return nil
 }
 

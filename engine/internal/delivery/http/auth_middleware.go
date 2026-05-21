@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/syntheticinc/bytebrew/engine/internal/authprim"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	pluginpkg "github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	"github.com/syntheticinc/syntheticbrew/internal/authprim"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // writeUnauthorized emits a 401 response with an RFC 7235 §3.1 compliant
@@ -19,7 +19,7 @@ import (
 // for the "credentials missing entirely" case where only a bare challenge is
 // appropriate.
 func writeUnauthorized(w http.ResponseWriter, errCode, description string) {
-	challenge := `Bearer realm="bytebrew"`
+	challenge := `Bearer realm="syntheticbrew"`
 	if errCode != "" {
 		challenge += fmt.Sprintf(`, error=%q, error_description=%q`, errCode, description)
 	}

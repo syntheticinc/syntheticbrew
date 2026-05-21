@@ -16,7 +16,7 @@ export type AdminSession = {
 };
 
 function randomEmail(): string {
-  return `pw-admin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}@e2e.bytebrew.local`;
+  return `pw-admin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}@e2e.syntheticbrew.local`;
 }
 
 async function cloudRegister(request: APIRequestContext, email: string, password: string) {

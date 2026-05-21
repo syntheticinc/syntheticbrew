@@ -1,0 +1,45 @@
+# Test scenario: vanilla install with in-kind postgres-pgvector.
+# No bootstrap admin token, no configApply Job.
+# Validates default chart render + migrations Job + engine boot.
+replicaCount: 1
+
+image:
+  repository: syntheticinc/syntheticbrew
+  tag: "1.1.11"
+  pullPolicy: IfNotPresent
+
+postgresql:
+  external:
+    existingSecret: postgres-credentials
+    existingSecretKey: DATABASE_URL
+
+config:
+  auth:
+    mode: local
+    jwtKeysPath: /var/lib/syntheticbrew/keys
+
+persistence:
+  keys:
+    enabled: true
+    size: 1Mi
+    storageClass: standard
+
+ingress:
+  enabled: false
+
+httpRoute:
+  enabled: false
+
+migrations:
+  enabled: true
+  image:
+    repository: syntheticinc/syntheticbrew-migrations
+    tag: "1.1.11"
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

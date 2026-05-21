@@ -1,6 +1,6 @@
 package tools
 
-import "github.com/syntheticinc/bytebrew/engine/internal/domain"
+import "github.com/syntheticinc/syntheticbrew/internal/domain"
 
 // ToolEventEmitter sends agent events from tools (e.g. structured output).
 type ToolEventEmitter interface {

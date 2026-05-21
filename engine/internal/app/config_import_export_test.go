@@ -13,7 +13,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
@@ -209,7 +209,7 @@ func TestExportYAML(t *testing.T) {
 	output := string(data)
 
 	// Header present
-	assert.True(t, strings.HasPrefix(output, "# ByteBrew Engine Configuration"))
+	assert.True(t, strings.HasPrefix(output, "# SyntheticBrew Engine Configuration"))
 
 	// Parse YAML part (skip header comments)
 	var cfg configYAML

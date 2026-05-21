@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/eventformat"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/service/eventformat"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 )

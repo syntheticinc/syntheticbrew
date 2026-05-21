@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	httpdelivery "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
+	httpdelivery "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 )
 
 // TestTenantSeeder_DefaultSchemaName_PassesNameValidation guards against the

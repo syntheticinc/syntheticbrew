@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	"github.com/cloudwego/eino/schema"
 )
 

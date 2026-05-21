@@ -4,13 +4,13 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	agentservice "github.com/syntheticinc/bytebrew/engine/internal/service/agent"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/engine"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/orchestrator"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/turnexecutor"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	agentservice "github.com/syntheticinc/syntheticbrew/internal/service/agent"
+	"github.com/syntheticinc/syntheticbrew/internal/service/engine"
+	"github.com/syntheticinc/syntheticbrew/internal/service/orchestrator"
+	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
 
 // AgentModelResolver looks up the ModelID associated with a named agent.

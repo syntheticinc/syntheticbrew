@@ -14,11 +14,11 @@
 - Ask user to run verification commands
 
 ## Key File Paths
-- Domain entities: `bytebrew-mobile-app/lib/core/domain/`
-- gRPC client wrapper: `bytebrew-mobile-app/lib/core/infrastructure/grpc/mobile_service_client.dart`
-- Connection manager: `bytebrew-mobile-app/lib/core/infrastructure/grpc/connection_manager.dart`
-- Test fixtures: `bytebrew-mobile-app/test/fixtures/`
-- Test helpers: `bytebrew-mobile-app/test/helpers/`
+- Domain entities: `syntheticbrew-mobile-app/lib/core/domain/`
+- gRPC client wrapper: `syntheticbrew-mobile-app/lib/core/infrastructure/grpc/mobile_service_client.dart`
+- Connection manager: `syntheticbrew-mobile-app/lib/core/infrastructure/grpc/connection_manager.dart`
+- Test fixtures: `syntheticbrew-mobile-app/test/fixtures/`
+- Test helpers: `syntheticbrew-mobile-app/test/helpers/`
 
 ## Architecture Notes
 - Feature-first Clean Architecture: `features/<name>/{domain,infrastructure,presentation}/`

@@ -3,7 +3,7 @@ package tools
 import (
 	"sync"
 
-	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"github.com/cloudwego/eino/components/tool"
 )
 

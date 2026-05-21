@@ -32,9 +32,9 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/auth"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	ceserver "github.com/syntheticinc/bytebrew/engine/pkg/server"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/auth"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	ceserver "github.com/syntheticinc/syntheticbrew/pkg/server"
 )
 
 const (
@@ -94,9 +94,9 @@ func setupSuite(ctx context.Context) (func(), error) {
 
 	pg, err := tcpostgres.Run(ctx,
 		"pgvector/pgvector:pg16",
-		tcpostgres.WithDatabase("bytebrew_ce_test"),
-		tcpostgres.WithUsername("bytebrew"),
-		tcpostgres.WithPassword("bytebrew_ce_test_pass"),
+		tcpostgres.WithDatabase("syntheticbrew_ce_test"),
+		tcpostgres.WithUsername("syntheticbrew"),
+		tcpostgres.WithPassword("syntheticbrew_ce_test_pass"),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
@@ -131,7 +131,7 @@ func setupSuite(ctx context.Context) (func(), error) {
 		return cleanup, fmt.Errorf("pick free port: %w", err)
 	}
 
-	dataDir, err := os.MkdirTemp("", "bytebrew-ce-it-")
+	dataDir, err := os.MkdirTemp("", "syntheticbrew-ce-it-")
 	if err != nil {
 		return cleanup, fmt.Errorf("mkdir data: %w", err)
 	}
@@ -242,7 +242,7 @@ func applyLiquibaseMigrations(ctx context.Context, pg *tcpostgres.PostgresContai
 	if err != nil {
 		return fmt.Errorf("postgres container ip: %w", err)
 	}
-	jdbcURL := fmt.Sprintf("jdbc:postgresql://%s:5432/bytebrew_ce_test", pgHost)
+	jdbcURL := fmt.Sprintf("jdbc:postgresql://%s:5432/syntheticbrew_ce_test", pgHost)
 
 	req := testcontainers.ContainerRequest{
 		Image: "liquibase/liquibase:4.30",
@@ -254,8 +254,8 @@ func applyLiquibaseMigrations(ctx context.Context, pg *tcpostgres.PostgresContai
 		},
 		Cmd: []string{
 			"--url=" + jdbcURL,
-			"--username=bytebrew",
-			"--password=bytebrew_ce_test_pass",
+			"--username=syntheticbrew",
+			"--password=syntheticbrew_ce_test_pass",
 			"--changeLogFile=db.changelog-master.yaml",
 			"--searchPath=/liquibase/changelog",
 			"update",

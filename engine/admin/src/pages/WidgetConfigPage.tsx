@@ -247,7 +247,7 @@ export default function WidgetConfigPage() {
                   )}
                   <p className="mt-3 text-[11px] text-brand-shade3 font-mono">
                     Replace <code className="text-brand-shade2">your-engine.example.com</code> with the hostname where
-                    your ByteBrew engine is reachable from the browser.
+                    your SyntheticBrew engine is reachable from the browser.
                   </p>
                 </div>
               </div>

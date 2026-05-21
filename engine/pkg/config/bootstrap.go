@@ -111,7 +111,7 @@ type DebugConfig struct {
 }
 
 // MCPBootstrap holds MCP-related bootstrap overrides (mostly for the seeded
-// bytebrew-docs catalog entry — useful in tests / staging).
+// syntheticbrew-docs catalog entry — useful in tests / staging).
 type MCPBootstrap struct {
 	DocsURL string `mapstructure:"docs_url"`
 }
@@ -126,7 +126,7 @@ type LSPBootstrap struct {
 	DisableDownload bool `mapstructure:"disable_download"`
 }
 
-// UpdatesConfig overrides the version-check endpoint (default: api.bytebrew.ai).
+// UpdatesConfig overrides the version-check endpoint (default: api.syntheticbrew.ai).
 type UpdatesConfig struct {
 	VersionsURL string `mapstructure:"versions_url"`
 }
@@ -219,7 +219,7 @@ func unmarshalBootstrap(v *viper.Viper, cfg *BootstrapConfig) error {
 // stringToTrimmedSliceHookFunc returns a mapstructure DecodeHookFunc that
 // converts string → []string by splitting on sep and trimming whitespace
 // from each element. Empty elements are excluded. Mirrors the semantics of
-// the legacy splitAndTrim helper so the env vars `BYTEBREW_CORS_ORIGINS=
+// the legacy splitAndTrim helper so the env vars `SYNTHETICBREW_CORS_ORIGINS=
 // "a, b, c"` parse identically before and after the Viper migration.
 func stringToTrimmedSliceHookFunc(sep string) mapstructure.DecodeHookFunc {
 	return func(from reflect.Type, to reflect.Type, data any) (any, error) {
@@ -384,11 +384,11 @@ func (e *EngineBootstrap) DataDirOrDefault() string {
 		return e.DataDir
 	}
 
-	// Default to user config dir + bytebrew
+	// Default to user config dir + syntheticbrew
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "./data"
 	}
-	return filepath.Join(dir, "bytebrew")
+	return filepath.Join(dir, "syntheticbrew")
 }
 

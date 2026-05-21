@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: 001_extensions
-      author: bytebrew
+      author: syntheticbrew
       changes:
         - sql:
             sql: |
@@ -10,7 +10,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 002_tables
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Initial schema — final state.
         Identity: no `users` table. Admin/system identity is external (JWT `sub`)
@@ -441,7 +441,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 003_indexes
-      author: bytebrew
+      author: syntheticbrew
       changes:
         - sql:
             sql: |
@@ -547,7 +547,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 004_foreign_keys
-      author: bytebrew
+      author: syntheticbrew
       changes:
         - sql:
             sql: |
@@ -673,7 +673,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 005_check_constraints
-      author: bytebrew
+      author: syntheticbrew
       changes:
         - sql:
             sql: |

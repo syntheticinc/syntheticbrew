@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: add-resource-name-format-check-preflight
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Pre-flight gate for the resource-name CHECK constraint applied in the
         next changeset. Engine 1.1.0 migrates schemas/knowledge_bases REST
@@ -39,7 +39,7 @@ databaseChangeLog:
 
   - changeSet:
       id: add-resource-name-format-check-constraint
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Add CHECK constraint on schemas.name and knowledge_bases.name. Engine
         HTTP layer (ValidateResourceName) enforces the same regex; this DB

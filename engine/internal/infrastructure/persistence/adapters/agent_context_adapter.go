@@ -6,8 +6,8 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 // SerializeSchemaMessages serializes []*schema.Message to JSON bytes

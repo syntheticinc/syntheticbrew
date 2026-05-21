@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 	"github.com/cloudwego/eino/callbacks"
 	einotool "github.com/cloudwego/eino/components/tool"
 )

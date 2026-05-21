@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/schema"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // MessageCollector accumulates schema.Message from AgentEvents and saves them to history

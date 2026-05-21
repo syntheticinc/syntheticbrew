@@ -26,12 +26,12 @@ func TestMetricsRegistered(t *testing.T) {
 	}
 
 	expected := []string{
-		"bytebrew_http_requests_total",
-		"bytebrew_http_request_duration_seconds",
-		"bytebrew_active_sessions",
-		"bytebrew_tool_calls_total",
-		"bytebrew_llm_requests_total",
-		"bytebrew_llm_request_duration_seconds",
+		"syntheticbrew_http_requests_total",
+		"syntheticbrew_http_request_duration_seconds",
+		"syntheticbrew_active_sessions",
+		"syntheticbrew_tool_calls_total",
+		"syntheticbrew_llm_requests_total",
+		"syntheticbrew_llm_request_duration_seconds",
 	}
 
 	for _, name := range expected {
@@ -72,7 +72,7 @@ func TestActiveSessions_GaugeOperations(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, f := range families {
-		if f.GetName() != "bytebrew_active_sessions" {
+		if f.GetName() != "syntheticbrew_active_sessions" {
 			continue
 		}
 		for _, m := range f.GetMetric() {

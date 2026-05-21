@@ -13,7 +13,7 @@ import (
 func TestManagedBinDir_NotEmpty(t *testing.T) {
 	dir := ManagedBinDir()
 	assert.NotEmpty(t, dir)
-	assert.Contains(t, dir, "bytebrew")
+	assert.Contains(t, dir, "syntheticbrew")
 	assert.True(t, filepath.IsAbs(dir))
 }
 
@@ -21,12 +21,12 @@ func TestManagedBinDir_PlatformSpecific(t *testing.T) {
 	dir := ManagedBinDir()
 	switch runtime.GOOS {
 	case "windows":
-		assert.Contains(t, dir, "bytebrew\\bin")
+		assert.Contains(t, dir, "syntheticbrew\\bin")
 	case "darwin":
-		assert.Contains(t, dir, "bytebrew/bin")
+		assert.Contains(t, dir, "syntheticbrew/bin")
 		assert.Contains(t, dir, "Application Support")
 	default:
-		assert.Contains(t, dir, "bytebrew/bin")
+		assert.Contains(t, dir, "syntheticbrew/bin")
 	}
 }
 

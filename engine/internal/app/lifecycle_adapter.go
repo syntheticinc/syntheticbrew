@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/lifecycle"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/orchestrator"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/service/lifecycle"
+	"github.com/syntheticinc/syntheticbrew/internal/service/orchestrator"
 )
 
 // chatAgentFactory is the consumer-side subset of TurnExecutorFactory needed by poolBasedRunner.

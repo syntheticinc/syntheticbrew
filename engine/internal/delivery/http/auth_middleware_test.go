@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/authprim"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/auth"
+	"github.com/syntheticinc/syntheticbrew/internal/authprim"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/auth"
 )
 
 // testKeypair holds the Ed25519 keys used by every test in this file. It is

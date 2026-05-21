@@ -23,7 +23,7 @@ type SessionModel struct {
 	UserSub     string     `gorm:"column:user_sub;type:varchar(255);not null;index:idx_sessions_isolation,priority:3;index:idx_sessions_tenant_user_chrono,priority:2" json:"user_sub"`
 	Title       string     `gorm:"type:varchar(500)"`
 	// Metadata is opaque per-session JSON storage for clients that build
-	// multi-tenant layers on top of one ByteBrew schema. Engine never reads
+	// multi-tenant layers on top of one SyntheticBrew schema. Engine never reads
 	// or interprets the contents — it only persists and returns the raw
 	// blob. Capped to 16KB at the HTTP layer to prevent unbounded growth.
 	// Added in engine 1.1.4 (Liquibase changeset 006).

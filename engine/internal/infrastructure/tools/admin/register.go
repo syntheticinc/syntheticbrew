@@ -3,7 +3,7 @@ package admin
 import (
 	"github.com/cloudwego/eino/components/tool"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // RegisterAdminTools registers all admin tools into the builtin store using closure capture.

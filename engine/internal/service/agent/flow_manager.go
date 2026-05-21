@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
 
 // FlowManager manages flow configurations

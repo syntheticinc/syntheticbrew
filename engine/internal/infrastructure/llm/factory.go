@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // ClientFactory creates LLM clients based on provider type

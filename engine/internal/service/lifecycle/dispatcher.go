@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // Dispatcher manages task dispatch between parent and child agents.

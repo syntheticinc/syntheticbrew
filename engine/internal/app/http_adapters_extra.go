@@ -12,14 +12,14 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
 
 // mcpServiceHTTPAdapter bridges GORMMCPServerRepository to the http.MCPService interface.

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // CapabilityRepository defines the repository interface for updating capabilities.

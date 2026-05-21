@@ -3,7 +3,7 @@ package lsp
 import (
 	"os"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/platform"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/platform"
 )
 
 // ManagedBinDir returns the path to the managed binary directory for

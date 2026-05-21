@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // MemoryRepository retrieves memory entries for admin view.

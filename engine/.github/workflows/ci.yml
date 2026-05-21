@@ -54,16 +54,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Contract tests reference both engine and cloud-api source, so
-          # check out the full monorepo workspace root (parent of bytebrew/engine).
+          # check out the full monorepo workspace root (parent of syntheticinc/syntheticbrew).
           path: workspace
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
       - name: Contract tests — engine side
-        working-directory: workspace/bytebrew/engine
+        working-directory: workspace/syntheticinc/syntheticbrew
         run: GOWORK=off go test -tags=contract ./tests/contracts/... -v -timeout 60s
       - name: Contract tests — cloud-api side
-        working-directory: workspace/bytebrew-cloud-web/cloud-api
+        working-directory: workspace/syntheticbrew-cloud-web/cloud-api
         run: GOWORK=off go test -tags=contract ./tests/contracts/... -v -timeout 120s
 
   # e2e-money-flow runs on a daily schedule and on pushes to main.
@@ -84,7 +84,7 @@ jobs:
         run: |
           docker compose -f docker-compose-cloud-full.yml up -d --wait --timeout 120
       - name: Run money-flow E2E tests
-        working-directory: workspace/bytebrew-ee
+        working-directory: workspace/syntheticbrew-ee
         env:
           CLOUD_FULL_ENGINE_URL: http://localhost:19555
           CLOUD_FULL_LANDING_URL: http://localhost:13002
@@ -104,4 +104,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image
-        run: docker build -t bytebrew/engine:test -f Dockerfile .
+        run: docker build -t syntheticinc/syntheticbrew:test -f Dockerfile .

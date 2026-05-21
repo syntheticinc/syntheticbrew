@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // writeJSON writes a JSON response with the given status code.

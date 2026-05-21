@@ -22,10 +22,10 @@ func TestLoadBootstrap(t *testing.T) {
 			name: "valid minimal config",
 			yaml: `
 database:
-  url: "postgresql://localhost:5432/bytebrew"
+  url: "postgresql://localhost:5432/syntheticbrew"
 `,
 			check: func(t *testing.T, cfg *BootstrapConfig) {
-				assert.Equal(t, "postgresql://localhost:5432/bytebrew", cfg.Database.URL)
+				assert.Equal(t, "postgresql://localhost:5432/syntheticbrew", cfg.Database.URL)
 				assert.Equal(t, 0, cfg.Engine.Port)
 				assert.Equal(t, "", cfg.Engine.Host)
 				assert.Equal(t, AuthModeLocal, cfg.Security.AuthMode)
@@ -40,10 +40,10 @@ engine:
   port: 9090
   data_dir: "./data"
 database:
-  url: "postgresql://admin:pass@db.host:5432/bytebrew?sslmode=require"
+  url: "postgresql://admin:pass@db.host:5432/syntheticbrew?sslmode=require"
 security:
   auth_mode: "external"
-  jwt_public_key_path: "/etc/bytebrew/issuer.pub"
+  jwt_public_key_path: "/etc/syntheticbrew/issuer.pub"
 logging:
   level: "debug"
 `,
@@ -51,7 +51,7 @@ logging:
 				assert.Equal(t, "0.0.0.0", cfg.Engine.Host)
 				assert.Equal(t, 9090, cfg.Engine.Port)
 				assert.Equal(t, AuthModeExternal, cfg.Security.AuthMode)
-				assert.Equal(t, "/etc/bytebrew/issuer.pub", cfg.Security.JWTPublicKeyPath)
+				assert.Equal(t, "/etc/syntheticbrew/issuer.pub", cfg.Security.JWTPublicKeyPath)
 				assert.Equal(t, "debug", cfg.Logging.Level)
 				assert.Contains(t, cfg.Database.URL, "sslmode=require")
 			},
@@ -60,7 +60,7 @@ logging:
 			name: "env var expansion",
 			yaml: `
 database:
-  url: "postgresql://${TEST_DB_USER}:${TEST_DB_PASS}@localhost:5432/bytebrew"
+  url: "postgresql://${TEST_DB_USER}:${TEST_DB_PASS}@localhost:5432/syntheticbrew"
 security:
   auth_mode: "external"
   jwt_public_key_path: "${TEST_PUB_KEY_PATH}"
@@ -71,7 +71,7 @@ security:
 				"TEST_PUB_KEY_PATH": "/var/keys/issuer.pub",
 			},
 			check: func(t *testing.T, cfg *BootstrapConfig) {
-				assert.Equal(t, "postgresql://pguser:pgpass@localhost:5432/bytebrew", cfg.Database.URL)
+				assert.Equal(t, "postgresql://pguser:pgpass@localhost:5432/syntheticbrew", cfg.Database.URL)
 				assert.Equal(t, "/var/keys/issuer.pub", cfg.Security.JWTPublicKeyPath)
 			},
 		},
@@ -267,7 +267,7 @@ database:
 }
 
 func TestBootstrapEnvOverrides_InternalPort(t *testing.T) {
-	t.Setenv("BYTEBREW_INTERNAL_PORT", "8444")
+	t.Setenv("SYNTHETICBREW_INTERNAL_PORT", "8444")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -285,7 +285,7 @@ database:
 }
 
 func TestBootstrapEnvOverrides_CORSOrigins(t *testing.T) {
-	t.Setenv("BYTEBREW_CORS_ORIGINS", "https://example.com, https://app.example.com")
+	t.Setenv("SYNTHETICBREW_CORS_ORIGINS", "https://example.com, https://app.example.com")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -305,8 +305,8 @@ database:
 }
 
 func TestBootstrapEnvOverrides_AuthMode(t *testing.T) {
-	t.Setenv("BYTEBREW_AUTH_MODE", "external")
-	t.Setenv("BYTEBREW_JWT_PUBLIC_KEY_PATH", "/tmp/pub.key")
+	t.Setenv("SYNTHETICBREW_AUTH_MODE", "external")
+	t.Setenv("SYNTHETICBREW_JWT_PUBLIC_KEY_PATH", "/tmp/pub.key")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -326,7 +326,7 @@ database:
 
 func TestBootstrapEnvOverrides_InternalPortConflict(t *testing.T) {
 	// Env override sets internal_port = port, should fail validation.
-	t.Setenv("BYTEBREW_INTERNAL_PORT", "8443")
+	t.Setenv("SYNTHETICBREW_INTERNAL_PORT", "8443")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -345,7 +345,7 @@ database:
 
 func TestLoadBootstrapFromEnv_InternalPort(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://localhost/db")
-	t.Setenv("BYTEBREW_INTERNAL_PORT", "9090")
+	t.Setenv("SYNTHETICBREW_INTERNAL_PORT", "9090")
 
 	cfg, err := LoadBootstrap("/nonexistent/config.yaml")
 	require.NoError(t, err)
@@ -354,7 +354,7 @@ func TestLoadBootstrapFromEnv_InternalPort(t *testing.T) {
 
 func TestLoadBootstrapFromEnv_CORSOrigins(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://localhost/db")
-	t.Setenv("BYTEBREW_CORS_ORIGINS", "https://a.com,https://b.com, https://c.com ")
+	t.Setenv("SYNTHETICBREW_CORS_ORIGINS", "https://a.com,https://b.com, https://c.com ")
 
 	cfg, err := LoadBootstrap("/nonexistent/config.yaml")
 	require.NoError(t, err)

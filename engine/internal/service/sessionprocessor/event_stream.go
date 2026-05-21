@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/eventformat"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/service/eventformat"
 )
 
 // EventPublisher publishes session events to subscribers (consumer-side interface).

@@ -12,7 +12,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // Repository is the consumer-side interface for reading catalog rows.

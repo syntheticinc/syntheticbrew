@@ -1,4 +1,4 @@
-# ByteBrew Engine — IoT Monitor Example
+# SyntheticBrew Engine — IoT Monitor Example
 # Demonstrates: cron triggers, background tasks, local Ollama model
 
 engine:
@@ -6,7 +6,7 @@ engine:
   port: 8443
 
 database:
-  url: "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/bytebrew"
+  url: "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/syntheticbrew"
 
 security:
   # Wave 1+7 (2026-04-21): jwt_secret + admin CLI removed. Engine signs admin

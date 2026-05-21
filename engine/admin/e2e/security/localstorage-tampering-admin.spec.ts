@@ -34,7 +34,7 @@ test.describe('localStorage tampering', () => {
     const beforeCount = beforeAgents.length;
 
     // Enable prototype mode
-    await page.evaluate(() => localStorage.setItem('bytebrew_prototype_mode', 'true'));
+    await page.evaluate(() => localStorage.setItem('syntheticbrew_prototype_mode', 'true'));
     await page.goto('/admin/agents');
     await page.waitForLoadState('networkidle');
 

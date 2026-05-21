@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // Manager manages AgentRegistry instances.

@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 type mockAgentStateRepo struct {

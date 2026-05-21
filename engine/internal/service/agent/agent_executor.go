@@ -8,9 +8,9 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agents"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/engine"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
+	"github.com/syntheticinc/syntheticbrew/internal/service/engine"
 )
 
 // runAgentWithEngine is the generic execution method for any agent type.

@@ -68,7 +68,7 @@ func TestUpdateChecker_NoUpdate(t *testing.T) {
 		resp := map[string]interface{}{
 			"data": map[string]string{
 				"latest":       "1.0.0",
-				"download_url": "https://bytebrew.ai/releases/v1.0.0/",
+				"download_url": "https://syntheticbrew.ai/releases/v1.0.0/",
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -88,7 +88,7 @@ func TestUpdateChecker_UpdateAvailable(t *testing.T) {
 		resp := map[string]interface{}{
 			"data": map[string]string{
 				"latest":       "1.0.1",
-				"download_url": "https://bytebrew.ai/releases/v1.0.1/",
+				"download_url": "https://syntheticbrew.ai/releases/v1.0.1/",
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -181,7 +181,7 @@ func TestUpdateChecker_DevVersion(t *testing.T) {
 		resp := map[string]interface{}{
 			"data": map[string]string{
 				"latest":       "1.0.0",
-				"download_url": "https://bytebrew.ai/releases/v1.0.0/",
+				"download_url": "https://syntheticbrew.ai/releases/v1.0.0/",
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)

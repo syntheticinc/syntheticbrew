@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pgvector/pgvector-go"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/indexing"
-	infknowledge "github.com/syntheticinc/bytebrew/engine/internal/infrastructure/knowledge"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
+	infknowledge "github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 // tenantFromCtx extracts tenant_id from context, falling back to CETenantID for CE mode.

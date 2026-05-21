@@ -35,7 +35,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			"protocolVersion": "2024-11-05",
 			"capabilities":   map[string]interface{}{},
 			"clientInfo": map[string]interface{}{
-				"name":    "bytebrew-engine",
+				"name":    "syntheticbrew-engine",
 				"version": "1.0.0",
 			},
 		},

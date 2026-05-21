@@ -1,4 +1,4 @@
-# ByteBrew Engine — Sales Assistant Example
+# SyntheticBrew Engine — Sales Assistant Example
 # Demonstrates: custom tools, BYOK, triggers
 
 engine:
@@ -6,7 +6,7 @@ engine:
   port: 8443
 
 database:
-  url: "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/bytebrew"
+  url: "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/syntheticbrew"
 
 security:
   # Wave 1+7 (2026-04-21): jwt_secret + admin CLI removed. Engine signs admin

@@ -3,7 +3,7 @@
 // mint one transparently) so visiting /admin/ does NOT bounce back to
 // /login.
 //
-// Catches F8: cloud-web-spa stores `bytebrew_access_token` (cloud auth)
+// Catches F8: cloud-web-spa stores `syntheticbrew_access_token` (cloud auth)
 // in localStorage but admin SPA reads `jwt` (engine token). Without a
 // post-login bridge that puts an engine token into the right key,
 // every fresh visit to /admin/ → infinite redirect loop.
@@ -35,7 +35,7 @@ test.describe('Regression — admin auth handoff after cloud-web-spa login', () 
 
     expect(
       page.url(),
-      `F8: cloud-web-spa stores bytebrew_access_token but admin SPA reads "jwt"; ` +
+      `F8: cloud-web-spa stores syntheticbrew_access_token but admin SPA reads "jwt"; ` +
         `after a clean login the user gets bounced back to /login at ${page.url()}.`,
     ).not.toContain('/login');
   });

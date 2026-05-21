@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: bytebrew
-      POSTGRES_USER: bytebrew
-      POSTGRES_PASSWORD: bytebrew
+      POSTGRES_DB: syntheticbrew
+      POSTGRES_USER: syntheticbrew
+      POSTGRES_PASSWORD: syntheticbrew
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bytebrew"]
+      test: ["CMD-SHELL", "pg_isready -U syntheticbrew"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,9 +22,9 @@ services:
     ports:
       - "8443:8443"
     environment:
-      - BYTEBREW_ADMIN_USER=admin
-      - BYTEBREW_ADMIN_PASSWORD=${BYTEBREW_ADMIN_PASSWORD:?BYTEBREW_ADMIN_PASSWORD is required}
-      - DB_USER=bytebrew
+      - SYNTHETICBREW_ADMIN_USER=admin
+      - SYNTHETICBREW_ADMIN_PASSWORD=${SYNTHETICBREW_ADMIN_PASSWORD:?SYNTHETICBREW_ADMIN_PASSWORD is required}
+      - DB_USER=syntheticbrew
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
     depends_on:
       postgres:

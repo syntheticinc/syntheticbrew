@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 func TestWrapContentForLLMContext_CriticalRisk(t *testing.T) {

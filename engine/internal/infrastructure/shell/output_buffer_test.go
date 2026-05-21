@@ -16,7 +16,7 @@ func TestWrapCommand_Format(t *testing.T) {
 	assert.Len(t, markerID, 12, "markerID should be 12 hex chars")
 	assert.Contains(t, wrapped, "echo hello")
 	assert.Contains(t, wrapped, "2>&1")
-	assert.Contains(t, wrapped, "__BYTEBREW_DONE_"+markerID)
+	assert.Contains(t, wrapped, "__SYNTHETICBREW_DONE_"+markerID)
 	assert.Contains(t, wrapped, "__vexit=$?")
 }
 
@@ -27,7 +27,7 @@ func TestOutputBuffer_MarkerDetection(t *testing.T) {
 
 	// Simulate process output
 	buf.Append("hello\n")
-	buf.Append(fmt.Sprintf("__BYTEBREW_DONE_%s_0__\n", markerID))
+	buf.Append(fmt.Sprintf("__SYNTHETICBREW_DONE_%s_0__\n", markerID))
 
 	result, found := findMarker(buf.GetOutput(), markerID)
 	require.True(t, found)
@@ -40,7 +40,7 @@ func TestOutputBuffer_MarkerDetection_NonZeroExit(t *testing.T) {
 
 	markerID := "abcdef012345"
 	buf.Append("some error output\n")
-	buf.Append(fmt.Sprintf("__BYTEBREW_DONE_%s_42__\n", markerID))
+	buf.Append(fmt.Sprintf("__SYNTHETICBREW_DONE_%s_42__\n", markerID))
 
 	result, found := findMarker(buf.GetOutput(), markerID)
 	require.True(t, found)
@@ -53,7 +53,7 @@ func TestOutputBuffer_MarkerDetection_NegativeExit(t *testing.T) {
 
 	markerID := "abcdef012345"
 	buf.Append("output\n")
-	buf.Append(fmt.Sprintf("__BYTEBREW_DONE_%s_-1__\n", markerID))
+	buf.Append(fmt.Sprintf("__SYNTHETICBREW_DONE_%s_-1__\n", markerID))
 
 	result, found := findMarker(buf.GetOutput(), markerID)
 	require.True(t, found)
@@ -65,7 +65,7 @@ func TestOutputBuffer_WaitForMarker_AlreadyPresent(t *testing.T) {
 
 	markerID := "aabbccddeeff"
 	buf.Append("done\n")
-	buf.Append(fmt.Sprintf("__BYTEBREW_DONE_%s_0__\n", markerID))
+	buf.Append(fmt.Sprintf("__SYNTHETICBREW_DONE_%s_0__\n", markerID))
 
 	result, err := buf.WaitForMarker(markerID, time.Second)
 	require.NoError(t, err)
@@ -80,7 +80,7 @@ func TestOutputBuffer_WaitForMarker_ArrivesLater(t *testing.T) {
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		buf.Append("output line\n")
-		buf.Append(fmt.Sprintf("__BYTEBREW_DONE_%s_0__\n", markerID))
+		buf.Append(fmt.Sprintf("__SYNTHETICBREW_DONE_%s_0__\n", markerID))
 	}()
 
 	result, err := buf.WaitForMarker(markerID, 2*time.Second)
@@ -127,7 +127,7 @@ func TestOutputBuffer_MultilineOutput(t *testing.T) {
 	buf.Append("line1\n")
 	buf.Append("line2\n")
 	buf.Append("line3\n")
-	buf.Append(fmt.Sprintf("__BYTEBREW_DONE_%s_0__\n", markerID))
+	buf.Append(fmt.Sprintf("__SYNTHETICBREW_DONE_%s_0__\n", markerID))
 
 	result, found := findMarker(buf.GetOutput(), markerID)
 	require.True(t, found)
@@ -138,7 +138,7 @@ func TestOutputBuffer_WrongMarkerID(t *testing.T) {
 	buf := NewOutputBuffer(DefaultMaxSize)
 
 	buf.Append("output\n")
-	buf.Append("__BYTEBREW_DONE_aabbccddeeff_0__\n")
+	buf.Append("__SYNTHETICBREW_DONE_aabbccddeeff_0__\n")
 
 	_, found := findMarker(buf.GetOutput(), "112233445566")
 	assert.False(t, found)

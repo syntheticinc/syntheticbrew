@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: 008_add_interrupts_table
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         HITL Interrupt Primitive — first-class state of suspended agent.
         Pure state-tracker linked to session_event_log rows via request_event_id

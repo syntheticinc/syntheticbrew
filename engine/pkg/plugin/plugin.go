@@ -1,4 +1,4 @@
-// Package plugin defines the runtime extension point for ByteBrew engine.
+// Package plugin defines the runtime extension point for SyntheticBrew engine.
 //
 // CE (Community Edition) builds use plugin.Noop{} by default — all extension
 // points are silently skipped. External modules (shipped separately) can

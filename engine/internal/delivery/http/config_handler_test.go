@@ -226,7 +226,7 @@ func TestConfigHandler_Export(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, w.Code)
 			if tt.wantYAML {
 				assert.Equal(t, "application/x-yaml", w.Header().Get("Content-Type"))
-				assert.Contains(t, w.Header().Get("Content-Disposition"), "bytebrew-config.yaml")
+				assert.Contains(t, w.Header().Get("Content-Disposition"), "syntheticbrew-config.yaml")
 				assert.Equal(t, string(tt.exportData), w.Body.String())
 			}
 			if tt.wantContains != "" {

@@ -42,7 +42,7 @@ func TestShellSession_PersistentState(t *testing.T) {
 	ctx := context.Background()
 
 	// Export a variable
-	result, err := session.Execute(ctx, "export TESTVAR=bytebrew42", 10*time.Second)
+	result, err := session.Execute(ctx, "export TESTVAR=syntheticbrew42", 10*time.Second)
 	require.NoError(t, err)
 	require.True(t, result.Completed)
 
@@ -50,7 +50,7 @@ func TestShellSession_PersistentState(t *testing.T) {
 	result, err = session.Execute(ctx, "echo $TESTVAR", 10*time.Second)
 	require.NoError(t, err)
 	require.True(t, result.Completed)
-	assert.Equal(t, "bytebrew42", strings.TrimSpace(result.Stdout))
+	assert.Equal(t, "syntheticbrew42", strings.TrimSpace(result.Stdout))
 }
 
 func TestShellSession_ExitCode(t *testing.T) {

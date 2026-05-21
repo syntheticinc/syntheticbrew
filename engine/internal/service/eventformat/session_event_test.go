@@ -3,7 +3,7 @@ package eventformat
 import (
 	"testing"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

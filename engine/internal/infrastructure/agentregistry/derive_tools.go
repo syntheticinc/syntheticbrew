@@ -3,7 +3,7 @@ package agentregistry
 import (
 	"sort"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 )
 
 // DeriveRuntimeTools returns the sorted, deduplicated tool names available to

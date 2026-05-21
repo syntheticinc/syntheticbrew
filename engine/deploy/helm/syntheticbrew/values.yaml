@@ -1,0 +1,446 @@
+replicaCount: 1
+
+# Deployment update strategy. Default behavior (when this is empty/null):
+#   - auth.mode=local → strategy.type=Recreate (avoids RWO PVC deadlock on
+#     `helm upgrade`: kill old pod → release JWT keypair PVC → create new pod).
+#   - auth.mode=external → unset (k8s default RollingUpdate, multi-replica HA).
+# Override here to force RollingUpdate (e.g. RWX storage) or tune surge:
+#   deploymentStrategy:
+#     type: RollingUpdate
+#     rollingUpdate:
+#       maxSurge: 25%
+#       maxUnavailable: 25%
+deploymentStrategy: {}
+
+image:
+  repository: syntheticinc/syntheticbrew
+  # WARN: set to a specific version (e.g. v1.0.0) for production. "latest" is
+  # rejected by the migrations Job to ensure reproducible schema upgrades.
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  # Override the generated name. Defaults to the fullname of the release.
+  name: ""
+  # Annotations added to the ServiceAccount — use for AWS IRSA or GCP Workload Identity:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/syntheticbrew-engine
+  #   iam.gke.io/gcp-service-account: syntheticbrew-engine@my-project.iam.gserviceaccount.com
+  annotations: {}
+  labels: {}
+
+service:
+  type: ClusterIP
+  port: 8443
+  # Annotations for cloud load-balancer hints, e.g.:
+  #   service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "syntheticbrew-sticky"
+    nginx.ingress.kubernetes.io/session-cookie-hash: "sha1"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: syntheticbrew.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+postgresql:
+  # External PostgreSQL (recommended for production)
+  external:
+    host: ""
+    port: 5432
+    database: syntheticbrew
+    username: syntheticbrew
+    password: ""
+    sslmode: disable
+    # Alternative to password: reference an existing Secret that contains DATABASE_URL.
+    # When set, the chart does not create its own Secret; host/username/password are ignored.
+    existingSecret: ""
+    # Key inside existingSecret that holds the full DATABASE_URL connection string.
+    existingSecretKey: DATABASE_URL
+
+config:
+  # agents.yaml content (mounted as ConfigMap)
+  agents: ""
+
+  # Auth mode: "local" or "external"
+  # local   — engine auto-generates an Ed25519 keypair on first boot and stores it
+  #           under auth.jwtKeysPath (must be a persistent volume). Single-replica only.
+  # external — engine receives only the public key via auth.jwtPublicKeyPath; the
+  #           private key lives in an external identity service.
+  auth:
+    mode: "local"
+    # PVC mount path where the local-mode keypair is persisted.
+    # Files written: jwt_ed25519.priv (0600) and jwt_ed25519.pub (0644)
+    jwtKeysPath: "/var/lib/syntheticbrew/keys"
+    # Path to the Ed25519 public-key file (hex-encoded).
+    # Used only when auth.mode = "external". Mount via a ConfigMap or Secret.
+    jwtPublicKeyPath: ""
+
+  # Embedding model
+  embedURL: ""
+  embedModel: nomic-embed-text
+  embedDim: 768
+
+secrets:
+  # LLM provider credentials are not supplied via Helm — configure them
+  # post-install through the Admin Dashboard onboarding wizard or
+  # Admin → Models. Engine does not read LLM env vars.
+
+persistence:
+  # Ed25519 keypair storage (local auth mode only).
+  # Must be ReadWriteOnce and persisted across pod restarts.
+  # WARNING: local auth mode supports only replicaCount=1.
+  # For HA deployments use auth.mode=external.
+  keys:
+    enabled: true
+    size: 1Mi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+  # Knowledge base storage
+  knowledge:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /metrics
+
+httpRoute:
+  # Enable Gateway API HTTPRoute (opt-in). Requires gateway.networking.k8s.io/v1 CRDs.
+  # Tested with Envoy Gateway, Cilium Gateway API, and Istio Gateway.
+  enabled: false
+  routes: []
+  # Example (Envoy Gateway pattern):
+  # routes:
+  #   - nameSuffix: api
+  #     hostnames:
+  #       - syntheticbrew.dev.example.com
+  #     parentRefs:
+  #       - name: internal
+  #         namespace: envoy-gateway-system
+  #         sectionName: https-dev-example-com
+  #     rules:
+  #       - matches:
+  #           - path: /
+  #             pathType: PathPrefix
+  #         servicePort: 8443
+
+networkPolicy:
+  # Enable NetworkPolicy (opt-in). Has no effect on clusters without a CNI
+  # that enforces NetworkPolicy (e.g. plain kubenet).
+  enabled: false
+  ingressFrom:
+    - podSelector: {}    # allow ingress from all pods in the same namespace by default
+    # - namespaceSelector:
+    #     matchLabels:
+    #       kubernetes.io/metadata.name: envoy-gateway-system
+
+# Pod-level security context applied to Deployment and Job pods.
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Container-level security context applied to all engine/migrations/brewctl containers.
+# IMPORTANT: readOnlyRootFilesystem is false by default. Engine, Liquibase, and GORM
+# write temp files to /tmp. Enabling readOnly requires adding an emptyDir /tmp volume.
+# See README "Integrations — Read-only root filesystem" for the opt-in pattern.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+# Extra environment variables appended to engine, migrations, and brewctl containers.
+# Useful for CSI-mounted secrets or custom runtime config.
+extraEnv: []
+# - name: MY_VAR
+#   value: "my-value"
+# - name: SECRET_VAR
+#   valueFrom:
+#     secretKeyRef:
+#       name: my-secret
+#       key: my-key
+
+# Extra envFrom entries (SecretRef / ConfigMapRef) appended to engine containers.
+extraEnvFrom: []
+# - secretRef:
+#     name: my-secret
+
+# Extra volumes added to Deployment and Job pod specs.
+extraVolumes: []
+# - name: tmp
+#   emptyDir: {}
+
+# Extra volumeMounts added to engine, migrations, and brewctl containers.
+extraVolumeMounts: []
+# - name: tmp
+#   mountPath: /tmp
+
+# Extra init containers injected before the main engine container.
+extraInitContainers: []
+
+# Annotations added to every pod (Deployment + Jobs).
+podAnnotations: {}
+
+# Extra labels added to every pod (Deployment + Jobs).
+podLabels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+migrations:
+  enabled: true
+  image:
+    repository: syntheticinc/syntheticbrew-migrations
+    # Pin to a specific version. Falls back to image.tag when empty.
+    # Must not be "latest" — reproducible migrations require a pinned version.
+    tag: ""
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  # Increase for cold-start large schemas.
+  activeDeadlineSeconds: 1800
+
+# Optional: declarative GitOps reconcile via the brewctl CLI.
+# Requires a published brewctl Docker image (ghcr.io/syntheticinc/brewctl:vX.Y.Z).
+# See https://github.com/syntheticinc/syntheticbrew-brewctl
+configApply:
+  # Set to true to enable post-install/upgrade declarative config reconcile.
+  enabled: false
+
+  image:
+    # brewctl Docker image. Pin to specific version for reproducibility.
+    # 0.2.0+ required for engine 1.1.0 — earlier brewctl builds URLs with
+    # UUIDs from the API list response and the new name-keyed engine
+    # rejects UUID-shaped strings as `{name}` URL params (chk_invalid_name).
+    # 0.2.1 fixes the loader so it skips is_system schemas (e.g. the engine-
+    # seeded builder-schema) — without it the post-install Job 404s on the
+    # system-schema relations fetch and BackoffLimitExceeded.
+    # 0.2.2 reconciles agents[].tools on UPDATE (not only CREATE).
+    # 0.2.3 (paired with engine 1.1.3): sends NAME instead of pre-resolved
+    # UUID for schemas[].entry_agent_id and agents[].model_id, so a fresh-DB
+    # single apply leaves no NULL FK or silent tenant-default fallback.
+    # 0.2.4 (paired with engine 1.1.7): propagates agents[].max_turn_duration
+    # via differ and adds models[*].extra_body YAML pass-through.
+    # 0.2.5 (paired with engine 1.1.9): propagates
+    # mcp_servers[*].catalog_refresh_interval_seconds (30..86400, nil=disabled)
+    # so periodic tools/list refresh is GitOps-driven. Removing the YAML line
+    # is intentionally a no-op (preserve-by-absent); clear via curl PATCH null
+    # or Admin SPA.
+    repository: ghcr.io/syntheticinc/brewctl
+    tag: "0.2.5"
+    pullPolicy: IfNotPresent
+
+  # Inline syntheticbrew.yaml content. Format: bundle YAML with top-level
+  # `models:`, `mcp_servers:`, `knowledge_bases:`, `agents:`, `schemas:`
+  # arrays. Do NOT wrap with `apiVersion: syntheticbrew/v1` + `kind: Config` —
+  # brewctl's loader treats that as a single-resource file and rejects
+  # `kind: Config` as unknown. Use env-var placeholders (`${VAR}`) for
+  # secrets — never plaintext.
+  #
+  # Example:
+  #   config: |
+  #     models:
+  #       - name: openrouter-default
+  #         type: openrouter
+  #         model_kind: chat       # NB: `model_kind`, NOT `kind` — collides with top-level resource kind
+  #         base_url: https://openrouter.ai/api/v1
+  #         model_name: openai/gpt-4o-mini
+  #         api_key: ${OPENROUTER_API_KEY}
+  #         is_default: true
+  #     agents:
+  #       - name: assistant
+  #         model: openrouter-default
+  #         lifecycle: persistent
+  #         system_prompt: "You are a helpful assistant."
+  #     schemas:
+  #       - name: main
+  #         entry_agent: assistant
+  #         chat_enabled: true
+  config: ""
+
+  # Alternative to `config`: name of an existing ConfigMap.
+  # IMPORTANT: the ConfigMap MUST expose the bundle under the data key
+  # `syntheticbrew.yaml` — the Job invokes brewctl with the explicit file path
+  # `/etc/syntheticbrew/config/syntheticbrew.yaml` (a directory path makes brewctl walk
+  # subdirs only and silently no-op on top-level files). Future configurable
+  # filename: tracked under chart v0.5.x.
+  existingConfigMap: ""
+
+  # Required when enabled=true. Name of a Secret with key `token` containing
+  # the admin API token (bb_xxx). Create via:
+  #   kubectl create secret generic syntheticbrew-token --from-literal=token=bb_xxx
+  tokenSecret: ""
+
+  # Optional. Name of a Secret with LLM API keys (OPENROUTER_API_KEY etc).
+  # All keys in this Secret are exposed as env vars to the brewctl container.
+  apiKeysSecret: ""
+
+  resources:
+    # Increase memory if config has many resources (50+ MCP/agents/schemas).
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+  activeDeadlineSeconds: 600
+
+# Bootstrap admin API token for automated GitOps reconcile.
+# When enabled, engine reads SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN env on first boot
+# and idempotently seeds an admin API token in api_tokens table. This token
+# can then be used by configApply Job (or external CI/CD) to authenticate
+# without manual token generation via Admin UI.
+#
+# Pair with configApply.tokenSecret pointing at the same Secret/key for
+# single-shot deployment.
+#
+# Format: bb_<64-hex chars>. Generate via: echo "bb_$(openssl rand -hex 32)"
+# Requires engine v1.0.1+.
+bootstrapAdminToken:
+  enabled: false
+  # Name of an existing Secret holding the token (typically same Secret as
+  # configApply.tokenSecret — DRY).
+  existingSecret: ""
+  # Key within the Secret. Default 'token' aligns with configApply default.
+  existingSecretKey: token
+
+# Declarative Knowledge / RAG file loader (chart 0.5.0+).
+#
+# Pairs with configApply.config: declare KB metadata in the brewctl bundle
+# (knowledge_bases:[{name, embedding_model}] + agents:[{knowledge_bases:[name]}])
+# and put the document files in a ConfigMap. The loader Job runs as a
+# post-install/post-upgrade hook (weight 15, after configApply weight 10),
+# walks the ConfigMap-mounted directory, and uploads each file via the
+# engine REST API (POST /api/v1/knowledge-bases/{id}/files). Idempotent
+# across helmfile sync runs.
+#
+# REQUIREMENTS:
+#   - configApply.enabled=true with a knowledge_bases entry matching .kb
+#   - persistence.knowledge.enabled=true (engine writes uploaded files to
+#     {DATA_DIR}/knowledge/{tenant}/{kb}/ on disk; without a PVC mounted
+#     at /etc/syntheticbrew/knowledge engine returns 500 on every upload).
+#     The chart fail-fasts at template render with a clear error if this
+#     is missing.
+#   - configApply.apiKeysSecret with a real OPENROUTER/OpenAI key bound
+#     to the embedding model declared in the bundle (embeddings run async
+#     after upload; placeholder keys leave files in status=error).
+#
+# Typical wiring (helmfile-side):
+#   1. Build a ConfigMap from your repo's knowledge files. Either render
+#      via Kustomize/Helm post-renderer, or use `kubectl create configmap
+#      <name> --from-file=./configs/knowledge/` as a CI step before sync.
+#   2. Set knowledgeLoader.existingConfigMap to that name and .kb to the
+#      KB declared in your bundle.
+#   3. Enable persistence.knowledge so engine has somewhere to write the
+#      uploaded files.
+knowledgeLoader:
+  enabled: false
+
+  # KB name. MUST match knowledge_bases[].name in your configApply.config
+  # bundle. The loader resolves this name to a UUID via the engine REST API
+  # and uploads files into that KB.
+  kb: ""
+
+  # Embedding model name. MUST match models[].name in your configApply.config
+  # bundle (model_kind: embedding). Workaround for brewctl 0.1.0 which does
+  # not link embedding_model_id when models + knowledge_bases are declared in
+  # the same bundle (it resolves the model name against pre-apply state, so
+  # the model isn't seen yet). Loader probes the KB after configApply runs;
+  # if embedding_model_id is empty, it resolves this name to a model UUID
+  # and PATCHes the KB. No-op once brewctl 0.1.1+ ships a two-pass apply.
+  embeddingModel: ""
+
+  # Existing ConfigMap whose data keys are filenames (e.g. policy.md, faq.md).
+  # The Job mounts this at /etc/syntheticbrew/knowledge-files/ and walks the
+  # directory. ConfigMap data values are the file contents (max ~1MB total
+  # per ConfigMap by k8s spec — for larger corpora switch to a CSI Secret
+  # Store backed by S3 or similar via .extraVolumes).
+  existingConfigMap: ""
+
+  # Token Secret (admin Bearer). Defaults to configApply.tokenSecret if
+  # unset — same Secret feeds engine bootstrap, brewctl, and the loader.
+  tokenSecret: ""
+  tokenSecretKey: token
+
+  # Idempotency mode. Trade-offs:
+  # - skip-existing (default): if a file with the same name already exists
+  #   in the KB, do nothing. Fastest, $0 embedding cost on no-op syncs.
+  #   CAVEAT: same-name-different-content NOT detected. To force re-upload
+  #   when content changes, either rename the file OR switch mode below.
+  # - replace: skip if name AND file_size match (cheap drift detection),
+  #   else DELETE the existing file and re-upload. Catches most content
+  #   changes (size differs unless edits are perfectly length-preserving).
+  # - always: DELETE everything in the KB and re-upload all files on every
+  #   sync. Hash-perfect idempotent at the cost of re-running embeddings
+  #   on every helm upgrade (pay-per-token API impact).
+  #
+  # Future (chart 0.5.x + engine 1.0.4+ which exposes file_hash on GET):
+  # default will switch to "hash" mode for content-perfect idempotency
+  # without re-uploads. Tracked in chart issue queue.
+  mode: skip-existing
+
+  # Drift cleanup: delete files in the KB which are NOT present in the
+  # ConfigMap. Off by default — operators may upload files via the Admin UI
+  # outside the GitOps loop and prune would silently nuke them.
+  prune: false
+
+  # Image — alpine + curl + jq (installed via apk on Job startup, ~3s).
+  # Override if your cluster requires a private mirror. We do not ship a
+  # syntheticbrew/kb-loader image because the script is short and reading the
+  # actual logic from the Job manifest is more transparent than pulling a
+  # blob.
+  image:
+    repository: alpine
+    tag: "3.19"
+    pullPolicy: IfNotPresent
+
+  # Loader runtime budget. Each file = 1 HTTP POST + engine-side embedding.
+  # 600s covers ~50 small markdown files at typical embedding latency.
+  activeDeadlineSeconds: 600
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi

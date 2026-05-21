@@ -1,6 +1,6 @@
 package indexing
 
-import "github.com/syntheticinc/bytebrew/engine/pkg/config"
+import "github.com/syntheticinc/syntheticbrew/pkg/config"
 
 // NewClient constructs an EmbeddingsClient from the bootstrap embeddings config.
 // Empty fields fall back to the package defaults:

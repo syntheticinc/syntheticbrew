@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/metrics"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/metrics"
 )
 
 // MetricsMiddleware records Prometheus metrics for every HTTP request:

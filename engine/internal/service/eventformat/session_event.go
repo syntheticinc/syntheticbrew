@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
 )
 
 // SerializeSessionEvent converts a proto SessionEvent into the flat JSON shape
