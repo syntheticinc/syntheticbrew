@@ -5,7 +5,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/syntheticinc/syntheticbrew?filename=engine%2Fgo.mod&style=flat-square&logo=go&logoColor=white&label=go)](engine/go.mod)
 [![Go Report Card](https://goreportcard.com/badge/github.com/syntheticinc/syntheticbrew/engine?style=flat-square)](https://goreportcard.com/report/github.com/syntheticinc/syntheticbrew/engine)
 [![Release](https://img.shields.io/github/v/release/syntheticinc/syntheticbrew?style=flat-square&logo=github&label=release)](https://github.com/syntheticinc/syntheticbrew/releases/latest)
-[![Docker Pulls](https://img.shields.io/docker/pulls/syntheticinc/engine?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/syntheticinc/engine)
+[![Docker Pulls](https://img.shields.io/docker/pulls/syntheticinc/syntheticbrew?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/syntheticinc/syntheticbrew)
 
 **Open-source AI agent runtime.** Build, deploy, and orchestrate autonomous AI agents with multi-agent coordination, MCP tool integration, and a visual admin dashboard.
 

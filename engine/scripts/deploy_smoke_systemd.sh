@@ -2,7 +2,7 @@
 # deploy_smoke_systemd.sh — systemd (bare-metal / VPS) deploy smoke test.
 #
 # Requires: docker (to spin up a privileged systemd container), curl
-# Usage: bash syntheticinc/engine/scripts/deploy_smoke_systemd.sh
+# Usage: bash syntheticinc/syntheticbrew/scripts/deploy_smoke_systemd.sh
 #
 # The script:
 #   1. Builds the engine binary (local Go build)
@@ -22,8 +22,8 @@ set -euo pipefail
 
 CONTAINER_NAME="syntheticbrew-systemd-smoke"
 HOST_PORT="18444"
-BINARY_PATH="syntheticinc/engine/bin/syntheticbrew-engine-smoke"
-UNIT_SRC="syntheticinc/engine/deploy/systemd/syntheticbrew-engine.service"
+BINARY_PATH="syntheticinc/syntheticbrew/bin/syntheticbrew-engine-smoke"
+UNIT_SRC="syntheticinc/syntheticbrew/deploy/systemd/syntheticbrew-engine.service"
 
 # ── Prerequisite checks ──────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ fi
 
 if [[ ! -f "$UNIT_SRC" ]]; then
   echo "SKIPPED: systemd unit file not found at $UNIT_SRC"
-  echo "Create it first: syntheticinc/engine/deploy/systemd/syntheticbrew-engine.service"
+  echo "Create it first: syntheticinc/syntheticbrew/deploy/systemd/syntheticbrew-engine.service"
   exit 1
 fi
 
@@ -57,7 +57,7 @@ trap cleanup EXIT
 echo "==> Building engine binary (linux/amd64)..."
 mkdir -p "$(dirname "$BINARY_PATH")"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOWORK=off \
-  go build -C syntheticinc/engine \
+  go build -C syntheticinc/syntheticbrew \
   -ldflags "-s -w" \
   -o "../../$BINARY_PATH" \
   ./cmd/ce 2>&1 | tail -5

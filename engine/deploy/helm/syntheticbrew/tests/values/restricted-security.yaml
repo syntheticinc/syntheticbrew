@@ -11,7 +11,7 @@
 replicaCount: 1
 
 image:
-  repository: syntheticinc/engine
+  repository: syntheticinc/syntheticbrew
   tag: "1.1.11"
   pullPolicy: IfNotPresent
 
@@ -53,7 +53,7 @@ networkPolicy:
 migrations:
   enabled: true
   image:
-    repository: syntheticinc/engine-migrations
+    repository: syntheticinc/syntheticbrew-migrations
     tag: "1.1.11"
 
 bootstrapAdminToken:

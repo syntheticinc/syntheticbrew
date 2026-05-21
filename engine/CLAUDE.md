@@ -8,7 +8,7 @@
 
 ## Structure
 ```
-syntheticinc/engine/
+syntheticinc/syntheticbrew/
 ├── cmd/ce/                # Production entry point (Community Edition)
 ├── internal/
 │   ├── domain/            # Pure entities (NO external deps, NO tags)

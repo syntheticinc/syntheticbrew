@@ -57,11 +57,11 @@ jobs:
           exit 1
 
       - name: Install Playwright browsers
-        working-directory: syntheticinc/engine/admin
+        working-directory: syntheticinc/syntheticbrew/admin
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright E2E
-        working-directory: syntheticinc/engine/admin
+        working-directory: syntheticinc/syntheticbrew/admin
         run: npm run test:e2e
         env:
           CI: 'true'
@@ -71,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-engine-admin
-          path: syntheticinc/engine/admin/playwright-report/
+          path: syntheticinc/syntheticbrew/admin/playwright-report/
           retention-days: 7
 
       - name: Upload trace artifacts on failure
@@ -79,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces-engine-admin
-          path: syntheticinc/engine/admin/test-results/
+          path: syntheticinc/syntheticbrew/admin/test-results/
           retention-days: 7
 
       - name: Dump container logs on failure

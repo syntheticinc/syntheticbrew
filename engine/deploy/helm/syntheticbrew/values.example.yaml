@@ -7,7 +7,7 @@
 replicaCount: 1                                   # local auth mode supports 1 replica only
 
 image:
-  repository: syntheticinc/engine                     # <REQUIRED: adjust to your registry if self-hosting>
+  repository: syntheticinc/syntheticbrew                     # <REQUIRED: adjust to your registry if self-hosting>
   tag: "2.0.0"                                    # pin to the release you validated
   pullPolicy: IfNotPresent
 

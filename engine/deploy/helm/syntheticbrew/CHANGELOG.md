@@ -514,7 +514,7 @@ filename is tracked for chart v0.5.x.
   `HOME` set, the path resolved to `/.local`, which is not writable →
   `mkdir /.local: permission denied` → CrashLoopBackOff. Deployment
   template now sets `HOME=/tmp` explicitly.
-- **Migrations Job no args** — the `syntheticinc/engine-migrations` image is
+- **Migrations Job no args** — the `syntheticinc/syntheticbrew-migrations` image is
   stock liquibase (entrypoint `/liquibase/docker-entrypoint.sh`, default
   Cmd `--help`). The chart Job did not pass any args → migrations never
   ran, the Job exited 0 after printing liquibase help, engine then crashed
@@ -624,7 +624,7 @@ filename is tracked for chart v0.5.x.
 
 ### Added
 - Liquibase migrations Job (`pre-install,pre-upgrade` Helm hook). Runs the
-  `syntheticinc/engine-migrations` image against `DATABASE_URL` before every
+  `syntheticinc/syntheticbrew-migrations` image against `DATABASE_URL` before every
   install or upgrade. Toggle via `migrations.enabled` (default: `true`).
 - `brewctl` config-apply Job (`post-install,post-upgrade` Helm hook) for
   declarative GitOps reconcile via the `brewctl` CLI. Waits for engine

@@ -13,7 +13,7 @@ replicaCount: 1
 deploymentStrategy: {}
 
 image:
-  repository: syntheticinc/engine
+  repository: syntheticinc/syntheticbrew
   # WARN: set to a specific version (e.g. v1.0.0) for production. "latest" is
   # rejected by the migrations Job to ensure reproducible schema upgrades.
   tag: "latest"
@@ -224,7 +224,7 @@ affinity: {}
 migrations:
   enabled: true
   image:
-    repository: syntheticinc/engine-migrations
+    repository: syntheticinc/syntheticbrew-migrations
     # Pin to a specific version. Falls back to image.tag when empty.
     # Must not be "latest" — reproducible migrations require a pinned version.
     tag: ""

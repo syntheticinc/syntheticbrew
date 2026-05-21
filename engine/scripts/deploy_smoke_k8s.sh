@@ -2,7 +2,7 @@
 # deploy_smoke_k8s.sh — Kubernetes (kind) deploy smoke test for SyntheticBrew Engine.
 #
 # Requires: kind, helm, kubectl, curl
-# Usage: bash syntheticinc/engine/scripts/deploy_smoke_k8s.sh
+# Usage: bash syntheticinc/syntheticbrew/scripts/deploy_smoke_k8s.sh
 #
 # The script:
 #   1. Creates a kind cluster
@@ -18,7 +18,7 @@ set -euo pipefail
 
 CLUSTER_NAME="syntheticbrew-smoke"
 IMAGE_NAME="syntheticbrew-engine:smoke"
-HELM_CHART="syntheticinc/engine/deploy/helm/syntheticbrew"
+HELM_CHART="syntheticinc/syntheticbrew/deploy/helm/syntheticbrew"
 NAMESPACE="default"
 PF_PORT="18443"
 HEALTH_ENDPOINT="http://localhost:${PF_PORT}/api/v1/health"
@@ -63,7 +63,7 @@ kind create cluster --name "$CLUSTER_NAME" --wait 60s
 
 echo "==> Building engine image..."
 docker build \
-  -f syntheticinc/engine/Dockerfile \
+  -f syntheticinc/syntheticbrew/Dockerfile \
   -t "$IMAGE_NAME" \
   . 2>&1 | tail -5
 

@@ -93,7 +93,7 @@ SyntheticBrew Engine uses **Ed25519 (EdDSA)** for all JWT signing as of Wave 1+7
 ```yaml
 services:
   engine:
-    image: syntheticinc/engine:latest
+    image: syntheticinc/syntheticbrew:latest
     ports:
       - "8443:8443"
     environment:
@@ -190,7 +190,7 @@ All admin users must log in again. Previous tokens are now invalid.
 ```yaml
 services:
   engine:
-    image: syntheticinc/engine:latest
+    image: syntheticinc/syntheticbrew:latest
     ports:
       - "8443:8443"
     environment:

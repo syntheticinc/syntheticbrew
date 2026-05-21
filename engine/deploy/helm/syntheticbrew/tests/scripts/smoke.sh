@@ -9,7 +9,7 @@
 # is covered by go unit test (TestModelHandler_Patch_NormalizesAlias) — kind
 # smoke does NOT exercise it because fixtures use canonical type already.
 # Bump pins to "1.0.3" in a follow-up after the cloud-web deploy workflow has
-# published syntheticinc/engine:1.0.3 + syntheticinc/engine-migrations:1.0.3, and at
+# published syntheticinc/syntheticbrew:1.0.3 + syntheticinc/syntheticbrew-migrations:1.0.3, and at
 # that point flipping single-shot.yaml to `type: openrouter` would also
 # exercise the v1.0.3 fix end-to-end in CI.
 #
