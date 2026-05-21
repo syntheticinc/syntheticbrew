@@ -3,7 +3,7 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/syntheticinc/syntheticbrew/chart-test.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=build)](https://github.com/syntheticinc/syntheticbrew/actions/workflows/chart-test.yml)
 [![License](https://img.shields.io/badge/license-BSL%201.1-blue?style=flat-square)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/syntheticinc/syntheticbrew?filename=engine%2Fgo.mod&style=flat-square&logo=go&logoColor=white&label=go)](engine/go.mod)
-[![Go Report Card](https://goreportcard.com/badge/github.com/syntheticinc/syntheticbrew/engine?style=flat-square)](https://goreportcard.com/report/github.com/syntheticinc/syntheticbrew/engine)
+[![Go Report Card](https://goreportcard.com/badge/github.com/syntheticinc/syntheticbrew?style=flat-square)](https://goreportcard.com/report/github.com/syntheticinc/syntheticbrew)
 [![Release](https://img.shields.io/github/v/release/syntheticinc/syntheticbrew?style=flat-square&logo=github&label=release)](https://github.com/syntheticinc/syntheticbrew/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/syntheticinc/syntheticbrew?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/syntheticinc/syntheticbrew)
 
