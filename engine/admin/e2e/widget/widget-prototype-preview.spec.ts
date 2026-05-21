@@ -10,7 +10,7 @@ test.describe('Widget — prototype preview', () => {
     const page = authenticatedAdmin;
 
     // Enable prototype mode
-    await page.evaluate(() => localStorage.setItem('bytebrew_prototype_mode', 'true'));
+    await page.evaluate(() => localStorage.setItem('syntheticbrew_prototype_mode', 'true'));
     await page.goto('/admin/widget');
     await page.waitForLoadState('networkidle');
 

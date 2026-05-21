@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"

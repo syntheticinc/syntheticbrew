@@ -1,7 +1,7 @@
 // V2 Schema Template catalog — prototype-mode mock.
 //
 // Mirrors the wire shape of `GET /api/v1/schema-templates` (see
-// bytebrew/engine/schema-templates.yaml + the SchemaTemplateListResponse
+// syntheticinc/engine/schema-templates.yaml + the SchemaTemplateListResponse
 // Go DTO). Stays in sync with the YAML manually — the prototype-mode
 // admin UI reads this file directly, production mode reads from DB.
 //

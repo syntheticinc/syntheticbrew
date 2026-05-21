@@ -334,9 +334,9 @@ export default function AgentsPage() {
               <>
                 <p>No agents configured. Create your first agent to get started.</p>
                 <p className="mt-2 text-xs text-brand-shade3/70">
-                  If ByteBrew helps you, consider{' '}
+                  If SyntheticBrew helps you, consider{' '}
                   <a
-                    href="https://github.com/syntheticinc/bytebrew"
+                    href="https://github.com/syntheticinc/syntheticbrew"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-brand-accent hover:underline"

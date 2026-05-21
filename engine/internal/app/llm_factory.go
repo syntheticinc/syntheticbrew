@@ -8,10 +8,10 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
-	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
-	pluginpkg "github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
+	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // createChatModel creates a ToolCallingChatModel based on provider config.
@@ -122,7 +122,7 @@ func (t *anthropicTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 // wrapWithDebugModel wraps the chat model with a request/response logger when
 // debugDir is non-empty. The directory comes from the bootstrap config
-// (Debug.ModelDebugDir, env var BYTEBREW_DEBUG_MODEL) — see pkg/config.
+// (Debug.ModelDebugDir, env var SYNTHETICBREW_DEBUG_MODEL) — see pkg/config.
 func wrapWithDebugModel(chatModel model.ToolCallingChatModel, debugDir string) model.ToolCallingChatModel {
 	if debugDir == "" {
 		return chatModel

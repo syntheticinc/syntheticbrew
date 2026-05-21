@@ -1,14 +1,14 @@
 version: 2
-project_name: bytebrew-srv
+project_name: syntheticbrew-srv
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: bytebrew-srv
+  - id: syntheticbrew-srv
     main: ./cmd/ce
-    binary: bytebrew-srv
+    binary: syntheticbrew-srv
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -27,7 +27,7 @@ builds:
 archives:
   - id: default
     format: tar.gz
-    name_template: "bytebrew-srv_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "syntheticbrew-srv_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         format: zip

@@ -3,8 +3,8 @@ package agentstatecreate
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // AgentStateRepository defines repository interface for AgentState

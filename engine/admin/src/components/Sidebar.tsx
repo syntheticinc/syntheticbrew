@@ -231,7 +231,7 @@ export default function Sidebar() {
     <aside className="w-56 bg-brand-dark flex flex-col min-h-screen border-r border-brand-shade3/10">
       {/* Logo */}
       <div className="px-5 py-6 border-b border-brand-shade3/10">
-        <img src={import.meta.env.BASE_URL + 'logo-dark.svg'} alt="ByteBrew" className="h-8" />
+        <img src={import.meta.env.BASE_URL + 'logo-dark.svg'} alt="SyntheticBrew" className="h-8" />
         <span className="text-[10px] text-brand-shade3 mt-2 block tracking-[0.2em] uppercase font-medium">Admin Dashboard</span>
       </div>
 
@@ -296,7 +296,7 @@ export default function Sidebar() {
         <div className="mx-3 mb-2 rounded-btn border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
           <p className="text-[11px] font-semibold text-amber-400 mb-1">v{updateAvailable} available</p>
           <code className="text-[10px] text-amber-400/70 block leading-tight">
-            docker pull bytebrew/engine:{updateAvailable}
+            docker pull syntheticinc/engine:{updateAvailable}
           </code>
         </div>
       )}

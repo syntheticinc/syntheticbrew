@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: add-models-is-default
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Add `is_default` column to models so tenants can explicitly flag one
         chat model as the tenant default (used for agent backfill when an

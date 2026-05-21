@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // tenantIDFromCtx resolves the tenant ID for writes in this package.

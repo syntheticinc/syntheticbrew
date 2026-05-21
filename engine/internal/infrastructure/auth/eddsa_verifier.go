@@ -14,7 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // EdDSAVerifier verifies JWTs signed with an Ed25519 key.

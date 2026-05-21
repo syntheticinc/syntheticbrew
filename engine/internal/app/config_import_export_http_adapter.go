@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 // configImportExportHTTPAdapter bridges GORM DB to the http.ConfigImportExporter interface.
@@ -32,7 +32,7 @@ func (a *configImportExportHTTPAdapter) ExportYAML(ctx context.Context) ([]byte,
 		return nil, fmt.Errorf("marshal yaml: %w", err)
 	}
 
-	header := fmt.Sprintf("# ByteBrew Engine Configuration\n# Exported: %s\n\n", time.Now().UTC().Format(time.RFC3339))
+	header := fmt.Sprintf("# SyntheticBrew Engine Configuration\n# Exported: %s\n\n", time.Now().UTC().Format(time.RFC3339))
 	return append([]byte(header), data...), nil
 }
 

@@ -25,7 +25,7 @@ jobs:
           version: v3.14.0
 
       - name: Lint chart
-        run: helm lint engine/deploy/helm/bytebrew
+        run: helm lint engine/deploy/helm/syntheticbrew
 
       - name: Extract version from tag
         id: version
@@ -40,7 +40,7 @@ jobs:
 
       - name: Check chart version not already published
         run: |
-          if helm pull oci://ghcr.io/syntheticinc/charts/bytebrew-engine --version ${{ steps.version.outputs.version }} 2>/dev/null; then
+          if helm pull oci://ghcr.io/syntheticinc/charts/syntheticbrew-engine --version ${{ steps.version.outputs.version }} 2>/dev/null; then
             echo "::error::Chart version ${{ steps.version.outputs.version }} already published. Bump version in Chart.yaml and create a new tag."
             exit 1
           fi
@@ -55,17 +55,17 @@ jobs:
           # too, which forced both equal and shipped wrong appVersion metadata
           # in every chart since 0.6.x (cosmetic — operators always override
           # image.tag — but misleading in `helm show chart`).
-          helm package engine/deploy/helm/bytebrew \
+          helm package engine/deploy/helm/syntheticbrew \
             -d dist/ \
             --version ${{ steps.version.outputs.version }}
 
       - name: Verify chart was packaged with Chart.yaml appVersion
         run: |
           # Guard against future re-introduction of the override bug.
-          expected_app=$(grep '^appVersion:' engine/deploy/helm/bytebrew/Chart.yaml \
+          expected_app=$(grep '^appVersion:' engine/deploy/helm/syntheticbrew/Chart.yaml \
             | awk '{print $2}' | tr -d '"')
-          actual_app=$(tar -xzf dist/bytebrew-engine-${{ steps.version.outputs.version }}.tgz \
-            -O bytebrew-engine/Chart.yaml | grep '^appVersion:' | awk '{print $2}' | tr -d '"')
+          actual_app=$(tar -xzf dist/syntheticbrew-engine-${{ steps.version.outputs.version }}.tgz \
+            -O syntheticbrew-engine/Chart.yaml | grep '^appVersion:' | awk '{print $2}' | tr -d '"')
           if [[ "$expected_app" != "$actual_app" ]]; then
             echo "::error::Packaged appVersion ($actual_app) does not match Chart.yaml ($expected_app)"
             exit 1
@@ -92,11 +92,11 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Helm Chart ${{ github.ref_name }}
           body: |
-            Helm chart `bytebrew-engine` ${{ steps.version.outputs.version }}.
+            Helm chart `syntheticbrew-engine` ${{ steps.version.outputs.version }}.
 
             **Install:**
             ```
-            helm install bytebrew oci://ghcr.io/syntheticinc/charts/bytebrew-engine --version ${{ steps.version.outputs.version }}
+            helm install syntheticbrew oci://ghcr.io/syntheticinc/charts/syntheticbrew-engine --version ${{ steps.version.outputs.version }}
             ```
 
-            See [chart README](https://github.com/syntheticinc/bytebrew/tree/main/engine/deploy/helm/bytebrew) for configuration.
+            See [chart README](https://github.com/syntheticinc/syntheticbrew/tree/main/engine/deploy/helm/syntheticbrew) for configuration.

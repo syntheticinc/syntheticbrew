@@ -22,7 +22,7 @@ func TestIsLoopbackBind(t *testing.T) {
 		{"::", false},
 		{"10.0.0.5", false},
 		{"engine.svc.cluster.local", false},
-		{"app.bytebrew.ai", false},
+		{"app.syntheticbrew.ai", false},
 	}
 	for _, c := range cases {
 		if got := isLoopbackBind(c.host); got != c.want {

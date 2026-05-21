@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // BuilderSchemaResolver returns the current builder-schema UUID.

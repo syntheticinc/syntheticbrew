@@ -5,7 +5,7 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'ByteBrewWidget',
+      name: 'SyntheticBrewWidget',
       formats: ['iife'],
       fileName: () => 'widget.js',
     },

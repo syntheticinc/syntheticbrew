@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package bytebrew.v1;
 
-option go_package = "github.com/syntheticinc/bytebrew/engine/api/proto/gen;bytebrewv1";
+option go_package = "github.com/syntheticinc/syntheticbrew/api/proto/gen;bytebrewv1";
 
 // Common message types used across services
 

@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/eventstore"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/service/eventstore"
 	"gorm.io/gorm"
 )
 

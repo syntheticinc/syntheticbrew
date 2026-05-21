@@ -21,9 +21,9 @@ const mockApi = vi.mocked(api);
 
 function renderPage(prototypeMode = false) {
   if (prototypeMode) {
-    localStorage.setItem('bytebrew_prototype_mode', 'true');
+    localStorage.setItem('syntheticbrew_prototype_mode', 'true');
   } else {
-    localStorage.removeItem('bytebrew_prototype_mode');
+    localStorage.removeItem('syntheticbrew_prototype_mode');
   }
 
   return render(
@@ -43,7 +43,7 @@ const emptyHealth = { status: 'ok', version: '0.1.0', uptime: '1h', agents_count
 describe('OverviewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.removeItem('bytebrew_prototype_mode');
+    localStorage.removeItem('syntheticbrew_prototype_mode');
   });
 
   describe('prototype mode', () => {

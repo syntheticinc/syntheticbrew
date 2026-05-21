@@ -1,4 +1,4 @@
-// ByteBrew Engine — Community Edition entry point.
+// SyntheticBrew Engine — Community Edition entry point.
 package main
 
 import (
@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/app"
+	"github.com/syntheticinc/syntheticbrew/internal/app"
 )
 
 var (
@@ -24,7 +24,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("bytebrew-ce %s (commit: %s, built: %s)\n", version, commit, date)
+		fmt.Printf("syntheticbrew-ce %s (commit: %s, built: %s)\n", version, commit, date)
 		os.Exit(0)
 	}
 

@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/schema"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // MessageModifier modifies messages before sending to the model

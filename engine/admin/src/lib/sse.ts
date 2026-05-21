@@ -1,4 +1,4 @@
-// Shared SSE (Server-Sent Events) parsing utilities for ByteBrew admin components.
+// Shared SSE (Server-Sent Events) parsing utilities for SyntheticBrew admin components.
 
 export interface ToolCall {
   tool: string;

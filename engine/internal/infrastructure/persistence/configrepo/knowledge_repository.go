@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/pgvector/pgvector-go"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 	"gorm.io/gorm"
 )
 

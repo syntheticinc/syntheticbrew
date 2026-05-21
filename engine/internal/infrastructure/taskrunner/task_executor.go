@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // DefaultTaskTimeout caps how long an autonomous cron/webhook task may run.

@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/capability"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/service/capability"
 )
 
 // capabilityInjectorAdapter bridges GORMCapabilityRepository to capability.CapabilityReader.

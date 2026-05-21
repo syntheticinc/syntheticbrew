@@ -2,13 +2,13 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: bytebrew_test
-      POSTGRES_USER: bytebrew
-      POSTGRES_PASSWORD: bytebrew
+      POSTGRES_DB: syntheticbrew_test
+      POSTGRES_USER: syntheticbrew
+      POSTGRES_PASSWORD: syntheticbrew
     ports:
       - "5436:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bytebrew -d bytebrew_test"]
+      test: ["CMD-SHELL", "pg_isready -U syntheticbrew -d syntheticbrew_test"]
       interval: 2s
       timeout: 2s
       retries: 10

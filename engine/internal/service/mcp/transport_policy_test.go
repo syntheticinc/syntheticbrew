@@ -3,7 +3,7 @@ package mcp_test
 import (
 	"testing"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/service/mcp"
 )
 
 func TestPermissiveTransportPolicy(t *testing.T) {

@@ -43,7 +43,7 @@ test.describe('Admin — prototype mode toggle', () => {
   test('prototype badge visible when prototype mode active', async ({ authenticatedAdmin }) => {
     const page = authenticatedAdmin;
     // Enable prototype mode via localStorage
-    await page.evaluate(() => localStorage.setItem('bytebrew_prototype_mode', 'true'));
+    await page.evaluate(() => localStorage.setItem('syntheticbrew_prototype_mode', 'true'));
     await page.reload();
     await page.waitForLoadState('networkidle');
 

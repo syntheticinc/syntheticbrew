@@ -1,4 +1,4 @@
-# ByteBrew Engine -- Quick Start
+# SyntheticBrew Engine -- Quick Start
 
 Two deployment paths are supported:
 
@@ -35,7 +35,7 @@ Open http://localhost:8443 -- Admin Dashboard.
 Create the first admin user:
 
 ```bash
-docker compose exec engine /usr/local/bin/bytebrew-ce admin create --username admin --password <your-password>
+docker compose exec engine /usr/local/bin/syntheticbrew-ce admin create --username admin --password <your-password>
 ```
 
 Then log in with those credentials.
@@ -46,7 +46,7 @@ Uncomment the `ollama` service in `docker-compose.yml`, then:
 
 ```bash
 docker compose up -d
-docker exec bytebrew-ollama ollama pull llama3
+docker exec syntheticbrew-ollama ollama pull llama3
 ```
 
 Set `LLM_PROVIDER=ollama` and `LLM_MODEL=llama3` in `.env`.
@@ -73,7 +73,7 @@ docker compose pull engine
 docker compose up -d engine
 ```
 
-> **Note:** Always check the [changelog](https://github.com/syntheticinc/bytebrew/releases) before updating.
+> **Note:** Always check the [changelog](https://github.com/syntheticinc/syntheticbrew/releases) before updating.
 > Major versions may include database migrations or breaking changes.
 
 ## Troubleshooting
@@ -87,7 +87,7 @@ docker compose logs engine
 Check database health:
 
 ```bash
-docker compose exec db pg_isready -U bytebrew -d bytebrew
+docker compose exec db pg_isready -U syntheticbrew -d syntheticbrew
 ```
 
 Rebuild after code changes:
@@ -114,15 +114,15 @@ docker compose build engine && docker compose up -d engine
 cd helm
 
 # Copy the example, fill fields marked <REQUIRED>
-cp bytebrew/values.example.yaml values.yaml
+cp syntheticbrew/values.example.yaml values.yaml
 $EDITOR values.yaml
 
 # Validate template rendering
-helm lint ./bytebrew
-helm template bytebrew ./bytebrew -f values.yaml
+helm lint ./syntheticbrew
+helm template syntheticbrew ./syntheticbrew -f values.yaml
 
 # Install
-helm install bytebrew ./bytebrew -f values.yaml
+helm install syntheticbrew ./syntheticbrew -f values.yaml
 ```
 
 Required fields in `values.yaml`:
@@ -137,18 +137,18 @@ nothing LLM-related is required in the Helm chart.
 ### Upgrade
 
 ```bash
-helm upgrade bytebrew ./bytebrew -f values.yaml
+helm upgrade syntheticbrew ./syntheticbrew -f values.yaml
 ```
 
 ### Rollback
 
 ```bash
-helm history bytebrew
-helm rollback bytebrew <revision>
+helm history syntheticbrew
+helm rollback syntheticbrew <revision>
 ```
 
 ### Single-replica constraint
 
 `config.auth.mode: "local"` requires `replicaCount: 1` (Ed25519 keypair on a single PVC). For HA, switch to `auth.mode: "external"` and provide a pre-generated Ed25519 public key via ConfigMap/Secret.
 
-See [docs: production deployment](https://bytebrew.ai/docs/deployment/production) for the full walkthrough including TLS via cert-manager, Prometheus scraping, and operational checklist.
+See [docs: production deployment](https://syntheticbrew.ai/docs/deployment/production) for the full walkthrough including TLS via cert-manager, Prometheus scraping, and operational checklist.

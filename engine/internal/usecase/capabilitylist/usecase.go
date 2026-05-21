@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // CapabilityRepository defines the repository interface for listing capabilities.

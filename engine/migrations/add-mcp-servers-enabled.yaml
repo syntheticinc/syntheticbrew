@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: add-mcp-servers-enabled
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Add `enabled` column to mcp_servers so the builder-assistant (and
         admin UI) can temporarily disable a server without deleting it.

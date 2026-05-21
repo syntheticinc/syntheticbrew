@@ -2,7 +2,7 @@
 
 ## Overview
 
-ByteBrew Engine REST API follows these contract patterns:
+SyntheticBrew Engine REST API follows these contract patterns:
 
 - **PATCH semantics** — partial updates with atomic guarantees
 - **Resolvers** — UUID or name-based resource lookup

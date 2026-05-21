@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // HTTPTransport connects to an MCP server via HTTP POST.

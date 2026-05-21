@@ -10,14 +10,14 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
-	pb "github.com/syntheticinc/bytebrew/engine/api/proto/gen"
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/agentregistry"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/flowregistry"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/sessionprocessor"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/flowregistry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // schemaChatRepo narrows the schema repository to the operations the chat

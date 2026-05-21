@@ -67,7 +67,7 @@ function parseHashToken(): string | null {
 async function mintFromCloudSession(): Promise<string | null> {
   let cloudToken: string | null = null;
   try {
-    cloudToken = localStorage.getItem('bytebrew_access_token');
+    cloudToken = localStorage.getItem('syntheticbrew_access_token');
   } catch {
     return null;
   }

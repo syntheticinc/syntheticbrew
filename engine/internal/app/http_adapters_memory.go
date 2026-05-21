@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence"
 )
 
 // memoryListerHTTPAdapter bridges MemoryStorage to the http.MemoryLister interface.

@@ -90,7 +90,7 @@ function handleUnauthorized(): void {
     .catch((err) => console.error('auth recovery failed', err))
     .finally(() => { recovering = false; });
 }
-const PROTOTYPE_KEY = 'bytebrew_prototype_mode';
+const PROTOTYPE_KEY = 'syntheticbrew_prototype_mode';
 // Build-time gate. A production build with VITE_PROTOTYPE_ENABLED unset cannot
 // enter prototype mode at all, even if localStorage is tampered with.
 // This matches the logic in hooks/usePrototype.tsx so the UI toggle and the

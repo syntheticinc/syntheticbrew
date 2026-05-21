@@ -3,8 +3,8 @@ package app
 import (
 	"time"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/resilience"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 )
 
 // circuitBreakerQuerierHTTPAdapter adapts CircuitBreakerRegistry to the

@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	admintools "github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools/admin"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	admintools "github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools/admin"
 	"gorm.io/gorm"
 )
 

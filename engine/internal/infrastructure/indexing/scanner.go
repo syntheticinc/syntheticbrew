@@ -74,7 +74,7 @@ var defaultIgnore = map[string]bool{
 	"target":    true,
 	"bin":       true,
 	"obj":       true,
-	".bytebrew": true,
+	".syntheticbrew": true,
 	".next":     true,
 	".nuxt":     true,
 	"coverage":  true,

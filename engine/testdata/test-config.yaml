@@ -10,9 +10,9 @@ database:
   port: 5499
   user: postgres
   password: postgres
-  database: bytebrew
+  database: syntheticbrew
   ssl_mode: disable
-  url: "postgresql://bytebrew:bytebrew@localhost:5436/bytebrew_test"
+  url: "postgresql://syntheticbrew:syntheticbrew@localhost:5436/syntheticbrew_test"
 
 # NEW: Bootstrap engine settings
 engine:
@@ -28,7 +28,7 @@ logging:
   level: info
   format: text
   output: file
-  file_path: logs/bytebrew-srv.log
+  file_path: logs/syntheticbrew-srv.log
   clear_on_startup: true
 
 llm:

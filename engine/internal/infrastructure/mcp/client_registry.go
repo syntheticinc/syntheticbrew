@@ -10,8 +10,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	"github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // ClientRegistry manages connected MCP clients for a single tenant.

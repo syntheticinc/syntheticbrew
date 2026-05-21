@@ -3,7 +3,7 @@ package app
 import (
 	"github.com/go-chi/chi/v5"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 )
 
 // chatRoutesDeps bundles the dependencies needed to mount the chat-facing

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // SchemaRepository defines the repository interface for schema retrieval.

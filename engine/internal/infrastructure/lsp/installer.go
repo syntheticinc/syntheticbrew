@@ -21,7 +21,7 @@ import (
 
 // installerEnv is the package-private toggle for auto-install. Set via
 // SetInstallDisabled at boot from BootstrapConfig.LSP.DisableDownload (env
-// BYTEBREW_DISABLE_LSP_DOWNLOAD). Package-private + setter rather than
+// SYNTHETICBREW_DISABLE_LSP_DOWNLOAD). Package-private + setter rather than
 // constructor parameter because the Installer is currently created in
 // NewService() with no dependency on bootstrap; threading bootstrap through
 // every Service factory would touch unrelated code paths.
@@ -60,7 +60,7 @@ func NewInstaller() *Installer {
 // Multiple concurrent calls for the same serverID are coalesced into a single install.
 func (ins *Installer) Install(ctx context.Context, serverID string, spec InstallSpec) error {
 	if isInstallDisabled() {
-		return fmt.Errorf("auto-install disabled via BYTEBREW_DISABLE_LSP_DOWNLOAD")
+		return fmt.Errorf("auto-install disabled via SYNTHETICBREW_DISABLE_LSP_DOWNLOAD")
 	}
 
 	type result struct {
@@ -125,7 +125,7 @@ func (ins *Installer) doInstall(ctx context.Context, serverID string, spec Insta
 
 // isInstallDisabled reports whether the auto-install short-circuit is active.
 // The flag is set once at boot via SetInstallDisabled from the bootstrap
-// config (BootstrapConfig.LSP.DisableDownload, env BYTEBREW_DISABLE_LSP_DOWNLOAD).
+// config (BootstrapConfig.LSP.DisableDownload, env SYNTHETICBREW_DISABLE_LSP_DOWNLOAD).
 func isInstallDisabled() bool {
 	installerDisabled.RLock()
 	defer installerDisabled.RUnlock()

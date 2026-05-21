@@ -46,8 +46,8 @@ ENV/
 *.db
 *.sqlite
 
-# ByteBrew CLI - local indexing storage
-.bytebrew/
+# SyntheticBrew CLI - local indexing storage
+.syntheticbrew/
 
 # Docs - prevent recovery of deleted files
 docs/ARCHITECTURE-AUDIT-REPORT.md

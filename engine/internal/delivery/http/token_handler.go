@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/syntheticinc/bytebrew/engine/internal/authprim"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/authprim"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // TokenRepository manages API tokens in the database.

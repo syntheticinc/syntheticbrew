@@ -1,6 +1,6 @@
 # Individual Contributor License Agreement
 
-Thank you for your interest in contributing to ByteBrew, a project maintained by Synthetic AI Inc. ("Company"). This Contributor License Agreement ("Agreement") documents the rights granted by contributors to the Company.
+Thank you for your interest in contributing to SyntheticBrew, a project maintained by Synthetic AI Inc. ("Company"). This Contributor License Agreement ("Agreement") documents the rights granted by contributors to the Company.
 
 By submitting a Contribution to this project, you accept and agree to the following terms and conditions for your present and future Contributions.
 
@@ -43,4 +43,4 @@ You are not expected to provide support for Your Contributions, except to the ex
 
 By submitting a pull request or other Contribution to this project, you signify your agreement to these terms.
 
-Questions? Contact [info@bytebrew.ai](mailto:info@bytebrew.ai).
+Questions? Contact [info@syntheticbrew.ai](mailto:info@syntheticbrew.ai).

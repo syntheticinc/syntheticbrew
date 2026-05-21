@@ -10,7 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // sessionACL captures actor identity + privilege flags relevant for /sessions
@@ -80,7 +80,7 @@ type SessionResponse struct {
 	// Metadata is opaque per-session JSON storage. Engine never reads or
 	// interprets the contents — clients can use it to attach their own
 	// org/user mapping (e.g. multi-tenant ai-assistant proxies on top of a
-	// single ByteBrew tenant). Default is `{}`. Capped at 16KB on writes.
+	// single SyntheticBrew tenant). Default is `{}`. Capped at 16KB on writes.
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt string          `json:"created_at"`
 	UpdatedAt string          `json:"updated_at"`

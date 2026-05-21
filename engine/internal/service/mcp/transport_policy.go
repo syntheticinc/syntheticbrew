@@ -4,7 +4,7 @@
 // must import pkg/plugin instead to satisfy Go's internal package visibility rules.
 package mcp
 
-import "github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+import "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 
 // TransportPolicy is an alias for plugin.TransportPolicy.
 type TransportPolicy = plugin.TransportPolicy

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // SupervisorState represents the current state of the Supervisor agent

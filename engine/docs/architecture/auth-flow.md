@@ -2,7 +2,7 @@
 
 ## Overview
 
-ByteBrew Engine uses **Ed25519 (EdDSA)** for all JWT signing as of Wave 1+7 (2026-04-21). The authentication architecture supports two modes: **local** (single-node, default) and **external** (multi-replica, pre-provisioned keys).
+SyntheticBrew Engine uses **Ed25519 (EdDSA)** for all JWT signing as of Wave 1+7 (2026-04-21). The authentication architecture supports two modes: **local** (single-node, default) and **external** (multi-replica, pre-provisioned keys).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -17,18 +17,18 @@ ByteBrew Engine uses **Ed25519 (EdDSA)** for all JWT signing as of Wave 1+7 (202
                               │ JWT (Ed25519 signed)
                               │
 ┌──────────────────────────────────────────────────────────────┐
-│ ByteBrew Engine                                               │
+│ SyntheticBrew Engine                                               │
 │ ┌────────────────────────────────────────────────────────┐  │
 │ │ Auth Mode: local (default) or external                │  │
 │ │                                                        │  │
 │ │ local:                                                │  │
 │ │  • Generates Ed25519 keypair on first boot            │  │
-│ │  • Stores at BYTEBREW_JWT_KEYS_DIR                   │  │
+│ │  • Stores at SYNTHETICBREW_JWT_KEYS_DIR                   │  │
 │ │  • Exposes POST /api/v1/auth/local-session           │  │
 │ │  • Single-node deployments only                       │  │
 │ │                                                        │  │
 │ │ external:                                              │  │
-│ │  • Loads public key from BYTEBREW_JWT_PUBLIC_KEY_PATH │  │
+│ │  • Loads public key from SYNTHETICBREW_JWT_PUBLIC_KEY_PATH │  │
 │ │  • Verifies tokens issued elsewhere                   │  │
 │ │  • Multi-replica deployments                          │  │
 │ │  • /api/v1/auth/local-session NOT registered         │  │
@@ -43,7 +43,7 @@ ByteBrew Engine uses **Ed25519 (EdDSA)** for all JWT signing as of Wave 1+7 (202
 ### How It Works
 
 1. **Keypair Generation** (first boot):
-   - Engine generates Ed25519 keypair under `<BYTEBREW_JWT_KEYS_DIR>/jwt_ed25519.priv` and `.pub`
+   - Engine generates Ed25519 keypair under `<SYNTHETICBREW_JWT_KEYS_DIR>/jwt_ed25519.priv` and `.pub`
    - Atomic creation via O_EXCL flag prevents races in multi-pod scenarios
    - Keypair is ~64 bytes total
 
@@ -84,8 +84,8 @@ ByteBrew Engine uses **Ed25519 (EdDSA)** for all JWT signing as of Wave 1+7 (202
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `BYTEBREW_AUTH_MODE` | yes | `local` | Must be `local` for this mode |
-| `BYTEBREW_JWT_KEYS_DIR` | no | `/var/lib/bytebrew/keys` | Directory where keypair is stored (must be writable) |
+| `SYNTHETICBREW_AUTH_MODE` | yes | `local` | Must be `local` for this mode |
+| `SYNTHETICBREW_JWT_KEYS_DIR` | no | `/var/lib/syntheticbrew/keys` | Directory where keypair is stored (must be writable) |
 | `ENGINE_PORT` | no | `8443` | HTTP listening port |
 
 **Docker Compose:**
@@ -93,15 +93,15 @@ ByteBrew Engine uses **Ed25519 (EdDSA)** for all JWT signing as of Wave 1+7 (202
 ```yaml
 services:
   engine:
-    image: bytebrew/engine:latest
+    image: syntheticinc/engine:latest
     ports:
       - "8443:8443"
     environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/bytebrew
-      - BYTEBREW_AUTH_MODE=local
-      - BYTEBREW_JWT_KEYS_DIR=/var/lib/bytebrew/keys
+      - DATABASE_URL=postgresql://user:pass@db:5432/syntheticbrew
+      - SYNTHETICBREW_AUTH_MODE=local
+      - SYNTHETICBREW_JWT_KEYS_DIR=/var/lib/syntheticbrew/keys
     volumes:
-      - keys-data:/var/lib/bytebrew/keys
+      - keys-data:/var/lib/syntheticbrew/keys
     restart: unless-stopped
 
 volumes:
@@ -134,7 +134,7 @@ To rotate the keypair in local mode (invalidates all existing sessions):
 
 2. **Delete the old keypair**:
    ```bash
-   rm /var/lib/bytebrew/keys/jwt_ed25519.priv /var/lib/bytebrew/keys/jwt_ed25519.pub
+   rm /var/lib/syntheticbrew/keys/jwt_ed25519.priv /var/lib/syntheticbrew/keys/jwt_ed25519.pub
    ```
 
 3. **Start the engine** (generates new keypair):
@@ -181,8 +181,8 @@ All admin users must log in again. Previous tokens are now invalid.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `BYTEBREW_AUTH_MODE` | yes | — | Must be `external` for this mode |
-| `BYTEBREW_JWT_PUBLIC_KEY_PATH` | yes | — | Path to hex-encoded Ed25519 public key file |
+| `SYNTHETICBREW_AUTH_MODE` | yes | — | Must be `external` for this mode |
+| `SYNTHETICBREW_JWT_PUBLIC_KEY_PATH` | yes | — | Path to hex-encoded Ed25519 public key file |
 | `ENGINE_PORT` | no | `8443` | HTTP listening port |
 
 **Docker Compose (with ConfigMap):**
@@ -190,15 +190,15 @@ All admin users must log in again. Previous tokens are now invalid.
 ```yaml
 services:
   engine:
-    image: bytebrew/engine:latest
+    image: syntheticinc/engine:latest
     ports:
       - "8443:8443"
     environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/bytebrew
-      - BYTEBREW_AUTH_MODE=external
-      - BYTEBREW_JWT_PUBLIC_KEY_PATH=/etc/bytebrew/jwt_ed25519.pub
+      - DATABASE_URL=postgresql://user:pass@db:5432/syntheticbrew
+      - SYNTHETICBREW_AUTH_MODE=external
+      - SYNTHETICBREW_JWT_PUBLIC_KEY_PATH=/etc/syntheticbrew/jwt_ed25519.pub
     volumes:
-      - ./jwt_ed25519.pub:/etc/bytebrew/jwt_ed25519.pub:ro
+      - ./jwt_ed25519.pub:/etc/syntheticbrew/jwt_ed25519.pub:ro
     restart: unless-stopped
 ```
 
@@ -206,15 +206,15 @@ services:
 
 ```bash
 # Create ConfigMap from public key file
-kubectl create configmap bytebrew-pubkey \
+kubectl create configmap syntheticbrew-pubkey \
   --from-file=jwt_ed25519.pub=/path/to/jwt_ed25519.pub
 
 # Then mount in Helm values or patch deployment
-kubectl patch deployment bytebrew-engine --type json -p '[
+kubectl patch deployment syntheticbrew-engine --type json -p '[
   {"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts/-", 
-   "value": {"name": "pubkey", "mountPath": "/etc/bytebrew/keys", "readOnly": true}},
+   "value": {"name": "pubkey", "mountPath": "/etc/syntheticbrew/keys", "readOnly": true}},
   {"op": "add", "path": "/spec/template/spec/volumes/-",
-   "value": {"name": "pubkey", "configMap": {"name": "bytebrew-pubkey"}}}
+   "value": {"name": "pubkey", "configMap": {"name": "syntheticbrew-pubkey"}}}
 ]'
 ```
 
@@ -224,7 +224,7 @@ kubectl patch deployment bytebrew-engine --type json -p '[
 
 ```
 VITE_AUTH_MODE=external
-VITE_LANDING_URL=https://bytebrew.ai
+VITE_LANDING_URL=https://syntheticbrew.ai
 ```
 
 When `VITE_AUTH_MODE=external`, the SPA:
@@ -256,7 +256,7 @@ To rotate the public key without downtime:
 2. **Extract new public key** and push to all engine deployments:
    - Docker: update ConfigMap, restart pods
    - Kubernetes: update ConfigMap, rolling restart
-   - Bare metal: update `/etc/bytebrew/jwt_ed25519.pub`, restart service
+   - Bare metal: update `/etc/syntheticbrew/jwt_ed25519.pub`, restart service
 3. **Update the landing server** to sign tokens with the new private key
 4. **Wait for old tokens to expire** (typically 24 hours) or force logout
 
@@ -293,14 +293,14 @@ API tokens are verified the same way as session JWTs — Ed25519 signature valid
 - `JWT_SECRET` environment variable (HS256 signing) — **REMOVED**
 - `security.jwt_secret` config key — **REMOVED**
 - `POST /api/v1/auth/login` endpoint (username/password via HS256) — **REMOVED** (returns 404)
-- `bytebrew-ce admin` CLI subcommand (create, list, reset-password) — **REMOVED**
+- `syntheticbrew-ce admin` CLI subcommand (create, list, reset-password) — **REMOVED**
 - HS256 JWT algorithm support (Engine only accepts EdDSA) — **REMOVED**
 
 ### Replaced With
 
-- `BYTEBREW_AUTH_MODE` (local or external)
-- `BYTEBREW_JWT_KEYS_DIR` (local mode keypair storage)
-- `BYTEBREW_JWT_PUBLIC_KEY_PATH` (external mode public key)
+- `SYNTHETICBREW_AUTH_MODE` (local or external)
+- `SYNTHETICBREW_JWT_KEYS_DIR` (local mode keypair storage)
+- `SYNTHETICBREW_JWT_PUBLIC_KEY_PATH` (external mode public key)
 - `POST /api/v1/auth/local-session` endpoint (EdDSA-signed tokens)
 - Admin user management via Admin Dashboard UI
 - Ed25519 (EdDSA) JWT signing (all tokens)
@@ -320,7 +320,7 @@ API tokens are verified the same way as session JWTs — Ed25519 signature valid
 ### Local Mode
 
 - **Single-node only**: Multiple pods sharing the same keypair directory can race; use external mode for HA
-- **Keypair protection**: Store `BYTEBREW_JWT_KEYS_DIR` on a filesystem with restricted permissions (mode 0700)
+- **Keypair protection**: Store `SYNTHETICBREW_JWT_KEYS_DIR` on a filesystem with restricted permissions (mode 0700)
 - **Session expiration**: Tokens expire after 24 hours; consider re-login flows for long-running operations
 - **No rotation**: To rotate, delete keypair (all sessions invalidated); plan rotation windows
 
@@ -343,7 +343,7 @@ API tokens are verified the same way as session JWTs — Ed25519 signature valid
 
 | Issue | Symptom | Solution |
 |---|---|---|
-| **Local mode: keys not generated** | Engine logs "permission denied" on startup | Check `BYTEBREW_JWT_KEYS_DIR` is writable by engine process |
+| **Local mode: keys not generated** | Engine logs "permission denied" on startup | Check `SYNTHETICBREW_JWT_KEYS_DIR` is writable by engine process |
 | **External mode: token rejected** | 401 response with "invalid signature" | Verify public key matches the private key used to sign token |
 | **SPA shows login loop** | Admin SPA redirects to landing repeatedly | Ensure `VITE_AUTH_MODE` matches engine mode (`local` or `external`) |
 | **Token expired after 24 hours** | 401 after inactivity | Implement automatic token refresh or re-login flow in frontend |

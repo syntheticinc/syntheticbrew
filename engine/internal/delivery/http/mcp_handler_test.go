@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/internal/service/mcp"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // stubMCPService is an MCPService that records calls; Create/Update return
@@ -62,9 +62,9 @@ func (s *stubMCPService) RefreshMCPServer(ctx context.Context, name string) (int
 }
 
 // policyFromEnv returns the transport policy that matches the current
-// BYTEBREW_MODE env var — mirrors the production wiring in server.go.
+// SYNTHETICBREW_MODE env var — mirrors the production wiring in server.go.
 func policyFromEnv() mcp.TransportPolicy {
-	if os.Getenv("BYTEBREW_MODE") == "cloud" {
+	if os.Getenv("SYNTHETICBREW_MODE") == "cloud" {
 		return mcp.RestrictedTransportPolicy{}
 	}
 	return mcp.PermissiveTransportPolicy{}
@@ -78,9 +78,9 @@ func newMCPTestRouter(svc *stubMCPService) http.Handler {
 }
 
 // TestMCPHandler_Create_CE_AllowsStdio verifies that stdio MCP servers are
-// accepted in the default CE deployment mode (no BYTEBREW_MODE env var).
+// accepted in the default CE deployment mode (no SYNTHETICBREW_MODE env var).
 func TestMCPHandler_Create_CE_AllowsStdio(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "ce")
+	t.Setenv("SYNTHETICBREW_MODE", "ce")
 
 	svc := &stubMCPService{}
 	router := newMCPTestRouter(svc)
@@ -104,7 +104,7 @@ func TestMCPHandler_Create_CE_AllowsStdio(t *testing.T) {
 // rejected with 400 in Cloud deployment mode (the security gate that
 // prevents arbitrary RCE on the Cloud-hosted engine host).
 func TestMCPHandler_Create_Cloud_BlocksStdio(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "cloud")
+	t.Setenv("SYNTHETICBREW_MODE", "cloud")
 
 	svc := &stubMCPService{}
 	router := newMCPTestRouter(svc)
@@ -130,7 +130,7 @@ func TestMCPHandler_Create_Cloud_BlocksStdio(t *testing.T) {
 // "docker" — the CHECK constraint would fail at INSERT time if we let it
 // through, so the handler must reject it up front.
 func TestMCPHandler_Create_RejectsDocker(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "ce")
+	t.Setenv("SYNTHETICBREW_MODE", "ce")
 
 	svc := &stubMCPService{}
 	router := newMCPTestRouter(svc)
@@ -153,7 +153,7 @@ func TestMCPHandler_Create_RejectsDocker(t *testing.T) {
 // TestMCPHandler_Create_Cloud_AllowsHTTP verifies HTTP/SSE transports still
 // work in Cloud (they stay network-bound and don't spawn processes).
 func TestMCPHandler_Create_Cloud_AllowsHTTP(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "cloud")
+	t.Setenv("SYNTHETICBREW_MODE", "cloud")
 
 	svc := &stubMCPService{}
 	router := newMCPTestRouter(svc)
@@ -180,7 +180,7 @@ func TestMCPHandler_Create_Cloud_AllowsHTTP(t *testing.T) {
 // handler→service contract — service-level wiring is exercised in the
 // app-layer integration test.
 func TestHandlerCRUD_NotifiesService_OnSuccess(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "ce")
+	t.Setenv("SYNTHETICBREW_MODE", "ce")
 
 	svc := &stubMCPService{}
 	router := newMCPTestRouter(svc)
@@ -222,7 +222,7 @@ func TestHandlerCRUD_NotifiesService_OnSuccess(t *testing.T) {
 // 200 path: stub returns a fixed count; handler echoes it. 404 path: stub
 // returns a NotFound DomainError, handler maps to 404.
 func TestHandler_Refresh_RoutesToService(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "ce")
+	t.Setenv("SYNTHETICBREW_MODE", "ce")
 
 	t.Run("200 with tools_count", func(t *testing.T) {
 		svc := &stubMCPService{refreshToolsCount: 7}
@@ -261,7 +261,7 @@ func TestHandler_Refresh_RoutesToService(t *testing.T) {
 // TestMCPHandler_Update_Cloud_BlocksStdio verifies the update path has the
 // same guard as create.
 func TestMCPHandler_Update_Cloud_BlocksStdio(t *testing.T) {
-	t.Setenv("BYTEBREW_MODE", "cloud")
+	t.Setenv("SYNTHETICBREW_MODE", "cloud")
 
 	svc := &stubMCPService{}
 	router := newMCPTestRouter(svc)

@@ -1,6 +1,6 @@
-# Contributing to ByteBrew
+# Contributing to SyntheticBrew
 
-Thank you for your interest in contributing to ByteBrew! This guide will help you get started.
+Thank you for your interest in contributing to SyntheticBrew! This guide will help you get started.
 
 ## Before You Start
 
@@ -21,8 +21,8 @@ Thank you for your interest in contributing to ByteBrew! This guide will help yo
 
 ```bash
 # Clone
-git clone https://github.com/syntheticinc/bytebrew.git
-cd bytebrew
+git clone https://github.com/syntheticinc/syntheticbrew.git
+cd syntheticbrew
 
 # Backend
 go mod download
@@ -55,7 +55,7 @@ curl http://localhost:8443/api/v1/health
 
 ## Architecture
 
-ByteBrew follows **Clean Architecture** with strict layer separation:
+SyntheticBrew follows **Clean Architecture** with strict layer separation:
 
 ```
 cmd/ce/              Entry point (Community Edition)
@@ -124,7 +124,7 @@ admin/               React/TypeScript admin dashboard
 
 ## Reporting Issues
 
-Use [GitHub Issues](https://github.com/syntheticinc/bytebrew/issues) with the provided templates:
+Use [GitHub Issues](https://github.com/syntheticinc/syntheticbrew/issues) with the provided templates:
 - **Bug Report** — include steps to reproduce, logs, environment
 - **Feature Request** — describe the problem you're solving
 

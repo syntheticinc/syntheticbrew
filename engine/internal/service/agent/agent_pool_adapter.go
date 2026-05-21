@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // AgentPoolAdapter adapts AgentPool to tools.AgentPoolForTool interface

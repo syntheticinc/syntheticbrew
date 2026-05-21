@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // refreshKey identifies an active refresh task by tenant + server name.

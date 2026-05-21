@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
 )
 
 // fakeChatService is a minimal ChatService that captures the context it

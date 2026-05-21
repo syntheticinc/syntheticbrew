@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/syntheticinc/bytebrew/engine/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
 
 // BuildSystemPrompt composes a full system prompt from an agent definition.

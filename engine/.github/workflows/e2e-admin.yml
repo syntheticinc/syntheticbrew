@@ -23,24 +23,24 @@ jobs:
       PLAYWRIGHT_BASE_URL: http://localhost:18082
 
     steps:
-      - name: Checkout bytebrew
+      - name: Checkout syntheticbrew
         uses: actions/checkout@v4
         with:
-          path: bytebrew
+          path: syntheticbrew
 
       - name: Checkout companion repo (cloud-web)
         uses: actions/checkout@v4
         with:
-          repository: syntheticinc/bytebrew-cloud-web
+          repository: syntheticinc/syntheticbrew-cloud-web
           token: ${{ secrets.WORKSPACE_CLONE_TOKEN }}
-          path: bytebrew-cloud-web
+          path: syntheticbrew-cloud-web
 
       - name: Start Cloud-full stack (with auto-verify email)
         run: |
-          cd bytebrew/local-dev
+          cd syntheticbrew/local-dev
           docker compose -f docker-compose-cloud-full.yml -p cloud-full up -d --build --wait
         env:
-          BYTEBREW_INTERNAL_AUTO_VERIFY_EMAIL: 'true'
+          SYNTHETICBREW_INTERNAL_AUTO_VERIFY_EMAIL: 'true'
 
       - name: Wait for health endpoint
         run: |
@@ -57,11 +57,11 @@ jobs:
           exit 1
 
       - name: Install Playwright browsers
-        working-directory: bytebrew/engine/admin
+        working-directory: syntheticinc/engine/admin
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright E2E
-        working-directory: bytebrew/engine/admin
+        working-directory: syntheticinc/engine/admin
         run: npm run test:e2e
         env:
           CI: 'true'
@@ -71,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-engine-admin
-          path: bytebrew/engine/admin/playwright-report/
+          path: syntheticinc/engine/admin/playwright-report/
           retention-days: 7
 
       - name: Upload trace artifacts on failure
@@ -79,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces-engine-admin
-          path: bytebrew/engine/admin/test-results/
+          path: syntheticinc/engine/admin/test-results/
           retention-days: 7
 
       - name: Dump container logs on failure
@@ -101,5 +101,5 @@ jobs:
       - name: Stop stack
         if: always()
         run: |
-          cd bytebrew/local-dev
+          cd syntheticbrew/local-dev
           docker compose -f docker-compose-cloud-full.yml -p cloud-full down -v

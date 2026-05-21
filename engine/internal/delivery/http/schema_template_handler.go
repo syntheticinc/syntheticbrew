@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	svcschematemplate "github.com/syntheticinc/bytebrew/engine/internal/service/schematemplate"
-	ucschematemplate "github.com/syntheticinc/bytebrew/engine/internal/usecase/schematemplate"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	svcschematemplate "github.com/syntheticinc/syntheticbrew/internal/service/schematemplate"
+	ucschematemplate "github.com/syntheticinc/syntheticbrew/internal/usecase/schematemplate"
 )
 
 // SchemaTemplateResponse is the wire shape for a catalog entry returned by

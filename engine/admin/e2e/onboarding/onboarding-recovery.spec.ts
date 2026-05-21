@@ -9,7 +9,7 @@ import { execSync } from 'node:child_process';
 // hatch for the test fixture.
 function execEngineSql(sql: string): string {
   return execSync(
-    `docker exec bytebrew-cloud-db-1 psql -U postgres -d bytebrew_engine_test -tAc "${sql.replace(/"/g, '\\"')}"`,
+    `docker exec syntheticbrew-cloud-db-1 psql -U postgres -d syntheticbrew_engine_test -tAc "${sql.replace(/"/g, '\\"')}"`,
     { encoding: 'utf8' },
   ).trim();
 }
@@ -70,7 +70,7 @@ test.describe('OnboardingGate recovery', () => {
     // strictly to this test's tenant — multiple tenants share builder-assistant
     // by name and we must not touch other tenants' rows.
     const tenantID = execSync(
-      `docker exec bytebrew-cloud-db-1 psql -U postgres -d cloud_api_test -tAc "SELECT id FROM users WHERE email='${email}'"`,
+      `docker exec syntheticbrew-cloud-db-1 psql -U postgres -d cloud_api_test -tAc "SELECT id FROM users WHERE email='${email}'"`,
       { encoding: 'utf8' },
     ).trim();
     expect(tenantID).toMatch(/^[0-9a-f-]{36}$/);

@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/service/lifecycle"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/service/lifecycle"
 )
 
 // lifecycleHTTPAdapter bridges lifecycle.Manager to the HTTP LifecycleProvider interface.

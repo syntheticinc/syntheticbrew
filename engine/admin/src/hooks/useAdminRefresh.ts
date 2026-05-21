@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-export const ADMIN_CHANGED_EVENT = 'bytebrew:admin-changed';
+export const ADMIN_CHANGED_EVENT = 'syntheticbrew:admin-changed';
 
 export interface AdminChangedDetail {
   tool: string;

@@ -1,0 +1,105 @@
+# values.example.yaml — minimal example for production CE deploy on K8s.
+# Copy to values.yaml, fill in the marked fields, then apply:
+#   helm install syntheticbrew ./syntheticbrew -f values.yaml
+#
+# Required fields are marked <REQUIRED>. Everything else uses sensible defaults.
+
+replicaCount: 1                                   # local auth mode supports 1 replica only
+
+image:
+  repository: syntheticinc/engine                     # <REQUIRED: adjust to your registry if self-hosting>
+  tag: "2.0.0"                                    # pin to the release you validated
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8443
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    # Sticky sessions — required for SSE streaming to stay on one pod.
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "syntheticbrew-sticky"
+    nginx.ingress.kubernetes.io/session-cookie-hash: "sha1"
+    # Long-lived SSE connections — bump read/send timeouts.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # cert-manager TLS (optional — remove if managing certs externally)
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: syntheticbrew.example.com                  # <REQUIRED: your domain>
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: syntheticbrew-tls
+      hosts:
+        - syntheticbrew.example.com                    # <REQUIRED: match host above>
+
+postgresql:
+  external:
+    host: postgres.your-cluster.local             # <REQUIRED: managed PG endpoint>
+    port: 5432
+    database: syntheticbrew                            # create this DB beforehand
+    username: syntheticbrew                            # <REQUIRED>
+    password: ""                                  # <REQUIRED — prefer existingSecret>
+    sslmode: require                              # prod: 'require' or 'verify-full'
+    # existingSecret: syntheticbrew-db-creds           # Alternative to password: mount Secret
+
+config:
+  # agents.yaml content — leave empty, manage via Admin Dashboard after first boot.
+  agents: ""
+
+  auth:
+    # 'local' — engine generates its own Ed25519 keypair on first boot, persisted
+    # in jwtKeysPath (requires PVC). Single-replica only.
+    # 'external' — engine validates tokens signed by an external IdP's private key;
+    # provide the public key via jwtPublicKeyPath (ConfigMap or Secret mount).
+    mode: "local"
+    jwtKeysPath: "/var/lib/syntheticbrew/keys"
+    jwtPublicKeyPath: ""
+
+  # Embedding model for Knowledge Base RAG (optional).
+  # Leave empty to disable knowledge capability.
+  embedURL: ""
+  embedModel: nomic-embed-text
+  embedDim: 768
+
+secrets:
+  # LLM provider credentials are not set here — configure them
+  # post-install via the Admin Dashboard onboarding wizard or
+  # Admin → Models.
+
+persistence:
+  keys:
+    enabled: true                                 # required when auth.mode=local
+    size: 1Mi
+    storageClass: ""                              # leave empty to use default
+    accessMode: ReadWriteOnce
+
+  knowledge:
+    enabled: false                                # enable if using Knowledge Base
+    size: 10Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false                                  # only with auth.mode=external
+
+serviceMonitor:
+  enabled: false                                  # enable if running Prometheus Operator
+
+# Optional Kubernetes placement hints
+nodeSelector: {}
+tolerations: []
+affinity: {}

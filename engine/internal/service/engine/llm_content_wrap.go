@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // wrapContentForLLMContext wraps tool output with prompt-injection markers

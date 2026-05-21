@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
-	pkgerrors "github.com/syntheticinc/bytebrew/engine/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"gorm.io/gorm"
 )
 

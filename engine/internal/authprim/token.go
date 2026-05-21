@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// Prefix marks a string as a ByteBrew API token. Stable on-disk format.
+	// Prefix marks a string as a SyntheticBrew API token. Stable on-disk format.
 	Prefix = "bb_"
 	// HexLen is the number of hex characters after Prefix (32 random bytes).
 	HexLen = 64
@@ -62,7 +62,7 @@ func Hash(plain string) string {
 }
 
 // ValidateFormat checks that plain matches `bb_<64 lowercase hex>`. Used by
-// the bootstrap seed to fail-fast on misconfigured BYTEBREW_BOOTSTRAP_ADMIN_TOKEN.
+// the bootstrap seed to fail-fast on misconfigured SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN.
 // The middleware does not call this — it only verifies the prefix and lets
 // the DB lookup reject malformed tokens.
 //

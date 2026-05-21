@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ByteBrew CLI installer for macOS and Linux.
-# Usage: curl -fsSL https://bytebrew.ai/releases/install.sh | sh
+# SyntheticBrew CLI installer for macOS and Linux.
+# Usage: curl -fsSL https://syntheticbrew.ai/releases/install.sh | sh
 
-BASE_URL="https://bytebrew.ai/releases"
-INSTALL_DIR="$HOME/.bytebrew/bin"
-BINARY_NAME="bytebrew"
+BASE_URL="https://syntheticbrew.ai/releases"
+INSTALL_DIR="$HOME/.syntheticbrew/bin"
+BINARY_NAME="syntheticbrew"
 
 # Detect OS
 OS="$(uname -s)"
@@ -41,13 +41,13 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-CLI_ARCHIVE="bytebrew_${VERSION}_${PLATFORM}.tar.gz"
+CLI_ARCHIVE="syntheticbrew_${VERSION}_${PLATFORM}.tar.gz"
 CLI_URL="${BASE_URL}/v${VERSION}/${CLI_ARCHIVE}"
 
-SRV_ARCHIVE="bytebrew-srv_${VERSION}_${PLATFORM}.tar.gz"
+SRV_ARCHIVE="syntheticbrew-srv_${VERSION}_${PLATFORM}.tar.gz"
 SRV_URL="${BASE_URL}/v${VERSION}/${SRV_ARCHIVE}"
 
-echo "Installing ByteBrew v${VERSION} (${PLATFORM})..."
+echo "Installing SyntheticBrew v${VERSION} (${PLATFORM})..."
 echo ""
 
 # Create install directory
@@ -78,21 +78,21 @@ if ! curl -fsSL -o "${TMP_DIR}/${SRV_ARCHIVE}" "$SRV_URL"; then
 fi
 
 tar -xzf "${TMP_DIR}/${SRV_ARCHIVE}" -C "$TMP_DIR"
-mv "${TMP_DIR}/bytebrew-srv" "${INSTALL_DIR}/bytebrew-srv"
-chmod +x "${INSTALL_DIR}/bytebrew-srv"
+mv "${TMP_DIR}/syntheticbrew-srv" "${INSTALL_DIR}/syntheticbrew-srv"
+chmod +x "${INSTALL_DIR}/syntheticbrew-srv"
 
 echo ""
 echo "Installed to ${INSTALL_DIR}"
-echo "  bytebrew     (CLI)"
-echo "  bytebrew-srv (Server)"
+echo "  syntheticbrew     (CLI)"
+echo "  syntheticbrew-srv (Server)"
 
 # Check PATH
 case ":${PATH}:" in
   *":${INSTALL_DIR}:"*)
     echo ""
     echo "Ready! Run:"
-    echo "  bytebrew login    # authenticate with your account"
-    echo "  bytebrew          # start coding"
+    echo "  syntheticbrew login    # authenticate with your account"
+    echo "  syntheticbrew          # start coding"
     ;;
   *)
     echo ""
@@ -107,7 +107,7 @@ case ":${PATH}:" in
     fi
     echo ""
     echo "Then run:"
-    echo "  bytebrew login    # authenticate with your account"
-    echo "  bytebrew          # start coding"
+    echo "  syntheticbrew login    # authenticate with your account"
+    echo "  syntheticbrew          # start coding"
     ;;
 esac

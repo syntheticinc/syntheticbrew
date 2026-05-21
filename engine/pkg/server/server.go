@@ -5,7 +5,7 @@
 // used when none is provided.
 package server
 
-import "github.com/syntheticinc/bytebrew/engine/internal/app"
+import "github.com/syntheticinc/syntheticbrew/internal/app"
 
 // Config is the engine server configuration.
 type Config = app.ServerConfig

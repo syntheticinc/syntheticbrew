@@ -21,7 +21,7 @@ type ToolMetadata struct {
 
 // toolMetadataRegistry holds metadata for all built-in tools currently
 // exposed by the engine. Self-hosted file/shell/LSP tools were parked into
-// bytebrew-archive; their metadata was removed along with the tool code.
+// syntheticbrew-archive; their metadata was removed along with the tool code.
 var toolMetadataRegistry = map[string]ToolMetadata{
 	// === SAFE ZONE — coordination and capability tools ===
 	"manage_tasks": {

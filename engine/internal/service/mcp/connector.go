@@ -3,8 +3,8 @@ package mcp
 import (
 	"context"
 
-	infrastructure_mcp "github.com/syntheticinc/bytebrew/engine/internal/infrastructure/mcp"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	infrastructure_mcp "github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 // ConnectAll iterates the persisted MCP server records and dials each one,

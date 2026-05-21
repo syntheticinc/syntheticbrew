@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# deploy_smoke_k8s.sh — Kubernetes (kind) deploy smoke test for ByteBrew Engine.
+# deploy_smoke_k8s.sh — Kubernetes (kind) deploy smoke test for SyntheticBrew Engine.
 #
 # Requires: kind, helm, kubectl, curl
-# Usage: bash bytebrew/engine/scripts/deploy_smoke_k8s.sh
+# Usage: bash syntheticinc/engine/scripts/deploy_smoke_k8s.sh
 #
 # The script:
 #   1. Creates a kind cluster
@@ -16,9 +16,9 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="bytebrew-smoke"
-IMAGE_NAME="bytebrew-engine:smoke"
-HELM_CHART="bytebrew/engine/deploy/helm/bytebrew"
+CLUSTER_NAME="syntheticbrew-smoke"
+IMAGE_NAME="syntheticbrew-engine:smoke"
+HELM_CHART="syntheticinc/engine/deploy/helm/syntheticbrew"
 NAMESPACE="default"
 PF_PORT="18443"
 HEALTH_ENDPOINT="http://localhost:${PF_PORT}/api/v1/health"
@@ -63,7 +63,7 @@ kind create cluster --name "$CLUSTER_NAME" --wait 60s
 
 echo "==> Building engine image..."
 docker build \
-  -f bytebrew/engine/Dockerfile \
+  -f syntheticinc/engine/Dockerfile \
   -t "$IMAGE_NAME" \
   . 2>&1 | tail -5
 
@@ -73,10 +73,10 @@ kind load docker-image "$IMAGE_NAME" --name "$CLUSTER_NAME"
 # ── 3. Helm install ──────────────────────────────────────────────────────────
 
 echo "==> Installing Helm chart..."
-helm install bytebrew-smoke "$HELM_CHART" \
+helm install syntheticbrew-smoke "$HELM_CHART" \
   --namespace "$NAMESPACE" \
   --set auth.mode=local \
-  --set image.repository=bytebrew-engine \
+  --set image.repository=syntheticbrew-engine \
   --set image.tag=smoke \
   --set image.pullPolicy=Never \
   --set service.port=8443 \
@@ -87,7 +87,7 @@ helm install bytebrew-smoke "$HELM_CHART" \
 echo "==> Waiting for engine pod to be ready..."
 kubectl wait \
   --for=condition=ready pod \
-  -l app.kubernetes.io/name=bytebrew-engine \
+  -l app.kubernetes.io/name=syntheticbrew-engine \
   --timeout=120s \
   --namespace "$NAMESPACE"
 
@@ -95,7 +95,7 @@ kubectl wait \
 
 echo "==> Port-forwarding engine service to localhost:${PF_PORT}..."
 kubectl port-forward \
-  svc/bytebrew-smoke \
+  svc/syntheticbrew-smoke \
   "${PF_PORT}:8443" \
   --namespace "$NAMESPACE" &
 PF_PID=$!

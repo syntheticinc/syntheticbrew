@@ -168,13 +168,13 @@ export const MOCK_AUDIT_LOGS: PaginatedResponse<AuditEntry> = {
   total_pages: 1,
 };
 
-export const MOCK_CONFIG_YAML = `# ByteBrew Engine Configuration
+export const MOCK_CONFIG_YAML = `# SyntheticBrew Engine Configuration
 server:
   host: 0.0.0.0
   port: 8443
 
 database:
-  url: postgres://bytebrew:password@localhost:5432/bytebrew
+  url: postgres://syntheticbrew:password@localhost:5432/syntheticbrew
 
 auth:
   admin_username: admin

@@ -16,7 +16,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"gorm.io/gorm"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
 // ModelCache provides thread-safe caching of LLM clients resolved from the database.

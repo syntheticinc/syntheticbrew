@@ -1,0 +1,114 @@
+{{- if .Values.configApply.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "syntheticbrew-engine.fullname" . }}-config-apply
+  labels:
+    {{- include "syntheticbrew-engine.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  activeDeadlineSeconds: {{ .Values.configApply.activeDeadlineSeconds }}
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "syntheticbrew-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: config-apply
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "syntheticbrew-engine.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-engine
+          image: curlimages/curl:8.5.0
+          env:
+            - name: ENGINE_URL
+              value: "http://{{ include "syntheticbrew-engine.fullname" . }}:{{ .Values.service.port }}"
+          command:
+            - sh
+            - -c
+            - |
+              for i in $(seq 1 150); do
+                if curl -sf "$ENGINE_URL/api/v1/health" > /dev/null; then
+                  echo "Engine ready after $i attempts"
+                  exit 0
+                fi
+                echo "Waiting for engine... ($i/150)"
+                sleep 2
+              done
+              echo "Engine did not become ready after 5 minutes" >&2
+              exit 1
+      containers:
+        - name: brewctl-apply
+          image: "{{ .Values.configApply.image.repository }}:{{ .Values.configApply.image.tag }}"
+          imagePullPolicy: {{ .Values.configApply.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Image entrypoint is /brewctl (binary at root, not in PATH).
+          # Pass arguments via `args` so the entrypoint stays in effect.
+          #
+          # Path is the explicit ConfigMap-rendered file (`syntheticbrew.yaml`), NOT
+          # the parent directory. `brewctl apply -f <dir>` walks subdirectories
+          # `models/`, `agents/`, `schemas/` only — top-level files in the dir
+          # are NOT read. ConfigMap volume mounts each data key as a top-level
+          # file, so we must point brewctl at the file directly. See
+          # syntheticbrew-brewctl/internal/loader/loader.go (loadFromDirectory).
+          args: ["apply", "-f", "/etc/syntheticbrew/config/syntheticbrew.yaml", "--yes"]
+          env:
+            - name: BREWCTL_ENGINE_URL
+              value: "http://{{ include "syntheticbrew-engine.fullname" . }}:{{ .Values.service.port }}"
+            - name: BREWCTL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "configApply.tokenSecret is required when configApply.enabled=true. Create a Secret with the admin token first (kubectl create secret generic syntheticbrew-token --from-literal=token=bb_xxx)." .Values.configApply.tokenSecret }}
+                  key: token
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if or .Values.configApply.apiKeysSecret .Values.extraEnvFrom }}
+          envFrom:
+            {{- if .Values.configApply.apiKeysSecret }}
+            - secretRef:
+                name: {{ .Values.configApply.apiKeysSecret }}
+            {{- end }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: syntheticbrew-config
+              mountPath: /etc/syntheticbrew/config
+              readOnly: true
+            {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.configApply.resources | nindent 12 }}
+      volumes:
+        - name: syntheticbrew-config
+          configMap:
+            name: {{ if .Values.configApply.existingConfigMap }}{{ .Values.configApply.existingConfigMap }}{{ else }}{{ include "syntheticbrew-engine.fullname" . }}-syntheticbrew-config{{ end }}
+        {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

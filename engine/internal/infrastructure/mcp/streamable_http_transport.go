@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // StreamableHTTPTransport connects to an MCP server via the Streamable HTTP transport

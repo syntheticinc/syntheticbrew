@@ -10,7 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/service/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/service/mcp"
 )
 
 // allowedMCPTransports matches target-schema.dbml mcp_servers.type CHECK:

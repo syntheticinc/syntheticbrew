@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
-const DISMISS_KEY = 'bytebrew_github_star_banner_dismissed';
-const REPO_URL = 'https://github.com/syntheticinc/bytebrew';
+const DISMISS_KEY = 'syntheticbrew_github_star_banner_dismissed';
+const REPO_URL = 'https://github.com/syntheticinc/syntheticbrew';
 
 const iconClass = 'w-[14px] h-[14px] shrink-0';
 
@@ -70,14 +70,14 @@ export function GitHubStarBanner() {
       <div className="flex items-center gap-2 min-w-0">
         {StarIcon}
         <span className="truncate">
-          Enjoying ByteBrew? Star us on GitHub and help others discover it —{' '}
+          Enjoying SyntheticBrew? Star us on GitHub and help others discover it —{' '}
           <a
             href={REPO_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-brand-light underline underline-offset-2 decoration-brand-shade3/40 hover:decoration-brand-accent hover:text-brand-accent transition-colors"
           >
-            github.com/syntheticinc/bytebrew
+            github.com/syntheticinc/syntheticbrew
           </a>
         </span>
       </div>

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	eehttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	eehttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 )
 
 // fakeLookup is a test double for WidgetEmbedOriginsLookup.

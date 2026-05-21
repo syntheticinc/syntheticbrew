@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	deliveryhttp "github.com/syntheticinc/bytebrew/engine/internal/delivery/http"
-	"github.com/syntheticinc/bytebrew/engine/internal/domain"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/persistence/configrepo"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/taskrunner"
-	"github.com/syntheticinc/bytebrew/engine/internal/infrastructure/tools"
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/taskrunner"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // sessionUserReader looks up the owner of a session by JWT sub.

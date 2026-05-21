@@ -1,7 +1,7 @@
 .PHONY: help deps proto build build-release run test test-coverage lint clean migrate-up migrate-down dev
 
 # Variables
-BINARY_NAME=bytebrew-srv
+BINARY_NAME=syntheticbrew-srv
 PROTO_DIR=api/proto
 PROTO_OUT_DIR=api/proto/gen
 CONFIG_DIR=config

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	pluginpkg "github.com/syntheticinc/bytebrew/engine/pkg/plugin"
+	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 	"gorm.io/gorm"
 )
 

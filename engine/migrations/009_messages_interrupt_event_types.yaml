@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: 009_messages_interrupt_event_types
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Extends messages.event_type CHECK constraint with the HITL Interrupt
         Primitive event types (engine 1.2.0). Without this, the messages

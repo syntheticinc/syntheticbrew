@@ -1,0 +1,204 @@
+{{- if eq .Values.config.auth.mode "local" -}}
+  {{- if gt (int .Values.replicaCount) 1 -}}
+{{- fail "auth.mode=local supports only replicaCount=1 (single-writer JWT keypair on PVC). For HA use auth.mode=external with a pre-provisioned public key." -}}
+  {{- end -}}
+  {{- if and .Values.autoscaling.enabled (gt (int .Values.autoscaling.maxReplicas) 1) -}}
+{{- fail "auth.mode=local with autoscaling.enabled and maxReplicas>1 is unsafe — HPA would scale past a single-writer JWT keypair PVC and cause auth races. Disable autoscaling, set maxReplicas=1, or use auth.mode=external for HA." -}}
+  {{- end -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "syntheticbrew-engine.fullname" . }}
+  labels:
+    {{- include "syntheticbrew-engine.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  # Deployment strategy.
+  # auth.mode=local pins replicaCount=1 with a ReadWriteOnce PVC for the JWT
+  # keypair. K8s default RollingUpdate creates the new pod BEFORE deleting the
+  # old one — the new pod then deadlocks on Pending because the old pod still
+  # holds the RWO PVC attachment. `helm upgrade --atomic` times out and rolls
+  # back. Default to Recreate for local mode (kill old → release PVC → start
+  # new); users on auth.mode=external (HA) keep RollingUpdate semantics.
+  # Override via .Values.deploymentStrategy when needed (RWX storage etc).
+  {{- if .Values.deploymentStrategy }}
+  strategy:
+    {{- toYaml .Values.deploymentStrategy | nindent 4 }}
+  {{- else if eq .Values.config.auth.mode "local" }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "syntheticbrew-engine.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.postgresql.external.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "syntheticbrew-engine.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "syntheticbrew-engine.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.extraInitContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: engine
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8443
+              protocol: TCP
+          env:
+            # Engine writes a runtime port-file to $HOME/.local/share/syntheticbrew/server.port.
+            # With runAsUser=1000 and no allocated home dir, $HOME defaults to "/" which is
+            # not writable for non-root. Pin HOME to a writable path inside the container.
+            - name: HOME
+              value: "/tmp"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "syntheticbrew-engine.databaseSecretName" . }}
+                  key: {{ include "syntheticbrew-engine.databaseSecretKey" . }}
+            - name: SYNTHETICBREW_AUTH_MODE
+              value: {{ .Values.config.auth.mode | quote }}
+            {{- if eq .Values.config.auth.mode "local" }}
+            - name: SYNTHETICBREW_JWT_KEYS_DIR
+              value: {{ .Values.config.auth.jwtKeysPath | quote }}
+            {{- end }}
+            {{- if eq .Values.config.auth.mode "external" }}
+            - name: SYNTHETICBREW_JWT_PUBLIC_KEY_PATH
+              value: {{ .Values.config.auth.jwtPublicKeyPath | quote }}
+            {{- end }}
+            {{- if .Values.config.embedURL }}
+            - name: EMBED_URL
+              value: {{ .Values.config.embedURL | quote }}
+            - name: EMBED_MODEL
+              value: {{ .Values.config.embedModel | quote }}
+            - name: EMBED_DIM
+              value: {{ .Values.config.embedDim | quote }}
+            {{- end }}
+            {{- if .Values.persistence.knowledge.enabled }}
+            # Engine writes uploaded KB files to {DATA_DIR}/knowledge/{tenant}/{kb}/.
+            # Without DATA_DIR set, engine falls back to os.UserConfigDir() — empty
+            # in containers with no HOME — which collapses to relative "./data"
+            # and fails on readOnlyRootFilesystem (or non-root cwd) with
+            # "create knowledge directory: mkdir data: permission denied".
+            # Pinning DATA_DIR to the parent of the mounted PVC keeps every
+            # write inside persistent storage.
+            - name: DATA_DIR
+              value: /etc/syntheticbrew
+            {{- end }}
+            {{- if .Values.bootstrapAdminToken.enabled }}
+            - name: SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "bootstrapAdminToken.existingSecret is required when bootstrapAdminToken.enabled=true" .Values.bootstrapAdminToken.existingSecret }}
+                  key: {{ .Values.bootstrapAdminToken.existingSecretKey | default "token" }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.config.agents }}
+            - name: config
+              mountPath: /etc/syntheticbrew/agents.yaml
+              subPath: agents.yaml
+              readOnly: true
+            {{- end }}
+            {{- if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled }}
+            - name: keys
+              mountPath: {{ .Values.config.auth.jwtKeysPath | quote }}
+            {{- end }}
+            {{- if .Values.persistence.knowledge.enabled }}
+            - name: knowledge
+              mountPath: /etc/syntheticbrew/knowledge
+            {{- end }}
+            {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
+            # Auto-mounted when readOnlyRootFilesystem is enabled. Engine writes
+            # server.port discovery file (HOME=/tmp), Liquibase + GORM stage temp.
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        {{- if .Values.config.agents }}
+        - name: config
+          configMap:
+            name: {{ include "syntheticbrew-engine.fullname" . }}-config
+        {{- end }}
+        {{- if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled }}
+        - name: keys
+          persistentVolumeClaim:
+            claimName: {{ include "syntheticbrew-engine.fullname" . }}-keys
+        {{- end }}
+        {{- if .Values.persistence.knowledge.enabled }}
+        - name: knowledge
+          persistentVolumeClaim:
+            claimName: {{ include "syntheticbrew-engine.fullname" . }}-knowledge
+        {{- end }}
+        {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

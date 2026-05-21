@@ -1,4 +1,4 @@
-# Prompts Configuration for ByteBrew Server Agent
+# Prompts Configuration for SyntheticBrew Server Agent
 # Tool-specific instructions are in tool descriptions (Desc fields).
 
 prompts:
@@ -419,7 +419,7 @@ prompts:
     "Create a mobile app in Flutter. The app should work as a CLI for writing code with syntax highlighting and command execution."
 
     ✅ THIS IS CORRECT (structured, with file paths from research):
-    "Type: User Story\nGoal: Create Flutter gRPC client for bytebrew-srv server\nContext: Server exposes FlowService.Stream RPC (api/proto/flow.proto:15). Existing Flutter project at bytebrew/mobile_app with pubspec.yaml dependencies.\nChanges Required:\n1. Generate Dart gRPC stubs from flow.proto\n2. Create lib/services/grpc_client.dart\n3. Create lib/screens/chat_screen.dart\nAcceptance: flutter build apk compiles. App connects to localhost:60401.\nConstraints: Don't modify server code."
+    "Type: User Story\nGoal: Create Flutter gRPC client for syntheticbrew-srv server\nContext: Server exposes FlowService.Stream RPC (api/proto/flow.proto:15). Existing Flutter project at syntheticbrew/mobile_app with pubspec.yaml dependencies.\nChanges Required:\n1. Generate Dart gRPC stubs from flow.proto\n2. Create lib/services/grpc_client.dart\n3. Create lib/screens/chat_screen.dart\nAcceptance: flutter build apk compiles. App connects to localhost:60401.\nConstraints: Don't modify server code."
 
     ### Step 3: User Approval (automatic)
     The `manage_tasks(action=create)` call **automatically asks the user for approval** and blocks until they respond.

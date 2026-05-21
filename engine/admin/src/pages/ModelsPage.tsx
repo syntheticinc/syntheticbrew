@@ -27,7 +27,7 @@ const PROVIDER_TYPES = [
 // Kind filter persisted in localStorage so operators keep their chosen view
 // across page navigations. Matches the pattern used for prototype mode.
 type KindFilter = 'all' | 'chat' | 'embedding';
-const KIND_FILTER_KEY = 'bytebrew_models_kind_filter';
+const KIND_FILTER_KEY = 'syntheticbrew_models_kind_filter';
 
 function readKindFilter(): KindFilter {
   const v = localStorage.getItem(KIND_FILTER_KEY);

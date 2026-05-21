@@ -125,7 +125,7 @@ Admin SPA session-expiry recovery + local-mode bind-exposure warning.
   external-without-landing throw, and idempotency across parallel 401s.
 
 ### Added
-- **Engine: startup `WARN` when `BYTEBREW_AUTH_MODE=local` and the HTTP
+- **Engine: startup `WARN` when `SYNTHETICBREW_AUTH_MODE=local` and the HTTP
   listener is bound to a non-loopback address**
   (`engine/internal/app/server.go`). Local auth mode has no real
   authentication — any request reaching the listen address can mint an
@@ -528,7 +528,7 @@ already trust the actor context.
 changeset `006_add_sessions_metadata.yaml`). Engine never reads or
 interprets the contents — opaque storage for clients that maintain their
 own multi-tenant layer (org_id, end-user mapping, etc.) on top of one
-ByteBrew tenant. Accepted on `POST /api/v1/sessions` and
+SyntheticBrew tenant. Accepted on `POST /api/v1/sessions` and
 `PUT /api/v1/sessions/{id}`, capped to 16KB (`SessionMetadataMaxBytes`),
 returned in GET responses. Migration is additive — existing rows backfill
 to `{}`.
@@ -542,7 +542,7 @@ to `{}`.
   actor context via `asTrustedProxy(req)` so the new ACL guard short-
   circuits and the existing tests continue to cover serialization +
   routing rather than ACL.
-- Multi-tenant + multi-user JWT regression tests live in `bytebrew-ee/tests/integration/`
+- Multi-tenant + multi-user JWT regression tests live in `syntheticbrew-ee/tests/integration/`
   (separate PR, paired release).
 
 ## [1.1.3] — 2026-05-08
@@ -686,7 +686,7 @@ to `{}`.
 ## [Unreleased] — 2026-04-28
 
 ### Added
-- `BYTEBREW_BOOTSTRAP_ADMIN_TOKEN` env support: when set, engine seeds an admin
+- `SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN` env support: when set, engine seeds an admin
   API token in `api_tokens` on first boot (idempotent — skipped when
   `name="bootstrap-admin"` already exists). Enables automated declarative
   GitOps reconcile via `brewctl config-apply` in k8s deployments without
@@ -696,7 +696,7 @@ to `{}`.
 
 ## Architecture — CE/EE/Cloud Unification (pre-release)
 
-Initial canonical architecture for ByteBrew Engine. Frozen pre-release — no
+Initial canonical architecture for SyntheticBrew Engine. Frozen pre-release — no
 prior production clients, no upgrade path.
 
 ### Identity
@@ -706,12 +706,12 @@ prior production clients, no upgrade path.
 
 ### Auth
 - EdDSA (Ed25519) is the only JWT algorithm. No HS256 shared-secret path.
-- `BYTEBREW_AUTH_MODE=local`: engine auto-generates an Ed25519 keypair under
-  `BYTEBREW_JWT_KEYS_DIR` on first boot; admin sessions minted via
+- `SYNTHETICBREW_AUTH_MODE=local`: engine auto-generates an Ed25519 keypair under
+  `SYNTHETICBREW_JWT_KEYS_DIR` on first boot; admin sessions minted via
   `POST /api/v1/auth/local-session` (sub=`local-admin`, tenant_id empty).
   Single-replica use only.
-- `BYTEBREW_AUTH_MODE=external`: engine loads the issuer's public key from
-  `BYTEBREW_JWT_PUBLIC_KEY_PATH`; no local-session route. Multi-replica safe.
+- `SYNTHETICBREW_AUTH_MODE=external`: engine loads the issuer's public key from
+  `SYNTHETICBREW_JWT_PUBLIC_KEY_PATH`; no local-session route. Multi-replica safe.
 - Admin SPA selects flow at build time via `VITE_AUTH_MODE` (and
   `VITE_LANDING_URL` for external handoff).
 

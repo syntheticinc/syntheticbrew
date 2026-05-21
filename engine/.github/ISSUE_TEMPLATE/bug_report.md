@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in ByteBrew Engine
+about: Report a bug in SyntheticBrew Engine
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -19,7 +19,7 @@ A clear description of the bug.
 ## Actual Behavior
 
 ## Environment
-- ByteBrew version:
+- SyntheticBrew version:
 - Deployment: Docker / Kubernetes / Bare Metal
 - OS:
 - Go version:

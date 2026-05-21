@@ -4,7 +4,7 @@
 import { test, expect, apiFetch } from '../fixtures';
 
 test.describe('SCC-04 — Cloud: Tier 3 tools blocked', () => {
-  test.skip(true, 'SCC-04: Requires Cloud mode (BYTEBREW_CLOUD=true) with MCPTransportPolicy blocking stdio/file tools — skip in CE stack');
+  test.skip(true, 'SCC-04: Requires Cloud mode (SYNTHETICBREW_CLOUD=true) with MCPTransportPolicy blocking stdio/file tools — skip in CE stack');
 
   test('creating agent with file_read tool in Cloud mode: chat triggers tool_unavailable', async ({ request, adminToken }) => {
     const agentName = `scc04-agent-${Date.now()}`;

@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: add-extra-resource-name-format-check-preflight
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Pre-flight gate for the second wave of resource-name CHECK constraints.
         Engine 1.1.0 added DNS-label validation + CHECK on schemas/knowledge_bases
@@ -50,7 +50,7 @@ databaseChangeLog:
 
   - changeSet:
       id: add-extra-resource-name-format-check-constraint
-      author: bytebrew
+      author: syntheticbrew
       comment: |
         Add CHECK constraint on models.name, agents.name, mcp_servers.name.
         Engine HTTP layer (ValidateResourceName, applied at POST in 1.1.x) is

@@ -20,8 +20,8 @@ interface BottomPanelContextValue {
   setSelectedSchema: (s: string) => void;
 }
 
-const STORAGE_KEY = 'bytebrew_panel_state';
-const SCHEMA_KEY = 'bytebrew_panel_schema';
+const STORAGE_KEY = 'syntheticbrew_panel_state';
+const SCHEMA_KEY = 'syntheticbrew_panel_schema';
 
 // Default panel state: expanded and focused on AI Assistant tab.
 // The panel is the primary in-admin UX surface — users need to see where to

@@ -1,0 +1,50 @@
+# Test scenario: Gateway API HTTPRoute (Envoy / Cilium / Istio Gateway).
+# Render-validated ONLY — kind ships no Gateway API controller by default,
+# so attaching a real HTTPRoute requires extra setup out of scope here.
+# Stays in "Stable" tier (production canary actually exercises this
+# path against Envoy Gateway in production-like environment).
+replicaCount: 1
+
+image:
+  repository: syntheticinc/engine
+  tag: "1.1.11"
+
+postgresql:
+  external:
+    existingSecret: postgres-credentials
+    existingSecretKey: DATABASE_URL
+
+config:
+  auth:
+    mode: local
+    jwtKeysPath: /var/lib/syntheticbrew/keys
+
+persistence:
+  keys:
+    enabled: true
+    size: 1Mi
+    storageClass: standard
+
+ingress: { enabled: false }
+
+httpRoute:
+  enabled: true
+  routes:
+    - nameSuffix: api
+      hostnames:
+        - syntheticbrew.dev.example.com
+      parentRefs:
+        - name: internal
+          namespace: envoy-gateway-system
+          sectionName: https-dev-example-com
+      rules:
+        - matches:
+            - path: /
+              pathType: PathPrefix
+          servicePort: 8443
+
+migrations:
+  enabled: true
+  image:
+    repository: syntheticinc/engine-migrations
+    tag: "1.1.11"

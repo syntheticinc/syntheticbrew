@@ -1,4 +1,4 @@
-# ByteBrew Engine — Production Docker Compose
+# SyntheticBrew Engine — Production Docker Compose
 # Usage: cp .env.example .env && docker compose up -d
 
 services:
@@ -9,18 +9,18 @@ services:
     ports:
       - "${ENGINE_PORT:-8443}:8443"
     environment:
-      - DATABASE_URL=postgresql://bytebrew:${POSTGRES_PASSWORD:-bytebrew}@db:5432/bytebrew?sslmode=disable
-      - BYTEBREW_AUTH_MODE=${BYTEBREW_AUTH_MODE:-local}
-      - BYTEBREW_JWT_KEYS_DIR=${BYTEBREW_JWT_KEYS_DIR:-/var/lib/bytebrew/keys}
-      - BYTEBREW_JWT_PUBLIC_KEY_PATH=${BYTEBREW_JWT_PUBLIC_KEY_PATH:-}
+      - DATABASE_URL=postgresql://syntheticbrew:${POSTGRES_PASSWORD:-syntheticbrew}@db:5432/syntheticbrew?sslmode=disable
+      - SYNTHETICBREW_AUTH_MODE=${SYNTHETICBREW_AUTH_MODE:-local}
+      - SYNTHETICBREW_JWT_KEYS_DIR=${SYNTHETICBREW_JWT_KEYS_DIR:-/var/lib/syntheticbrew/keys}
+      - SYNTHETICBREW_JWT_PUBLIC_KEY_PATH=${SYNTHETICBREW_JWT_PUBLIC_KEY_PATH:-}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
       - BRIDGE_ENABLED=${BRIDGE_ENABLED:-false}
       - BRIDGE_URL=${BRIDGE_URL:-}
       - BRIDGE_AUTH_TOKEN=${BRIDGE_AUTH_TOKEN:-}
     volumes:
-      - engine-data:/var/lib/bytebrew
-      - engine-logs:/var/log/bytebrew
-      - ./config.yaml:/etc/bytebrew/bytebrew.yaml:ro
+      - engine-data:/var/lib/syntheticbrew
+      - engine-logs:/var/log/syntheticbrew
+      - ./config.yaml:/etc/syntheticbrew/syntheticbrew.yaml:ro
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -40,9 +40,9 @@ services:
     volumes:
       - ../migrations:/liquibase/migrations
     command: >
-      --url=jdbc:postgresql://db:5432/bytebrew
-      --username=bytebrew
-      --password=${POSTGRES_PASSWORD:-bytebrew}
+      --url=jdbc:postgresql://db:5432/syntheticbrew
+      --username=syntheticbrew
+      --password=${POSTGRES_PASSWORD:-syntheticbrew}
       --changeLogFile=migrations/db.changelog-master.yaml
       update
     restart: "no"
@@ -50,14 +50,14 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: bytebrew
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bytebrew}
-      POSTGRES_DB: bytebrew
+      POSTGRES_USER: syntheticbrew
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-syntheticbrew}
+      POSTGRES_DB: syntheticbrew
     volumes:
       - pg-data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bytebrew -d bytebrew"]
+      test: ["CMD-SHELL", "pg_isready -U syntheticbrew -d syntheticbrew"]
       interval: 5s
       timeout: 5s
       retries: 5

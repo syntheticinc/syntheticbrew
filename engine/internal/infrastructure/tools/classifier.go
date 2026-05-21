@@ -1,6 +1,6 @@
 package tools
 
-import "github.com/syntheticinc/bytebrew/engine/internal/domain"
+import "github.com/syntheticinc/syntheticbrew/internal/domain"
 
 // DefaultToolClassifier implements domain.ToolClassifier for the runtime
 // streaming layer. After self-hosted tools were parked and ask_user was

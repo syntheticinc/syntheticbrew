@@ -3,7 +3,7 @@ package schematemplate
 import (
 	"context"
 
-	ucschematemplate "github.com/syntheticinc/bytebrew/engine/internal/usecase/schematemplate"
+	ucschematemplate "github.com/syntheticinc/syntheticbrew/internal/usecase/schematemplate"
 )
 
 // UsecaseForkerAdapter bridges the service-level ForkService into the
