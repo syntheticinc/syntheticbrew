@@ -6,7 +6,7 @@ replicaCount: 1
 
 image:
   repository: syntheticinc/syntheticbrew
-  tag: "1.1.11"
+  tag: "1.2.1"
   pullPolicy: IfNotPresent
 
 postgresql:
@@ -35,7 +35,7 @@ migrations:
   enabled: true
   image:
     repository: syntheticinc/syntheticbrew-migrations
-    tag: "1.1.11"
+    tag: "1.2.1"
 
 bootstrapAdminToken:
   enabled: true
