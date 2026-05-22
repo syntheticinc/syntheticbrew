@@ -7,6 +7,15 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-05-22
+
+### Changed
+- Bumps `appVersion` to **1.2.3**. Engine 1.2.3 is an admin SPA hotfix —
+  the Test Flow tab now renders the chat UI when the schema page is
+  reached by URL deep-link / reload (previously the empty-state guard
+  shadowed the lockedSchemaId prop). No engine code changes; no chart
+  template changes.
+
 ## [0.7.2] - 2026-05-22
 
 ### Changed

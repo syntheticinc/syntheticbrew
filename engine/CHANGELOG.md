@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.3] — 2026-05-22
+
+Admin SPA hotfix.
+
+### Fixed
+- Test Flow tab in the admin SPA stopped rendering chat UI when the schema
+  page was reached by deep-link or reload (URL of the form
+  `/admin/schemas/{name}`). The early-return empty-state branch only checked
+  the BottomPanel context (`selectedSchema`) and missed the
+  `lockedSchemaId` prop populated from the URL, so the body kept showing
+  "Select a schema in the panel above…" while the lock indicator already
+  displayed the schema name. Now the empty state requires both signals to
+  be absent.
+
+### No engine code changes
+- All Go packages identical to 1.2.2. Admin SPA is rebuilt and baked into
+  the engine image, so an upgrade to the 1.2.3 image is required to pick
+  up the fix.
+
 ## [1.2.2] — 2026-05-22
 
 `show_structured_output` API hardening. Sub-frontier LLMs routinely emit
