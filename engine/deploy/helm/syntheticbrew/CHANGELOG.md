@@ -7,6 +7,16 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-22
+
+### Changed
+- Bumps `appVersion` to **1.2.2**. Engine 1.2.2 hardens the
+  `show_structured_output` tool input contract (fail-loud on unknown
+  fields and unknown `output_type` values, recursive lenient parser for
+  stringified nested arrays, auto-id on single-question forms,
+  `maxQuestions` raised 5 → 10). No chart template changes.
+- No protocol changes — chart 0.7.x clients keep working unchanged.
+
 ## [0.7.0] - 2026-05-20
 
 ### Changed (breaking)
