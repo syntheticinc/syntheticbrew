@@ -316,7 +316,10 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   const hasError = lastMsg?.role === 'assistant' && lastMsg.content?.startsWith('Error:');
 
-  if (!selectedSchema) {
+  // Empty state shows only when neither the BottomPanel selection nor the
+  // URL deep-link prop is present. Otherwise the next guard ("Loading schema…")
+  // covers the brief window while listSchemas() resolves.
+  if (!selectedSchema && !lockedSchemaId) {
     return (
       <div className="flex items-center justify-center h-full p-6 text-[12px] text-brand-shade3">
         Select a schema in the panel above to test its flow.
