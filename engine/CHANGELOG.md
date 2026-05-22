@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.2.2] — 2026-05-22
+
+`show_structured_output` API hardening. Sub-frontier LLMs routinely emit
+widget args in shapes that diverge from the tool's JSON Schema (invented
+fields, stringified nested arrays, omitted required ids). The previous
+implementation accepted these silently and emitted a degenerate widget;
+the agent received `Structured output displayed to user.` and continued
+as if the call had succeeded. This release switches every input-validation
+path to fail-loud, surfaces nested stringified arrays through a recursive
+lenient parser, and removes one source of model-busywork on single-question
+forms.
+
+### Added
+- Fail-loud validation on `show_structured_output` arguments. Invalid input
+  returns `[ERROR] …` to the agent instead of silently emitting a degenerate
+  widget.
+  - Unknown top-level fields and unknown fields inside `questions[]` /
+    `options[]` return `[ERROR] json: unknown field "X"`. The decoder uses
+    `DisallowUnknownFields` at every level via the new `decodeStrict[T]`
+    helper.
+  - `output_type` is validated against the closed set
+    (`summary_table | form | info`) before any other processing; unknown
+    values return `[ERROR] unknown output_type "X". Supported: …`.
+- Recursive lenient parsing: `questions[i].options` accepts stringified
+  JSON arrays via a new `Question.UnmarshalJSON` on the domain type,
+  matching the PR #75 behaviour for top-level `rows` / `actions` /
+  `questions`. Malformed stringified values fail loud rather than being
+  silently dropped.
+- Auto-generated `question.id` for single-question forms when the model
+  omits it. Synthetic id (`q-<8 hex chars>` derived from the
+  server-issued `interrupt_id`) surfaces in the resume payload as
+  `answers[0].question_id`. Multi-question forms still require explicit
+  ids — they carry semantic meaning for cross-answer correlation.
+- JSON Schema `description` of the tool expanded with literal + stringified
+  examples for all three `output_type` values, explicit closed-set
+  declaration, and a "STOP on tool error" instruction at the end.
+- New CE docs page `docs/architecture/tools-show-structured-output.md`
+  with the full schema reference, examples, recommended prompt pattern for
+  tool-error handling, and the known sub-frontier-model pitfalls.
+
+### Changed
+- `maxQuestions` raised from 5 to 10. Full configurability (per-tenant /
+  per-agent override) deferred to 1.3.0.
+
+### Notes
+- No protocol changes. SSE wire format, POST body shape, and DB schema are
+  unchanged from 1.2.0.
+- Clients on 1.2.0 keep working without changes. The only observable diff
+  is that agents using `show_structured_output` against sub-frontier
+  models now see explicit `[ERROR]` responses on malformed input where
+  they previously saw `Structured output displayed to user.` followed by
+  a degenerate empty widget on the client.
+
 ## [1.2.0] — 2026-05-20
 
 HITL Interrupt Primitive + Bug 1 wrap-LLM-only refactor (Chirp 2026-05-20 report).

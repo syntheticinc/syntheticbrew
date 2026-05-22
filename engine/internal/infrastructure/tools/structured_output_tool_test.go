@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -140,8 +141,9 @@ func TestStructuredOutput_ToolInfo(t *testing.T) {
 	info, err := tool.Info(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "show_structured_output", info.Name)
-	assert.Contains(t, info.Desc, "Non-blocking")
+	assert.Contains(t, info.Desc, "HALT")
 	assert.Contains(t, info.Desc, "form")
+	assert.Contains(t, info.Desc, "STRICT INPUT CONTRACT")
 }
 
 func TestStructuredOutput_FormMode(t *testing.T) {
@@ -233,7 +235,7 @@ func TestStructuredOutput_FormMode_RejectsTooManyQuestions(t *testing.T) {
 	emitter := &mockEventEmitter{}
 	tool := NewStructuredOutputTool(emitter, "sess-1")
 
-	// 6 questions exceeds maxQuestions=5.
+	// 11 questions exceeds maxQuestions=10.
 	args := `{
 		"output_type": "form",
 		"questions": [
@@ -242,13 +244,19 @@ func TestStructuredOutput_FormMode_RejectsTooManyQuestions(t *testing.T) {
 			{"id":"q3","label":"c","type":"text"},
 			{"id":"q4","label":"d","type":"text"},
 			{"id":"q5","label":"e","type":"text"},
-			{"id":"q6","label":"f","type":"text"}
+			{"id":"q6","label":"f","type":"text"},
+			{"id":"q7","label":"g","type":"text"},
+			{"id":"q8","label":"h","type":"text"},
+			{"id":"q9","label":"i","type":"text"},
+			{"id":"q10","label":"j","type":"text"},
+			{"id":"q11","label":"k","type":"text"}
 		]
 	}`
 	result, err := tool.InvokableRun(context.Background(), args)
 	require.NoError(t, err)
 	assert.Contains(t, result, "[ERROR]")
 	assert.Contains(t, result, "too many questions")
+	assert.Contains(t, result, "maximum 10")
 	assert.Empty(t, emitter.events)
 }
 
@@ -373,5 +381,179 @@ func TestStructuredOutput_MalformedStringEncodedRows(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, result, "[ERROR]")
 	assert.Contains(t, result, "rows")
+	assert.Empty(t, emitter.events)
+}
+
+// 1.2.1 hardening — fail-loud on unknown top-level fields.
+func TestStructuredOutput_RejectsUnknownTopLevelField(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{"output_type":"info","title":"x","unknown_key":"value"}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, "unknown_key")
+	assert.Empty(t, emitter.events)
+}
+
+// 1.2.1 hardening — fail-loud on output_type outside the closed set.
+func TestStructuredOutput_RejectsUnknownOutputType(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{"output_type":"single_select","title":"Pick"}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, "unknown output_type")
+	assert.Contains(t, result, "single_select")
+	assert.Empty(t, emitter.events)
+}
+
+// 1.2.1 hardening — recursive lenient parse extends PR #75 down into
+// questions[i].options.
+func TestStructuredOutput_NestedStringifiedOptions(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "form",
+		"questions": [
+			{
+				"id": "region",
+				"label": "Region?",
+				"type": "select",
+				"options": "[{\"label\":\"EU\"},{\"label\":\"US\"}]"
+			}
+		]
+	}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Equal(t, "Structured output displayed to user.", result)
+
+	require.Len(t, emitter.events, 1)
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &payload))
+	var output domain.StructuredOutput
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
+	require.Len(t, output.Questions, 1)
+	require.Len(t, output.Questions[0].Options, 2)
+	assert.Equal(t, "EU", output.Questions[0].Options[0].Label)
+	assert.Equal(t, "US", output.Questions[0].Options[1].Label)
+}
+
+// 1.2.1 hardening — nested stringified options that fail to parse must
+// surface, not silently disappear.
+func TestStructuredOutput_MalformedNestedStringifiedOptions(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "form",
+		"questions": [
+			{"id":"region","label":"Region?","type":"select","options":"["}
+		]
+	}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, "options")
+	assert.Empty(t, emitter.events)
+}
+
+// 1.2.1 hardening — single-question form auto-generates id from interrupt_id
+// when the model omits it. Multi-question forms still require explicit ids
+// (covered by TestStructuredOutput_MultiQuestionStillRequiresID).
+func TestStructuredOutput_AutoIDOnSingleQuestion(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "form",
+		"questions": [
+			{"label":"Region?","type":"select","options":[{"label":"EU"},{"label":"US"}]}
+		]
+	}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Equal(t, "Structured output displayed to user.", result)
+
+	require.Len(t, emitter.events, 1)
+	var payload domain.InterruptRequestPayload
+	require.NoError(t, json.Unmarshal([]byte(emitter.events[0].Content), &payload))
+	var output domain.StructuredOutput
+	require.NoError(t, json.Unmarshal(payload.Schema, &output))
+	require.Len(t, output.Questions, 1)
+	assert.Truef(t, strings.HasPrefix(output.Questions[0].ID, "q-"),
+		"expected synthetic id with q- prefix, got %q", output.Questions[0].ID)
+	// Synthetic id is derived from first 8 chars of the UUID-shaped interrupt_id.
+	assert.Equalf(t, 10, len(output.Questions[0].ID),
+		"expected id length 10 (q- + 8 hex chars), got %d in %q",
+		len(output.Questions[0].ID), output.Questions[0].ID)
+}
+
+// 1.2.1 — multi-question forms still require explicit ids because the model
+// picks meaningful keys for cross-answer correlation.
+func TestStructuredOutput_MultiQuestionStillRequiresID(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "form",
+		"questions": [
+			{"id":"name","label":"Device name","type":"text"},
+			{"label":"Region?","type":"select","options":[{"label":"EU"},{"label":"US"}]}
+		]
+	}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, "id is required")
+	assert.Empty(t, emitter.events)
+}
+
+// 1.2.1 — maxQuestions raised 5 → 10. Exactly 10 must pass.
+func TestStructuredOutput_FormMode_AcceptsTenQuestions(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "form",
+		"questions": [
+			{"id":"q1","label":"a","type":"text"},
+			{"id":"q2","label":"b","type":"text"},
+			{"id":"q3","label":"c","type":"text"},
+			{"id":"q4","label":"d","type":"text"},
+			{"id":"q5","label":"e","type":"text"},
+			{"id":"q6","label":"f","type":"text"},
+			{"id":"q7","label":"g","type":"text"},
+			{"id":"q8","label":"h","type":"text"},
+			{"id":"q9","label":"i","type":"text"},
+			{"id":"q10","label":"j","type":"text"}
+		]
+	}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Equal(t, "Structured output displayed to user.", result)
+	require.Len(t, emitter.events, 1)
+}
+
+// 1.2.1 hardening — unknown field inside a question object must fail (the
+// DisallowUnknownFields rule applies through Question.UnmarshalJSON).
+func TestStructuredOutput_RejectsUnknownQuestionField(t *testing.T) {
+	emitter := &mockEventEmitter{}
+	tool := NewStructuredOutputTool(emitter, "sess-1")
+
+	args := `{
+		"output_type": "form",
+		"questions": [
+			{"id":"name","label":"Name","type":"text","extra":"oops"}
+		]
+	}`
+	result, err := tool.InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, "extra")
 	assert.Empty(t, emitter.events)
 }
