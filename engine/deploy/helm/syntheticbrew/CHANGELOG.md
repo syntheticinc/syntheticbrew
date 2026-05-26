@@ -7,6 +7,18 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-05-26
+
+### Changed
+- Bumps `appVersion` to **1.2.4**. Engine 1.2.4 fixes a recovery-
+  classifier regression where chat turns aborted with `INTERNAL_ERROR`
+  when an MCP tool returned `isError: true` with content containing
+  certain phrases (e.g. `"permission denied"`), and cleans up two
+  log-noise sources (`WARN persist chat session failed` after engine
+  restart, and `ERROR failed to create session log directory` on
+  read-only `logs/` mounts). No chart template changes; pull the
+  new chart only to pick up the engine version bump.
+
 ## [0.7.3] - 2026-05-22
 
 ### Changed
