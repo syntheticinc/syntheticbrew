@@ -88,7 +88,10 @@ func (t *spawnTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 func (t *spawnTool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 	var args spawnToolArgs
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
-		return "", fmt.Errorf("parse args: %w", err)
+		// Application-level error: LLM produced malformed JSON. Surface
+		// via [ERROR] convention so the agent loop feeds it back to the
+		// model instead of treating it as a platform failure.
+		return fmt.Sprintf("[ERROR] parse args: %s", err.Error()), nil
 	}
 
 	switch args.Action {
@@ -103,13 +106,15 @@ func (t *spawnTool) InvokableRun(ctx context.Context, argumentsInJSON string, op
 	case "stop":
 		return t.handleStop(args)
 	default:
-		return "", fmt.Errorf("unknown action %q", args.Action)
+		// Application-level: LLM selected an unknown action.
+		return fmt.Sprintf("[ERROR] unknown action %q", args.Action), nil
 	}
 }
 
 func (t *spawnTool) handleSpawn(ctx context.Context, args spawnToolArgs) (string, error) {
 	if args.Description == "" {
-		return "", fmt.Errorf("description required for spawn action")
+		// Application-level: LLM forgot a required parameter.
+		return "[ERROR] description required for spawn action", nil
 	}
 
 	agentID, err := t.spawner.SpawnAgent(ctx, SpawnParams{
@@ -166,7 +171,8 @@ func (t *spawnTool) handleWait(ctx context.Context) (string, error) {
 
 func (t *spawnTool) handleStatus(args spawnToolArgs) (string, error) {
 	if args.AgentID == "" {
-		return "", fmt.Errorf("agent_id required for status action")
+		// Application-level: LLM forgot a required parameter.
+		return "[ERROR] agent_id required for status action", nil
 	}
 
 	info, ok := t.inspector.GetStatusInfo(args.AgentID)
@@ -195,7 +201,8 @@ func (t *spawnTool) handleList() (string, error) {
 
 func (t *spawnTool) handleStop(args spawnToolArgs) (string, error) {
 	if args.AgentID == "" {
-		return "", fmt.Errorf("agent_id required for stop action")
+		// Application-level: LLM forgot a required parameter.
+		return "[ERROR] agent_id required for stop action", nil
 	}
 
 	if err := t.spawner.StopAgent(args.AgentID); err != nil {

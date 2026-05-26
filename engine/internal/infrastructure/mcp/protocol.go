@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 )
 
 // JSON-RPC 2.0 types for MCP protocol.
@@ -48,17 +47,6 @@ type ToolsListResult struct {
 type ToolCallResult struct {
 	Content []ToolContent `json:"content"`
 	IsError bool          `json:"isError,omitempty"`
-}
-
-// MCPToolError represents a tool-level error returned by an MCP server (isError: true).
-// Distinguished from transport errors — the MCP server responded successfully,
-// but the tool itself reported a failure.
-type MCPToolError struct {
-	Content string // The error message from the tool
-}
-
-func (e *MCPToolError) Error() string {
-	return fmt.Sprintf("mcp tool error: %s", e.Content)
 }
 
 // ToolContent represents a content block in a tool call result.

@@ -56,7 +56,7 @@ func makeToolsResponse(tools []MCPTool) *Response {
 func makeInitResponse() *Response {
 	result, _ := json.Marshal(map[string]interface{}{
 		"protocolVersion": "2024-11-05",
-		"capabilities":   map[string]interface{}{},
+		"capabilities":    map[string]interface{}{},
 	})
 	return &Response{JSONRPC: "2.0", ID: 1, Result: result}
 }
@@ -219,20 +219,20 @@ func TestClient_CallTool_IsError(t *testing.T) {
 		wantIsError bool
 	}{
 		{
-			name: "isError true returns content and flag",
-			result: json.RawMessage(`{"content":[{"type":"text","text":"ERROR: service unavailable"}],"isError":true}`),
+			name:        "isError true returns content and flag",
+			result:      json.RawMessage(`{"content":[{"type":"text","text":"ERROR: service unavailable"}],"isError":true}`),
 			wantText:    "ERROR: service unavailable",
 			wantIsError: true,
 		},
 		{
-			name: "isError false returns content without flag",
-			result: json.RawMessage(`{"content":[{"type":"text","text":"all good"}],"isError":false}`),
+			name:        "isError false returns content without flag",
+			result:      json.RawMessage(`{"content":[{"type":"text","text":"all good"}],"isError":false}`),
 			wantText:    "all good",
 			wantIsError: false,
 		},
 		{
-			name: "isError omitted defaults to false",
-			result: json.RawMessage(`{"content":[{"type":"text","text":"result"}]}`),
+			name:        "isError omitted defaults to false",
+			result:      json.RawMessage(`{"content":[{"type":"text","text":"result"}]}`),
 			wantText:    "result",
 			wantIsError: false,
 		},
@@ -251,20 +251,6 @@ func TestClient_CallTool_IsError(t *testing.T) {
 			assert.Equal(t, tt.wantIsError, isError)
 		})
 	}
-}
-
-func TestMCPToolError_Error(t *testing.T) {
-	err := &MCPToolError{Content: "disk full"}
-	assert.Equal(t, "mcp tool error: disk full", err.Error())
-}
-
-func TestMCPToolError_ErrorsAs(t *testing.T) {
-	original := &MCPToolError{Content: "rate limited"}
-	wrapped := fmt.Errorf("invoke failed: %w", original)
-
-	var toolErr *MCPToolError
-	require.ErrorAs(t, wrapped, &toolErr)
-	assert.Equal(t, "rate limited", toolErr.Content)
 }
 
 func TestClient_Name(t *testing.T) {

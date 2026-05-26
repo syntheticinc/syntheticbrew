@@ -205,7 +205,11 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 			Model:   m.ModelName,
 			APIKey:  "ollama",
 		}
-		return openai.NewChatModel(ctx, cfg)
+		client, err := openai.NewChatModel(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		return WrapWithRetry(client), nil
 
 	case "openai", "openai_compatible":
 		cfg := &openai.ChatModelConfig{
@@ -224,10 +228,18 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 		}
 		transport = &responseLoggingTransport{base: transport}
 		cfg.HTTPClient = &http.Client{Transport: transport}
-		return openai.NewChatModel(ctx, cfg)
+		client, err := openai.NewChatModel(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		return WrapWithRetry(client), nil
 
 	case "azure_openai":
-		return NewAzureOpenAIChatModel(m.BaseURL, m.APIKeyEncrypted, m.ModelName, m.APIVersion)
+		client, err := NewAzureOpenAIChatModel(m.BaseURL, m.APIKeyEncrypted, m.ModelName, m.APIVersion)
+		if err != nil {
+			return nil, err
+		}
+		return WrapWithRetry(client), nil
 
 	case "anthropic":
 		baseURL := "https://api.anthropic.com/v1"
@@ -244,14 +256,18 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 			APIKey:     m.APIKeyEncrypted,
 			HTTPClient: httpClient,
 		}
-		return openai.NewChatModel(ctx, cfg)
+		client, err := openai.NewChatModel(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		return WrapWithRetry(client), nil
 
 	case "google":
 		var opts []GeminiOption
 		if m.BaseURL != "" {
 			opts = append(opts, WithGeminiBaseURL(m.BaseURL))
 		}
-		return NewGeminiChatModel(m.APIKeyEncrypted, m.ModelName, opts...), nil
+		return WrapWithRetry(NewGeminiChatModel(m.APIKeyEncrypted, m.ModelName, opts...)), nil
 
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", m.Type)

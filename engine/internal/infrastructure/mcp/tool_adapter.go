@@ -35,10 +35,21 @@ func (a *mcpToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 	result, isError, err := a.client.CallTool(ctx, a.mcpTool.Name, args)
 	if err != nil {
+		// Transport-level failure (network down, MCP server crashed,
+		// malformed JSON-RPC). These are genuine platform errors and
+		// should bubble up as Go errors so the agent layer can react.
 		return "", err
 	}
 	if isError {
-		return "", &MCPToolError{Content: result}
+		// Tool-level error (MCP `isError: true`): the server responded
+		// successfully but the tool itself reports a failure. Return as
+		// normal content with an [ERROR] marker so callbacks/OnToolEnd
+		// lifts it into event.Error via the existing prefix-detection
+		// path (tool_event_handler.go:177-179) and Eino does NOT abort
+		// the turn. The text from `result` is fully controlled by the
+		// MCP server (partner-controlled), so it must never cross into
+		// the platform recovery classifier as a Go error.
+		return "[ERROR] " + result, nil
 	}
 	return result, nil
 }

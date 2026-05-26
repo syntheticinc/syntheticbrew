@@ -32,6 +32,11 @@ type schemaChatRepo interface {
 // chatSessionPersister persists chat sessions to the DB.
 type chatSessionPersister interface {
 	Create(ctx context.Context, session *models.SessionModel) error
+	// CreateIfNotExists is the idempotent variant — silently skips when
+	// a row with the same primary key already exists. Used by the chat
+	// adapter's first-seen path so engine restart / registry eviction
+	// does not produce a "duplicate key" WARN on every existing session.
+	CreateIfNotExists(ctx context.Context, session *models.SessionModel) error
 	Update(ctx context.Context, id string, updates map[string]interface{}) error
 }
 
@@ -53,11 +58,11 @@ type resumeEventStore interface {
 type chatServiceHTTPAdapter struct {
 	registry    *flowregistry.SessionRegistry
 	processor   *sessionprocessor.Processor
-	agents      *agentregistry.AgentRegistry  // non-nil in single-tenant (CE) mode
-	registryMgr *agentregistry.Manager        // non-nil in multi-tenant (Cloud/EE) mode
-	schemas     schemaChatRepo       // optional — nil in tests / no-DB mode
-	sessions    chatSessionPersister // optional — nil when no DB
-	chatEnabled bool                 // false when no LLM model configured
+	agents      *agentregistry.AgentRegistry // non-nil in single-tenant (CE) mode
+	registryMgr *agentregistry.Manager       // non-nil in multi-tenant (Cloud/EE) mode
+	schemas     schemaChatRepo               // optional — nil in tests / no-DB mode
+	sessions    chatSessionPersister         // optional — nil when no DB
+	chatEnabled bool                         // false when no LLM model configured
 	interrupts  interruptResumeRepo
 	eventStore  resumeEventStore
 	history     interruptResumeHistory // mirrors interrupt_resume into messages table for reload restore
@@ -144,7 +149,12 @@ func (a *chatServiceHTTPAdapter) Chat(ctx context.Context, schemaID, message, us
 				UserSub:  userSub,
 				Status:   "active",
 			}
-			if createErr := a.sessions.Create(ctx, m); createErr != nil {
+			// Idempotent: the in-memory "first seen" check above is
+			// process-scoped and is wrong after engine restart or
+			// registry eviction. Using CreateIfNotExists tolerates the
+			// row already existing in the DB without log spam, while
+			// still creating it on genuinely-new sessions.
+			if createErr := a.sessions.CreateIfNotExists(ctx, m); createErr != nil {
 				slog.WarnContext(ctx, "persist chat session failed", "session_id", sessionID, "error", createErr)
 			}
 		}

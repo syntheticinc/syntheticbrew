@@ -104,9 +104,12 @@ func TestSpawnTool_Spawn(t *testing.T) {
 		spawner := &mockGenericSpawner{}
 		st := NewSpawnTool("coder", "sess-1", spawner, &mockGenericInspector{})
 
-		_, err := st.InvokableRun(context.Background(), `{"action":"spawn"}`)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "description required")
+		// Application-level error — surfaced via [ERROR] convention,
+		// not as a Go error, so the agent loop feeds it back to the LLM.
+		result, err := st.InvokableRun(context.Background(), `{"action":"spawn"}`)
+		require.NoError(t, err)
+		assert.Contains(t, result, "[ERROR]")
+		assert.Contains(t, result, "description required")
 	})
 
 	t.Run("spawn error from spawner", func(t *testing.T) {
@@ -234,9 +237,11 @@ func TestSpawnTool_Status(t *testing.T) {
 	t.Run("missing agent_id", func(t *testing.T) {
 		st := NewSpawnTool("coder", "sess-1", &mockGenericSpawner{}, &mockGenericInspector{})
 
-		_, err := st.InvokableRun(context.Background(), `{"action":"status"}`)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "agent_id required")
+		// Application-level — [ERROR] content + nil Go error.
+		result, err := st.InvokableRun(context.Background(), `{"action":"status"}`)
+		require.NoError(t, err)
+		assert.Contains(t, result, "[ERROR]")
+		assert.Contains(t, result, "agent_id required")
 	})
 }
 
@@ -271,9 +276,11 @@ func TestSpawnTool_Stop(t *testing.T) {
 	t.Run("missing agent_id", func(t *testing.T) {
 		st := NewSpawnTool("coder", "sess-1", &mockGenericSpawner{}, &mockGenericInspector{})
 
-		_, err := st.InvokableRun(context.Background(), `{"action":"stop"}`)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "agent_id required")
+		// Application-level — [ERROR] content + nil Go error.
+		result, err := st.InvokableRun(context.Background(), `{"action":"stop"}`)
+		require.NoError(t, err)
+		assert.Contains(t, result, "[ERROR]")
+		assert.Contains(t, result, "agent_id required")
 	})
 
 	t.Run("stop error", func(t *testing.T) {
@@ -289,15 +296,19 @@ func TestSpawnTool_Stop(t *testing.T) {
 func TestSpawnTool_UnknownAction(t *testing.T) {
 	st := NewSpawnTool("coder", "sess-1", &mockGenericSpawner{}, &mockGenericInspector{})
 
-	_, err := st.InvokableRun(context.Background(), `{"action":"fly"}`)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `unknown action "fly"`)
+	// Application-level — [ERROR] content + nil Go error.
+	result, err := st.InvokableRun(context.Background(), `{"action":"fly"}`)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, `unknown action "fly"`)
 }
 
 func TestSpawnTool_InvalidJSON(t *testing.T) {
 	st := NewSpawnTool("coder", "sess-1", &mockGenericSpawner{}, &mockGenericInspector{})
 
-	_, err := st.InvokableRun(context.Background(), `{invalid`)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parse args")
+	// Application-level — [ERROR] content + nil Go error.
+	result, err := st.InvokableRun(context.Background(), `{invalid`)
+	require.NoError(t, err)
+	assert.Contains(t, result, "[ERROR]")
+	assert.Contains(t, result, "parse args")
 }
