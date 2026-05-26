@@ -8,12 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/components/model"
+	einotool "github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
-	"github.com/cloudwego/eino/components/model"
-	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 // mockChatModel is a mock implementation of model.ChatModel for testing
@@ -186,152 +187,99 @@ func TestAgentConfig_Structure(t *testing.T) {
 	}
 }
 
-func TestIsRateLimitError(t *testing.T) {
+// TestClassifyRecovery exercises the typed recovery classifier end-to-end.
+// Cases are organised by recovery action: cancelled, non-recoverable,
+// backoff, and feedback. No substring matching is consulted — every
+// non-stdlib classification goes through pkgerrors typed codes produced
+// by classifyLLMError at the LLM boundary.
+func TestClassifyRecovery(t *testing.T) {
 	tests := []struct {
-		name     string
-		err      error
-		expected bool
+		name string
+		err  error
+		want recoveryAction
 	}{
+		// nil propagation — defensive default.
+		{name: "nil error", err: nil, want: recoveryFeedback},
+
+		// Context cancellation via stdlib sentinels.
+		{name: "context.Canceled", err: context.Canceled, want: recoveryAbortCancelled},
+		{name: "context.DeadlineExceeded", err: context.DeadlineExceeded, want: recoveryAbortCancelled},
 		{
-			name:     "nil error",
-			err:      nil,
-			expected: false,
+			name: "wrapped context.Canceled",
+			err:  fmt.Errorf("stream aborted: %w", context.Canceled),
+			want: recoveryAbortCancelled,
+		},
+
+		// Eino max-steps sentinel — typed via errors.Is, no substring.
+		{name: "compose.ErrExceedMaxSteps", err: compose.ErrExceedMaxSteps, want: recoveryAbortNonRecoverable},
+		{
+			name: "wrapped compose.ErrExceedMaxSteps",
+			err:  fmt.Errorf("agent loop terminated: %w", compose.ErrExceedMaxSteps),
+			want: recoveryAbortNonRecoverable,
+		},
+
+		// Engine-level agent budget code.
+		{
+			name: "CodeAgentBudgetExhausted",
+			err:  pkgerrors.Wrap(goerrors.New("underlying"), pkgerrors.CodeAgentBudgetExhausted, "agent budget"),
+			want: recoveryAbortNonRecoverable,
+		},
+
+		// LLM rate-limit — typed (produced by classifyLLMError on 429/etc).
+		{
+			name: "CodeRateLimited",
+			err:  pkgerrors.Wrap(goerrors.New("429"), pkgerrors.CodeRateLimited, "llm rate limited"),
+			want: recoveryBackoff,
+		},
+
+		// LLM auth failure — typed.
+		{
+			name: "CodeLLMAuth",
+			err:  pkgerrors.Wrap(goerrors.New("401"), pkgerrors.CodeLLMAuth, "llm auth failed"),
+			want: recoveryAbortNonRecoverable,
+		},
+
+		// Transient errors — get a feedback retry chance.
+		{
+			name: "CodeTransient",
+			err:  pkgerrors.Wrap(goerrors.New("503"), pkgerrors.CodeTransient, "llm transient"),
+			want: recoveryFeedback,
+		},
+
+		// Unknown / generic — feedback retry by default.
+		{name: "generic error", err: fmt.Errorf("some random error"), want: recoveryFeedback},
+		{name: "XML parse error", err: fmt.Errorf("XML syntax error on line 1"), want: recoveryFeedback},
+		{name: "JSON unmarshal error", err: fmt.Errorf("json: cannot unmarshal string"), want: recoveryFeedback},
+		{name: "tool not found", err: fmt.Errorf("tool not found: unknown_tool"), want: recoveryFeedback},
+		{name: "GraphRunError", err: fmt.Errorf("[GraphRunError] failed to calculate next tasks"), want: recoveryFeedback},
+
+		// Regression guard from the partner-bug report: tool-level errors
+		// whose payload happens to contain "permission denied" must NOT
+		// abort the turn. After Stage 3 (MCP adapter [ERROR] convention)
+		// these no longer reach classifyRecovery as Go errors at all,
+		// but defensive coverage ensures we cannot silently regress.
+		{
+			name: "mcp tool reports permission denied",
+			err:  fmt.Errorf("mcp tool error: ERROR: Permission denied. The user does not have access to this resource."),
+			want: recoveryFeedback,
 		},
 		{
-			name:     "429 Too Many Requests",
-			err:      fmt.Errorf("429 Too Many Requests"),
-			expected: true,
+			name: "wrapped tool error mentions permission denied",
+			err:  fmt.Errorf("[NodeRunError] failed to stream tool call call_x: mcp tool error: Permission denied"),
+			want: recoveryFeedback,
 		},
 		{
-			name:     "rate limit exceeded",
-			err:      fmt.Errorf("rate limit exceeded"),
-			expected: true,
-		},
-		{
-			name:     "Rate Limit (mixed case)",
-			err:      fmt.Errorf("Rate Limit exceeded"),
-			expected: true,
-		},
-		{
-			name:     "quota exceeded",
-			err:      fmt.Errorf("quota exceeded"),
-			expected: true,
-		},
-		{
-			name:     "too many requests lowercase",
-			err:      fmt.Errorf("too many requests"),
-			expected: true,
-		},
-		{
-			name:     "generic error",
-			err:      fmt.Errorf("some random error"),
-			expected: false,
-		},
-		{
-			name:     "context canceled",
-			err:      context.Canceled,
-			expected: false,
-		},
-		{
-			name:     "unauthorized",
-			err:      fmt.Errorf("unauthorized"),
-			expected: false,
-		},
-		{
-			name:     "XML error",
-			err:      fmt.Errorf("XML syntax error"),
-			expected: false,
+			name: "tool surfaces os-level permission denied",
+			err:  fmt.Errorf("open /etc/shadow: permission denied"),
+			want: recoveryFeedback,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isRateLimitError(tt.err)
-			if result != tt.expected {
-				t.Errorf("isRateLimitError(%v) = %v, want %v", tt.err, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestIsRecoverableAgentError(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      error
-		expected bool
-	}{
-		{
-			name:     "nil error",
-			err:      nil,
-			expected: false,
-		},
-		{
-			name:     "context canceled - not recoverable",
-			err:      context.Canceled,
-			expected: false,
-		},
-		{
-			name:     "context deadline exceeded - not recoverable",
-			err:      context.DeadlineExceeded,
-			expected: false,
-		},
-		{
-			name:     "rate limit - recoverable (handled separately)",
-			err:      fmt.Errorf("rate limit exceeded"),
-			expected: true,
-		},
-		{
-			name:     "quota exceeded - recoverable (handled separately)",
-			err:      fmt.Errorf("quota exceeded"),
-			expected: true,
-		},
-		{
-			name:     "unauthorized - not recoverable",
-			err:      fmt.Errorf("unauthorized access"),
-			expected: false,
-		},
-		{
-			name:     "XML syntax error - recoverable",
-			err:      fmt.Errorf("XML syntax error on line 1"),
-			expected: true,
-		},
-		{
-			name:     "JSON unmarshal error - recoverable",
-			err:      fmt.Errorf("json: cannot unmarshal string"),
-			expected: true,
-		},
-		{
-			name:     "tool not found - recoverable",
-			err:      fmt.Errorf("tool not found: unknown_tool"),
-			expected: true,
-		},
-		{
-			name:     "GraphRunError - recoverable",
-			err:      fmt.Errorf("[GraphRunError] failed to calculate next tasks"),
-			expected: true,
-		},
-		{
-			name:     "generic error - recoverable",
-			err:      fmt.Errorf("some random error"),
-			expected: true,
-		},
-		{
-			name:     "exceeds max steps - not recoverable",
-			err:      fmt.Errorf("agent exceeds max steps limit"),
-			expected: false,
-		},
-		{
-			name:     "max steps - not recoverable",
-			err:      fmt.Errorf("[GraphRunError] max steps reached"),
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isRecoverableAgentError(tt.err)
-			if result != tt.expected {
-				t.Errorf("isRecoverableAgentError(%v) = %v, want %v", tt.err, result, tt.expected)
+			got := classifyRecovery(tt.err)
+			if got != tt.want {
+				t.Errorf("classifyRecovery(%v) = %d, want %d", tt.err, got, tt.want)
 			}
 		})
 	}

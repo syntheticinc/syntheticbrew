@@ -51,7 +51,7 @@ func createOpenRouterModel(ctx context.Context, cfg config.OpenRouterConfig) (mo
 	if err != nil {
 		return nil, errors.Wrap(err, errors.CodeInternal, "failed to create openrouter chat model")
 	}
-	return chatModel, nil
+	return llm.WrapWithRetry(chatModel), nil
 }
 
 func createOllamaModel(ctx context.Context, cfg config.OllamaConfig) (model.ToolCallingChatModel, error) {
@@ -82,7 +82,7 @@ func createOllamaModel(ctx context.Context, cfg config.OllamaConfig) (model.Tool
 	}
 	slog.InfoContext(ctx, "Ollama model created via OpenAI-compatible endpoint",
 		"base_url", baseURL, "model", cfg.Model)
-	return chatModel, nil
+	return llm.WrapWithRetry(chatModel), nil
 }
 
 func createAnthropicModel(ctx context.Context, cfg config.AnthropicConfig) (model.ToolCallingChatModel, error) {
@@ -106,7 +106,7 @@ func createAnthropicModel(ctx context.Context, cfg config.AnthropicConfig) (mode
 	if err != nil {
 		return nil, errors.Wrap(err, errors.CodeInternal, "failed to create anthropic model")
 	}
-	return chatModel, nil
+	return llm.WrapWithRetry(chatModel), nil
 }
 
 // anthropicTransport adds the required anthropic-version header to all requests.

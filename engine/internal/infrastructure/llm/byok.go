@@ -85,20 +85,22 @@ func BuildBYOKChatModel(ctx context.Context, creds BYOKCredentials) (model.ToolC
 
 	provider := strings.ToLower(creds.Provider)
 
+	var cfg *openai.ChatModelConfig
+
 	switch provider {
 	case "openai":
-		return openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		cfg = &openai.ChatModelConfig{
 			BaseURL: defaultBaseURL(creds.BaseURL, "https://api.openai.com/v1"),
 			Model:   defaultString(creds.Model, "gpt-4o-mini"),
 			APIKey:  creds.APIKey,
-		})
+		}
 
 	case "openrouter":
-		return openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		cfg = &openai.ChatModelConfig{
 			BaseURL: defaultBaseURL(creds.BaseURL, "https://openrouter.ai/api/v1"),
 			Model:   creds.Model, // no sensible default — must be supplied
 			APIKey:  creds.APIKey,
-		})
+		}
 
 	case "openai_compatible":
 		// User supplies their own base URL (e.g. self-hosted vLLM, LM
@@ -106,11 +108,11 @@ func BuildBYOKChatModel(ctx context.Context, creds BYOKCredentials) (model.ToolC
 		if creds.BaseURL == "" {
 			return nil, fmt.Errorf("byok: base_url required for openai_compatible provider")
 		}
-		return openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		cfg = &openai.ChatModelConfig{
 			BaseURL: creds.BaseURL,
 			Model:   creds.Model,
 			APIKey:  creds.APIKey,
-		})
+		}
 
 	case "ollama":
 		baseURL := defaultBaseURL(creds.BaseURL, "http://localhost:11434/v1")
@@ -121,25 +123,31 @@ func BuildBYOKChatModel(ctx context.Context, creds BYOKCredentials) (model.ToolC
 		if !strings.Contains(baseURL, "/v1") {
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
-		return openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		cfg = &openai.ChatModelConfig{
 			BaseURL: baseURL,
 			Model:   creds.Model,
 			APIKey:  creds.APIKey, // Ollama ignores but field is required
-		})
+		}
 
 	case "anthropic":
 		httpClient := &http.Client{}
 		httpClient.Transport = &anthropicCacheTransport{base: http.DefaultTransport}
-		return openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		cfg = &openai.ChatModelConfig{
 			BaseURL:    defaultBaseURL(creds.BaseURL, "https://api.anthropic.com/v1"),
 			Model:      defaultString(creds.Model, "claude-3-5-sonnet-20241022"),
 			APIKey:     creds.APIKey,
 			HTTPClient: httpClient,
-		})
+		}
 
 	default:
 		return nil, fmt.Errorf("byok: unsupported provider %q", creds.Provider)
 	}
+
+	client, err := openai.NewChatModel(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return WrapWithRetry(client), nil
 }
 
 // defaultString returns v when non-empty, otherwise fallback.

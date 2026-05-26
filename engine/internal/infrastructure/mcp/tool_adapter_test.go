@@ -100,6 +100,13 @@ func TestAdaptMCPTool_InvokableRunInvalidJSON(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse args")
 }
 
+// TestAdaptMCPTool_InvokableRun_IsError verifies the [ERROR]-convention:
+// MCP application-level errors (isError: true) are returned as normal
+// content with an "[ERROR] " prefix and a nil Go error. This stops the
+// tool result text — which is fully controlled by the MCP server (i.e.
+// the partner / tool author) — from ever surfacing as a Go error to the
+// agent layer, where it would risk being treated as a platform-level
+// control-flow signal.
 func TestAdaptMCPTool_InvokableRun_IsError(t *testing.T) {
 	transport := newMockTransport()
 	result, _ := json.Marshal(ToolCallResult{
@@ -113,13 +120,31 @@ func TestAdaptMCPTool_InvokableRun_IsError(t *testing.T) {
 	adapted := AdaptMCPTool(client, mcpTool)
 
 	output, err := adapted.InvokableRun(context.Background(), `{"path": "/etc/shadow"}`)
-	require.Error(t, err)
-	assert.Empty(t, output)
+	require.NoError(t, err, "MCP isError must return as content+nil, not as Go error")
+	assert.Equal(t, "[ERROR] permission denied: /etc/shadow", output)
+}
 
-	var toolErr *MCPToolError
-	require.ErrorAs(t, err, &toolErr)
-	assert.Equal(t, "permission denied: /etc/shadow", toolErr.Content)
-	assert.Contains(t, err.Error(), "mcp tool error:")
+// TestAdaptMCPTool_InvokableRun_IsError_PartnerRegression is the
+// partner-bug regression guard: an RBAC-style "Permission denied"
+// message from a partner MCP server (e.g. Chirp's rule_create with
+// insufficient access) must reach the agent layer as a tool-result
+// string, NOT as a Go error that the recovery classifier could grep.
+func TestAdaptMCPTool_InvokableRun_IsError_PartnerRegression(t *testing.T) {
+	transport := newMockTransport()
+	rbacMessage := "ERROR: Permission denied. The user does not have access to this resource."
+	result, _ := json.Marshal(ToolCallResult{
+		Content: []ToolContent{{Type: "text", Text: rbacMessage}},
+		IsError: true,
+	})
+	transport.responses["tools/call"] = &Response{JSONRPC: "2.0", ID: 1, Result: result}
+
+	client := NewClient("test", transport)
+	mcpTool := MCPTool{Name: "rule_create", Description: "Create a rule"}
+	adapted := AdaptMCPTool(client, mcpTool)
+
+	output, err := adapted.InvokableRun(context.Background(), `{"name": "x"}`)
+	require.NoError(t, err, "partner RBAC error must NOT bubble as Go error")
+	assert.Equal(t, "[ERROR] "+rbacMessage, output)
 }
 
 func TestParseJSONSchemaToParams(t *testing.T) {

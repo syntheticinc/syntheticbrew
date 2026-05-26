@@ -3,6 +3,7 @@ package react
 import (
 	"context"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,13 +12,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent/react"
+	"github.com/cloudwego/eino/schema"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents/callbacks"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
 	"github.com/syntheticinc/syntheticbrew/pkg/errors"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
 )
 
 // openAIToolNamePattern is the regex OpenAI applies to function tool names.
@@ -27,20 +29,19 @@ var openAIToolNameRegex = regexp.MustCompile(openAIToolNamePattern)
 
 // Agent wraps Eino ReAct agent with additional functionality
 type Agent struct {
-	agent             *react.Agent
-	contextLogger     *agents.ContextLogger
-	modelName         string
-	historyMessages   []*schema.Message
-	stepContentStore  *agents.StepContentStore
-	sessionID         string
-	agentID           string   // "supervisor" or "code-agent-{uuid}"
-	toolNames         []string // List of available tool names for system prompt injection
-	messageModifier   *MessageModifier
-	toolCallRecorder  ToolCallRecorder
-	maxTurnDuration   int // seconds, max time for a single LLM stream turn (0 = default 120s)
-	contextTokens     *atomic.Int64 // last context size reported by ContextRewriter (agent-scoped, survives across turns)
+	agent            *react.Agent
+	contextLogger    *agents.ContextLogger
+	modelName        string
+	historyMessages  []*schema.Message
+	stepContentStore *agents.StepContentStore
+	sessionID        string
+	agentID          string   // "supervisor" or "code-agent-{uuid}"
+	toolNames        []string // List of available tool names for system prompt injection
+	messageModifier  *MessageModifier
+	toolCallRecorder ToolCallRecorder
+	maxTurnDuration  int           // seconds, max time for a single LLM stream turn (0 = default 120s)
+	contextTokens    *atomic.Int64 // last context size reported by ContextRewriter (agent-scoped, survives across turns)
 }
-
 
 // NewAgent creates a new ReAct agent
 func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
@@ -251,18 +252,18 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 	}
 
 	return &Agent{
-		agent:             agent,
-		contextLogger:     contextLogger,
-		modelName:         config.ModelName,
-		historyMessages:   config.HistoryMessages,
-		stepContentStore:  stepContentStore,
-		sessionID:         config.SessionID,
-		agentID:           agentID,
-		toolNames:         toolNames,
-		messageModifier:   modifier,
-		toolCallRecorder:  config.ToolCallRecorder,
-		maxTurnDuration:   maxTurnDuration,
-		contextTokens:     contextTokensCounter,
+		agent:            agent,
+		contextLogger:    contextLogger,
+		modelName:        config.ModelName,
+		historyMessages:  config.HistoryMessages,
+		stepContentStore: stepContentStore,
+		sessionID:        config.SessionID,
+		agentID:          agentID,
+		toolNames:        toolNames,
+		messageModifier:  modifier,
+		toolCallRecorder: config.ToolCallRecorder,
+		maxTurnDuration:  maxTurnDuration,
+		contextTokens:    contextTokensCounter,
 	}, nil
 }
 
@@ -366,8 +367,8 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 			break
 		}
 
-		// 1. Rate limit — backoff + retry (no feedback, LLM can't fix this)
-		if isRateLimitError(err) {
+		switch classifyRecovery(err) {
+		case recoveryBackoff:
 			rateLimitCount++
 			if rateLimitCount > maxRateLimitRetries {
 				slog.ErrorContext(ctx, "[RUN] rate limit persists after max retries",
@@ -387,37 +388,35 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 
 			retryCount-- // Don't count rate limit retries against regular retry budget
 			continue
-		}
 
-		// 2. Non-recoverable — fail immediately
-		if !isRecoverableAgentError(err) {
+		case recoveryAbortCancelled, recoveryAbortNonRecoverable:
 			slog.ErrorContext(ctx, "[RUN] agent.Generate failed with non-recoverable error", "error", err)
 			return "", errors.Wrap(err, errors.CodeInternal, "agent execution failed")
-		}
 
-		// 3. Recoverable — retry with feedback
-		if retryCount >= maxErrorRetries {
-			slog.ErrorContext(ctx, "[RUN] agent.Generate failed after retries", "error", err, "retries", retryCount)
-			return "", errors.Wrap(err, errors.CodeInternal, "agent execution failed after retries")
-		}
+		case recoveryFeedback:
+			if retryCount >= maxErrorRetries {
+				slog.ErrorContext(ctx, "[RUN] agent.Generate failed after retries", "error", err, "retries", retryCount)
+				return "", errors.Wrap(err, errors.CodeInternal, "agent execution failed after retries")
+			}
 
-		slog.WarnContext(ctx, "[RUN] recoverable error, adding feedback and retrying",
-			"error", err, "attempt", retryCount+1)
+			slog.WarnContext(ctx, "[RUN] recoverable error, adding feedback and retrying",
+				"error", err, "attempt", retryCount+1)
 
-		errorFeedback := formatAgentErrorFeedback(err)
-		messages = append(messages, &schema.Message{
-			Role:    schema.System,
-			Content: errorFeedback,
-		})
+			errorFeedback := formatAgentErrorFeedback(err)
+			messages = append(messages, &schema.Message{
+				Role:    schema.System,
+				Content: errorFeedback,
+			})
 
-		cb = callbacks.NewBuilder(callbacks.BuilderConfig{
-			EventCallback:    eventCallback,
-			Store:            a.stepContentStore,
+			cb = callbacks.NewBuilder(callbacks.BuilderConfig{
+				EventCallback:    eventCallback,
+				Store:            a.stepContentStore,
 				SessionID:        a.sessionID,
-			AgentID:          a.agentID,
-			ToolCallRecorder: a.toolCallRecorder,
-		})
-		callbackOpt = cb.BuildCallbackOption()
+				AgentID:          a.agentID,
+				ToolCallRecorder: a.toolCallRecorder,
+			})
+			callbackOpt = cb.BuildCallbackOption()
+		}
 	}
 
 	// Drop residual content on HITL turns — the widget is the message.
@@ -519,8 +518,8 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		}
 		streamCancel() // cancel failed attempt immediately
 
-		// 1. Rate limit — backoff + retry (no feedback, LLM can't fix this)
-		if isRateLimitError(err) {
+		switch classifyRecovery(err) {
+		case recoveryBackoff:
 			rateLimitCount++
 			if rateLimitCount > maxRateLimitRetries {
 				slog.ErrorContext(ctx, "[STREAM] rate limit persists after max retries",
@@ -540,43 +539,44 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 
 			retryCount-- // Don't count rate limit retries against regular retry budget
 			continue
-		}
 
-		// 2. Context canceled — expected on client cancel, return immediately
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+		case recoveryAbortCancelled:
+			// Client cancel / deadline — return unwrapped so callers see
+			// canonical context errors via errors.Is.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
 
-		// 3. Non-recoverable — fail immediately
-		if !isRecoverableAgentError(err) {
+		case recoveryAbortNonRecoverable:
 			slog.ErrorContext(ctx, "[STREAM] agent.Stream failed with non-recoverable error", "error", err)
 			return errors.Wrap(err, errors.CodeInternal, "agent stream failed")
-		}
 
-		// 4. Recoverable — retry with feedback
-		if retryCount >= maxErrorRetries {
-			slog.ErrorContext(ctx, "[STREAM] agent.Stream failed after retries", "error", err, "retries", retryCount)
-			return errors.Wrap(err, errors.CodeInternal, "agent stream failed after retries")
-		}
+		case recoveryFeedback:
+			if retryCount >= maxErrorRetries {
+				slog.ErrorContext(ctx, "[STREAM] agent.Stream failed after retries", "error", err, "retries", retryCount)
+				return errors.Wrap(err, errors.CodeInternal, "agent stream failed after retries")
+			}
 
-		slog.WarnContext(ctx, "[STREAM] recoverable error, adding feedback and retrying",
-			"error", err, "attempt", retryCount+1)
+			slog.WarnContext(ctx, "[STREAM] recoverable error, adding feedback and retrying",
+				"error", err, "attempt", retryCount+1)
 
-		errorFeedback := formatAgentErrorFeedback(err)
-		messages = append(messages, &schema.Message{
-			Role:    schema.System,
-			Content: errorFeedback,
-		})
+			errorFeedback := formatAgentErrorFeedback(err)
+			messages = append(messages, &schema.Message{
+				Role:    schema.System,
+				Content: errorFeedback,
+			})
 
-		cb = callbacks.NewBuilder(callbacks.BuilderConfig{
-			EventCallback:    eventCallback,
-			ChunkCallback:    wrappedCallback,
-			Store:            a.stepContentStore,
+			cb = callbacks.NewBuilder(callbacks.BuilderConfig{
+				EventCallback:    eventCallback,
+				ChunkCallback:    wrappedCallback,
+				Store:            a.stepContentStore,
 				SessionID:        a.sessionID,
-			AgentID:          a.agentID,
-			ToolCallRecorder: a.toolCallRecorder,
-		})
-		callbackOpt = cb.BuildCallbackOption()
+				AgentID:          a.agentID,
+				ToolCallRecorder: a.toolCallRecorder,
+			})
+			callbackOpt = cb.BuildCallbackOption()
+		}
 	}
 	if activeStreamCancel != nil {
 		defer activeStreamCancel()
@@ -649,52 +649,75 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 	return nil
 }
 
-// isRateLimitError checks if the error is a rate limit / quota error from the LLM provider.
-// These errors are transient and should be retried with exponential backoff.
-func isRateLimitError(err error) bool {
+// recoveryAction describes how the agent retry loop should respond to an
+// error returned by agent.Generate / agent.Stream.
+type recoveryAction int
+
+const (
+	// recoveryAbortCancelled — context was cancelled (user / deadline).
+	// Return immediately without wrapping; callers check ctx.Err().
+	recoveryAbortCancelled recoveryAction = iota
+	// recoveryAbortNonRecoverable — LLM-provider auth failure or Eino
+	// step budget exhaustion. Retry will not help; fail fast.
+	recoveryAbortNonRecoverable
+	// recoveryBackoff — LLM provider rate-limit / quota. Wait with
+	// exponential backoff and retry the same request.
+	recoveryBackoff
+	// recoveryFeedback — recoverable error (parse failure, transient
+	// transport hiccup, unknown shape). Inject a system-level hint into
+	// the conversation and retry within the regular retry budget.
+	recoveryFeedback
+)
+
+// classifyRecovery decides the retry strategy for an error surfacing out
+// of the Eino ReAct agent. It consults only typed predicates — no
+// substring matching on opaque error text — so tool-result content
+// (controlled by tool authors / partners) cannot influence the platform's
+// recovery decisions.
+//
+// The single concession to substring matching lives one layer down in
+// internal/infrastructure/llm/classify_error.go, where Eino's
+// chat-model SDKs return opaque HTTP error strings and there is no
+// alternative path to status-code information. Anything that crosses
+// this function is already typed.
+func classifyRecovery(err error) recoveryAction {
 	if err == nil {
-		return false
-	}
-	errLower := strings.ToLower(err.Error())
-	patterns := []string{"rate limit", "too many requests", "429", "quota exceeded"}
-	for _, p := range patterns {
-		if strings.Contains(errLower, p) {
-			return true
-		}
-	}
-	return false
-}
-
-// isRecoverableAgentError checks if an error is recoverable (agent can retry with feedback)
-// Non-recoverable errors: context canceled, deadline exceeded, auth errors
-func isRecoverableAgentError(err error) bool {
-	if err == nil {
-		return false
+		// Defensive — callers should only invoke when err != nil.
+		return recoveryFeedback
 	}
 
-	errStr := err.Error()
-
-	// Non-recoverable errors - don't retry
-	nonRecoverable := []string{
-		"context canceled",
-		"context deadline exceeded",
-		"unauthorized",
-		"authentication",
-		"invalid api key",
-		"permission denied",
-		"exceeds max steps",
-		"max steps",
+	// Context cancellation — user cancelled or deadline hit.
+	if stdErrors.Is(err, context.Canceled) ||
+		stdErrors.Is(err, context.DeadlineExceeded) {
+		return recoveryAbortCancelled
 	}
 
-	errLower := strings.ToLower(errStr)
-	for _, pattern := range nonRecoverable {
-		if strings.Contains(errLower, pattern) {
-			return false
-		}
+	// Eino's own step-budget sentinel — retry is pointless.
+	if stdErrors.Is(err, compose.ErrExceedMaxSteps) {
+		return recoveryAbortNonRecoverable
 	}
 
-	// Everything else is recoverable (XML errors, parsing errors, tool errors, etc.)
-	return true
+	// Engine-level step-budget marker (in case any of our code wraps
+	// max-steps semantics in our own typed error).
+	if errors.Is(err, errors.CodeAgentBudgetExhausted) {
+		return recoveryAbortNonRecoverable
+	}
+
+	// LLM provider rate-limit — backoff + retry, no feedback (the LLM
+	// has not done anything wrong; the platform is being throttled).
+	if errors.Is(err, errors.CodeRateLimited) {
+		return recoveryBackoff
+	}
+
+	// LLM provider auth failure — retry will not help.
+	if errors.Is(err, errors.CodeLLMAuth) {
+		return recoveryAbortNonRecoverable
+	}
+
+	// Everything else — transient transport hiccups, parse errors,
+	// caller-side LLM bugs the model can be coached to fix — gets a
+	// feedback retry within the budget.
+	return recoveryFeedback
 }
 
 // rateLimitBackoff calculates exponential backoff duration for rate limit retries.
@@ -757,4 +780,3 @@ func sanitizeToolArguments(arguments string) string {
 	// No valid JSON found — return original input (tool will handle the error)
 	return arguments
 }
-

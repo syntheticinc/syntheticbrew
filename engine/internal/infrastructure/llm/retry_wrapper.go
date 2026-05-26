@@ -3,12 +3,12 @@ package llm
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // RetryWrapper wraps a ToolCallingChatModel with retry logic for transient errors.
@@ -33,6 +33,9 @@ func NewRetryWrapper(inner model.ToolCallingChatModel, maxRetries int, baseDelay
 }
 
 // Generate calls the inner model with retry logic for transient errors.
+// Errors crossing this boundary are normalised via classifyLLMError so
+// upstream consumers can use errors.Is against typed pkgerrors codes
+// instead of substring matching on opaque provider messages.
 func (w *RetryWrapper) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	var lastErr error
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
@@ -54,15 +57,21 @@ func (w *RetryWrapper) Generate(ctx context.Context, input []*schema.Message, op
 		}
 		lastErr = err
 		if !isRetriable(err) {
-			return nil, err
+			return nil, classifyLLMError(err)
 		}
 	}
-	return nil, fmt.Errorf("all %d retries failed: %w", w.maxRetries+1, lastErr)
+	return nil, classifyLLMError(fmt.Errorf("all %d retries failed: %w", w.maxRetries+1, lastErr))
 }
 
-// Stream delegates directly to the inner model (streaming is stateful, not retriable).
+// Stream delegates directly to the inner model (streaming is stateful,
+// not retriable). Returned errors are normalised via classifyLLMError so
+// agent-level recovery sees typed codes consistently with Generate.
 func (w *RetryWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	return w.inner.Stream(ctx, input, opts...)
+	reader, err := w.inner.Stream(ctx, input, opts...)
+	if err != nil {
+		return nil, classifyLLMError(err)
+	}
+	return reader, nil
 }
 
 // WithTools returns a new RetryWrapper with the specified tools bound to the inner model.
@@ -88,36 +97,29 @@ func (w *RetryWrapper) IsCallbacksEnabled() bool {
 }
 
 // isRetriable determines whether an error is transient and worth retrying.
+// Delegates classification to classifyLLMError — the single chokepoint for
+// LLM-error categorisation — then maps the typed code to a retry decision.
+// Unknown shapes default to retriable (preserves prior behaviour).
 func isRetriable(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	lower := strings.ToLower(err.Error())
+	typed := classifyLLMError(err)
 
-	// Non-retriable patterns (check first to avoid false positives)
-	nonRetriable := []string{"400", "401", "403", "404", "invalid"}
-	for _, pattern := range nonRetriable {
-		if strings.Contains(lower, pattern) {
-			return false
-		}
+	// Explicit non-retriable: auth failures, caller-side bad requests.
+	if pkgerrors.Is(typed, pkgerrors.CodeLLMAuth) ||
+		pkgerrors.Is(typed, pkgerrors.CodeInvalidInput) {
+		return false
 	}
 
-	// Retriable patterns
-	retriable := []string{
-		"503", "service unavailable",
-		"429", "too many requests", "rate limit",
-		"502", "bad gateway",
-		"timeout", "deadline exceeded",
-		"connection refused", "connection reset",
-		"eof",
-	}
-	for _, pattern := range retriable {
-		if strings.Contains(lower, pattern) {
-			return true
-		}
+	// Explicit retriable: rate-limit, transient transport/server errors.
+	if pkgerrors.Is(typed, pkgerrors.CodeRateLimited) ||
+		pkgerrors.Is(typed, pkgerrors.CodeTransient) {
+		return true
 	}
 
-	// Default: retry on unknown errors
+	// Unknown shape — retry to preserve existing behaviour where transient
+	// hiccups producing non-standard error text get a second chance.
 	return true
 }

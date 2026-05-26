@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/callbacks"
+	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
 )
 
 // mockToolCallRecorder records tool calls and results for assertions.
@@ -90,41 +90,33 @@ func TestOnToolError_EmitsEventWithError(t *testing.T) {
 	}
 }
 
-func TestOnToolError_MCPToolError(t *testing.T) {
-	tests := []struct {
-		name        string
-		err         error
-		wantMessage string
-	}{
-		{
-			name:        "direct MCPToolError",
-			err:         &mcp.MCPToolError{Content: "service unavailable"},
-			wantMessage: "service unavailable",
-		},
-		{
-			name:        "wrapped MCPToolError",
-			err:         fmt.Errorf("mcp call failed: %w", &mcp.MCPToolError{Content: "rate limited"}),
-			wantMessage: "rate limited",
-		},
-	}
+// TestOnToolEnd_ErrorPrefixLiftsIntoEventError verifies the [ERROR]-
+// convention path: when a tool returns a string starting with "[ERROR] "
+// (the canonical engine-wide pattern for application-level tool errors,
+// produced by MCP isError responses and any other native tool that
+// reports a non-platform failure), OnToolEnd lifts it into event.Error
+// with the canonical "tool_error" code instead of treating it as a
+// successful tool result.
+func TestOnToolEnd_ErrorPrefixLiftsIntoEventError(t *testing.T) {
+	collector := newEventCollector()
+	handler, _ := newTestToolEventHandler(collector, nil)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			collector := newEventCollector()
-			handler, _ := newTestToolEventHandler(collector, nil)
+	info := &callbacks.RunInfo{Name: "rule_create"}
+	errPayload := "[ERROR] Permission denied. The user does not have access."
 
-			info := &callbacks.RunInfo{Name: "mcp_tool"}
-			handler.OnToolError(context.Background(), info, tt.err)
+	// Build the einotool.CallbackOutput with our error-prefixed string;
+	// the handler must not abort the turn but must mark the event with
+	// event.Error so SSE consumers render it as an error tool result.
+	output := &einotool.CallbackOutput{Response: errPayload}
+	handler.OnToolEnd(context.Background(), info, output)
 
-			events := collector.GetEventsByType(domain.EventTypeToolResult)
-			require.Len(t, events, 1)
+	events := collector.GetEventsByType(domain.EventTypeToolResult)
+	require.Len(t, events, 1)
 
-			event := events[0]
-			assert.Equal(t, tt.wantMessage, event.Error.Message)
-			assert.Equal(t, tt.wantMessage, event.Content)
-			assert.Equal(t, "tool_error", event.Error.Code)
-		})
-	}
+	event := events[0]
+	require.NotNil(t, event.Error, "[ERROR] prefix must lift into event.Error")
+	assert.Equal(t, "tool_error", event.Error.Code)
+	assert.Equal(t, errPayload, event.Error.Message)
 }
 
 func TestOnToolError_IncrementsStep(t *testing.T) {
@@ -156,18 +148,6 @@ func TestOnToolError_RecordsToolResult(t *testing.T) {
 	assert.Equal(t, "test-session", recorder.results[0].sessionID)
 	assert.Equal(t, "execute_command", recorder.results[0].toolName)
 	assert.Equal(t, "exit code 1", recorder.results[0].result)
-}
-
-func TestOnToolError_MCPToolError_RecordsContent(t *testing.T) {
-	collector := newEventCollector()
-	recorder := &mockToolCallRecorder{}
-	handler, _ := newTestToolEventHandler(collector, recorder)
-
-	info := &callbacks.RunInfo{Name: "mcp_tool"}
-	handler.OnToolError(context.Background(), info, &mcp.MCPToolError{Content: "not found"})
-
-	require.Len(t, recorder.results, 1)
-	assert.Equal(t, "not found", recorder.results[0].result)
 }
 
 func TestOnToolError_SetsMetadata(t *testing.T) {

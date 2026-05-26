@@ -2,17 +2,15 @@ package callbacks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 	"github.com/cloudwego/eino/callbacks"
 	einotool "github.com/cloudwego/eino/components/tool"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // HITLAware lets the tool handler flag a HITL turn on the model handler.
@@ -203,17 +201,19 @@ func (h *ToolEventHandler) OnToolEnd(ctx context.Context, info *callbacks.RunInf
 }
 
 // OnToolError handles tool execution errors. Called by Eino when InvokableRun returns a Go error.
-// For MCP tools with isError: true, the error wraps MCPToolError with the original content.
+//
+// As of the [ERROR]-convention migration, MCP application-level errors
+// (isError: true) no longer reach here — they are returned as normal
+// tool-result content with an "[ERROR] " prefix and surface through
+// OnToolEnd instead. This handler now only sees transport-level Go
+// errors (network down, MCP server crashed) and Go-error failures from
+// any other native tool whose InvokableRun signals a real platform
+// problem rather than an application outcome.
 func (h *ToolEventHandler) OnToolError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
 	currentStep := h.counter.GetStep()
 	slog.WarnContext(ctx, "[CALLBACK] onToolError called", "tool_name", info.Name, "step", currentStep, "error", err)
 
-	// Extract error content — MCPToolError carries the original tool response text.
 	content := err.Error()
-	var mcpErr *mcp.MCPToolError
-	if errors.As(err, &mcpErr) {
-		content = mcpErr.Content
-	}
 
 	callID := fmt.Sprintf("server-%s-%d", info.Name, currentStep)
 

@@ -8,6 +8,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GORMSessionRepository implements session CRUD using GORM.
@@ -76,6 +77,27 @@ func (r *GORMSessionRepository) Create(ctx context.Context, session *models.Sess
 	session.TenantID = tenantIDFromCtx(ctx)
 	if err := r.db.WithContext(ctx).Create(session).Error; err != nil {
 		return fmt.Errorf("create session: %w", err)
+	}
+	return nil
+}
+
+// CreateIfNotExists inserts a new session row, but silently skips when a
+// row with the same primary key already exists (Postgres ON CONFLICT DO
+// NOTHING). This is the correct operation for chat-request session
+// initialisation, where the in-memory session registry can lose its
+// state on engine restart or eviction — in which case every existing
+// session would otherwise produce a "duplicate key" WARN on each
+// request to that session.
+//
+// Use this for "first-seen this process" persistence, not for cases
+// where duplicates legitimately signal a caller-side bug; those should
+// continue to use Create.
+func (r *GORMSessionRepository) CreateIfNotExists(ctx context.Context, session *models.SessionModel) error {
+	session.TenantID = tenantIDFromCtx(ctx)
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
+		Create(session).Error; err != nil {
+		return fmt.Errorf("create-if-not-exists session: %w", err)
 	}
 	return nil
 }

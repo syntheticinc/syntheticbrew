@@ -7,12 +7,22 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
 )
 
-// ContextLogger logs the composition of context for debugging
+// ContextLogger logs the composition of context for debugging.
+//
+// Production-deployment note: when ContextLogPath is configured but the
+// underlying filesystem is read-only (typical in k8s pods without a
+// writable volume mounted at logs/), every mkdir attempt fails. To
+// avoid flooding ERROR-level output on every chat turn, the logger
+// performs a sticky one-shot disable: the first mkdir failure logs a
+// single INFO line and sets `disabled`; all subsequent calls return
+// early without logging until the process restarts.
 type ContextLogger struct {
 	logDir           string
 	sessionID        string
@@ -21,6 +31,37 @@ type ContextLogger struct {
 	agentID          string // "supervisor" | "code-agent-xxx"
 	parentAgentID    string // parent agent ID (for Code Agents → "supervisor")
 	taskID           string // task being executed (for Code Agents)
+
+	// Sticky-disable state: set once on first mkdir failure to silence
+	// repeated ERROR logs from a read-only logs/ filesystem in prod.
+	disabled    atomic.Bool
+	disableOnce sync.Once
+}
+
+// ensureDir is the single chokepoint for creating the session log
+// directory. On first failure it logs an INFO line via disableOnce and
+// flips the sticky-disable flag; subsequent calls return false silently
+// so callers can short-circuit without spamming the log.
+//
+// Returns true when the directory is ready and the caller may proceed
+// to write files inside it; false when logging is disabled for this
+// logger instance (caller must early-return).
+func (cl *ContextLogger) ensureDir(ctx context.Context, sessionDir string) bool {
+	if cl.disabled.Load() {
+		return false
+	}
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		cl.disableOnce.Do(func() {
+			slog.InfoContext(ctx, "context logging disabled",
+				"reason", "mkdir failed",
+				"error", err,
+				"path", sessionDir,
+				"hint", "set ContextLogPath to empty string or mount a writable volume to silence this")
+			cl.disabled.Store(true)
+		})
+		return false
+	}
+	return true
 }
 
 // generateSessionDirName creates a timestamp-based directory name
@@ -98,8 +139,7 @@ func (cl *ContextLogger) LogContext(ctx context.Context, messages []*schema.Mess
 
 	// Create session directory if it doesn't exist
 	sessionDir := filepath.Join(cl.logDir, cl.sessionDirName)
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		slog.ErrorContext(ctx, "failed to create session log directory", "error", err, "path", sessionDir)
+	if !cl.ensureDir(ctx, sessionDir) {
 		return
 	}
 	slog.DebugContext(ctx, "session directory created", "path", sessionDir)
@@ -247,17 +287,17 @@ type MessageInfo struct {
 type ToolCallInfo struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
-	Index     *int   `json:"index,omitempty"`    // Ollama uses Index instead of ID
+	Index     *int   `json:"index,omitempty"`     // Ollama uses Index instead of ID
 	Arguments string `json:"arguments,omitempty"` // tool call arguments JSON
 }
 
 // ContextStatistics represents statistics about the context
 type ContextStatistics struct {
-	SystemCount       int `json:"system_count"`
-	UserCount         int `json:"user_count"`
-	AssistantCount    int `json:"assistant_count"`
-	ToolCount         int `json:"tool_count"`
-	AverageMsgTokens  int `json:"average_msg_tokens"`
+	SystemCount      int `json:"system_count"`
+	UserCount        int `json:"user_count"`
+	AssistantCount   int `json:"assistant_count"`
+	ToolCount        int `json:"tool_count"`
+	AverageMsgTokens int `json:"average_msg_tokens"`
 }
 
 // writeSnapshot writes the context snapshot to a step-specific JSON file.
@@ -312,8 +352,7 @@ func (cl *ContextLogger) LogContextSummary(ctx context.Context, messages []*sche
 
 	// Create session directory if it doesn't exist
 	sessionDir := filepath.Join(cl.logDir, cl.sessionDirName)
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		slog.ErrorContext(ctx, "failed to create session log directory", "error", err, "path", sessionDir)
+	if !cl.ensureDir(ctx, sessionDir) {
 		return
 	}
 
@@ -366,8 +405,7 @@ func (cl *ContextLogger) LogCompressionReport(ctx context.Context, beforeCount, 
 
 	// Create session directory if it doesn't exist
 	sessionDir := filepath.Join(cl.logDir, cl.sessionDirName)
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		slog.ErrorContext(ctx, "failed to create session log directory", "error", err, "path", sessionDir)
+	if !cl.ensureDir(ctx, sessionDir) {
 		return
 	}
 
@@ -399,10 +437,10 @@ func (cl *ContextLogger) LogCompressionReport(ctx context.Context, beforeCount, 
 
 // SessionOverview represents the session structure for logging
 type SessionOverview struct {
-	SessionID  string              `json:"session_id"`
-	StartedAt  string              `json:"started_at"`
-	Supervisor SessionAgentInfo    `json:"supervisor"`
-	CodeAgents []SessionAgentInfo  `json:"code_agents"`
+	SessionID  string             `json:"session_id"`
+	StartedAt  string             `json:"started_at"`
+	Supervisor SessionAgentInfo   `json:"supervisor"`
+	CodeAgents []SessionAgentInfo `json:"code_agents"`
 }
 
 // SessionAgentInfo represents an agent in the session overview
@@ -425,8 +463,7 @@ func (cl *ContextLogger) LogSessionOverview(overview SessionOverview) {
 
 	sessionDir := filepath.Join(cl.logDir, cl.sessionDirName)
 	bgCtx := context.Background()
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		slog.ErrorContext(bgCtx, "failed to create session log directory", "error", err, "path", sessionDir)
+	if !cl.ensureDir(bgCtx, sessionDir) {
 		return
 	}
 

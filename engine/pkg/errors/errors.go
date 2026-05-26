@@ -17,6 +17,16 @@ const (
 	CodeUnavailable      = "UNAVAILABLE"
 	CodePermissionDenied = "PERMISSION_DENIED"
 	CodeCancelled        = "CANCELLED"
+
+	// LLM-provider error classes — produced at the HTTP boundary in
+	// internal/infrastructure/llm/classify_error.go and consumed by
+	// react/agent.go classifyRecovery via errors.Is. Keep these tightly
+	// scoped to LLM provider semantics; do not reuse them for other
+	// transport or tool-level errors.
+	CodeRateLimited          = "RATE_LIMITED"
+	CodeLLMAuth              = "LLM_AUTH"
+	CodeTransient            = "TRANSIENT"
+	CodeAgentBudgetExhausted = "AGENT_BUDGET_EXHAUSTED"
 )
 
 // DomainError represents a domain-specific error with code and context
