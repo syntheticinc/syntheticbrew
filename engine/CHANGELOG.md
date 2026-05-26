@@ -1,5 +1,60 @@
 # Changelog
 
+## [1.2.4] — 2026-05-26
+
+Recovery classifier hardening + log-noise cleanup.
+
+### Fixed
+
+- Chat turns no longer abort with `INTERNAL_ERROR` when an MCP tool
+  returns `isError: true` with a content payload containing phrases
+  like `"permission denied"`. The agent recovery classifier previously
+  did substring matching over the lowercased error text against a
+  non-recoverable list — a leaky abstraction that let tool-author-
+  controlled content steer the platform's control flow.
+- `WARN persist chat session failed` (duplicate key on `pk_sessions`)
+  no longer fires on every chat request to an existing session after
+  engine restart or in-memory registry eviction. Session-row creation
+  is now idempotent via `INSERT ... ON CONFLICT DO NOTHING`.
+- `ERROR failed to create session log directory` no longer fires on
+  every turn when `ContextLogPath` points at a read-only filesystem.
+  The context logger now performs a one-shot sticky disable: a single
+  `INFO context logging disabled` line per process lifetime, then all
+  subsequent log attempts return silently.
+
+### Changed (internal)
+
+- New `pkg/errors` codes: `CodeRateLimited`, `CodeLLMAuth`,
+  `CodeTransient`, `CodeAgentBudgetExhausted`. Additive only.
+- New `internal/infrastructure/llm/classify_error.go` — the single
+  chokepoint for substring matching against HTTP-status / provider
+  error strings; produces typed `DomainError` wraps.
+- `RetryWrapper` is now applied to every production LLM client (13
+  construction sites in `llm_factory`, `model_cache`,
+  `azure_openai_client`, `byok`). Defaults: 3 attempts, 500 ms base
+  backoff, 5 min per-attempt timeout. `Stream` calls remain pass-
+  through. `isRetriable` rewritten to use `errors.Is` on the typed
+  codes.
+- `react/agent.go classifyRecovery` replaces `isRateLimitError` +
+  `isRecoverableAgentError`. Pure `errors.Is` dispatch over
+  `context.Canceled`, `context.DeadlineExceeded`,
+  `compose.ErrExceedMaxSteps`, and the new `pkgerrors` codes. Zero
+  substring matching in the agent layer.
+- MCP `tool_adapter.InvokableRun` returns `("[ERROR] " + content,
+  nil)` for application-level errors (`isError: true`) instead of
+  bubbling them as Go errors. Transport-level Go errors still
+  surface as before. `MCPToolError` type removed.
+- `spawn_tool` migrated to the same `[ERROR]` convention for its
+  five application-level error branches.
+
+### Behavioural guarantees preserved
+
+- SSE event shape unchanged.
+- `pkg/errors` public surface additive only.
+- Retry counts, backoff durations and final wrapping codes in the
+  `agent.go` retry loops identical to prior behaviour for every
+  error class that crosses the classifier.
+
 ## [1.2.3] — 2026-05-22
 
 Admin SPA hotfix.
