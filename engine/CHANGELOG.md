@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.3.0] — 2026-05-27
+
+Knowledge Graphs — third capability primitive alongside `memory` and
+`knowledge`. Declarative entity taxonomies with auto-generated `list_X` /
+`get_X` MCP tools per entity type, bound to agents via the standard
+capability mechanism.
+
+### Added
+
+- **Knowledge Graphs domain**: `kg_bundle`, `kg_entity_schema`, `kg_entity`
+  tables (migration `010_knowledge_graphs.yaml`); generic GIN index on
+  entity JSONB; partial GIN on `capabilities.config -> 'bundles'`.
+- **Capability**: `capabilities.type = 'knowledge_graphs'` accepted
+  (migration `011_capabilities_kg_constraint.yaml` relaxes the CHECK).
+  Strategy registry pattern (`internal/domain/capabilities/`) replaces
+  prior switch-based capability dispatch — adding a new capability is now
+  a one-file change, enforced by an architectural test.
+- **REST API**: 12 endpoints under `/api/v1/knowledge-graphs/{bundle}/...`
+  (read + bulk import + granular CRUD + schema upsert + bundle delete).
+  Granular entity bodies are flat JSON mirroring `bulk-import.items[]`.
+- **Auto MCP tools**: per-tenant lazy registry; `list_<entity_type>`
+  accepts `filter[<x-index-field>]=<value>`, `limit` (1..500), `offset`.
+- **GitOps**: `/config/import` and `/config/export` round-trip
+  `knowledge_graphs` alongside agents/models/MCP servers.
+
+### Hardened
+
+- Cross-bundle tool-name collision detection now reads the persistence
+  layer (`DBSchemaToolNames`) instead of relying on the in-memory
+  registry that was only hydrated by chat traffic.
+- Bundle-level data cap: 10 MB (`MaxBundleDataBytes`); per-entity 100 KB.
+- Pagination: `limit > 500` returns HTTP 400 (was silently clamped).
+- Cross-tenant isolation: tenant B GET on tenant A's bundle → 404 (no
+  existence leak); capability bound to a phantom bundle resolves to
+  empty tools (no info leak).
+- JSON Schema validator blocks external `$ref` (SSRF guard).
+
+### Cloud (bytebrew-ee)
+
+- `Plugin.KGEnforcer()` and `Plugin.KGCounter()` implemented; entitlements
+  extended with KG quota fields. Free=1/200/50KB/5MB; Personal=3/2000/
+  100KB/10MB; Pro=∞/20000/100KB/10MB; Enterprise=∞ across the board.
+
+### Known follow-ups
+
+- L3 e2e tests in `bytebrew-ee/tests/e2e/` exercising the agent-chat-uses-
+  tool path (TestKGCloud01-08) — wiring + entitlements shipped, mock-llm
+  scenarios pending.
+- Per-bundle creation hook (`OnBundleCreate`) to enforce KGBundlesLimit
+  cap at apply time — currently only entity-level writes are gated.
+
 ## [1.2.4] — 2026-05-26
 
 Recovery classifier hardening + log-noise cleanup.

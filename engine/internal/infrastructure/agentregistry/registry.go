@@ -36,10 +36,22 @@ type RegisteredAgent struct {
 
 // AgentRegistry loads agents from DB and caches them in memory.
 type AgentRegistry struct {
-	mu       sync.RWMutex
-	agents   map[string]*RegisteredAgent
-	repo     AgentReader
-	capRepo  CapabilityReader // optional; nil disables capability-derived tools
+	mu      sync.RWMutex
+	agents  map[string]*RegisteredAgent
+	repo    AgentReader
+	capRepo CapabilityReader // optional; nil disables capability-derived tools
+	deriver *Deriver         // optional; nil falls back to legacy DeriveRuntimeTools free function
+}
+
+// SetDeriver wires a strategy-based Deriver into the registry. When set,
+// subsequent Load calls use Deriver.DeriveRuntimeTools (which dispatches
+// capabilities via the capabilities.Registry) instead of the legacy free
+// function. Construction-time DI: app.NewServer calls this once after
+// constructing the registry. Safe to call before Load.
+func (r *AgentRegistry) SetDeriver(d *Deriver) {
+	r.mu.Lock()
+	r.deriver = d
+	r.mu.Unlock()
 }
 
 // New creates a new AgentRegistry.
@@ -81,7 +93,15 @@ func (r *AgentRegistry) Load(ctx context.Context) error {
 	agents := make(map[string]*RegisteredAgent, len(records))
 	for _, rec := range records {
 		caps := capsByAgent[rec.Name] // nil if capRepo unset or agent has no caps
-		derived := DeriveRuntimeTools(rec, caps)
+		var derived []string
+		if r.deriver != nil {
+			derived, err = r.deriver.DeriveRuntimeTools(ctx, rec, caps)
+			if err != nil {
+				return fmt.Errorf("derive tools for agent %q: %w", rec.Name, err)
+			}
+		} else {
+			derived = DeriveRuntimeTools(rec, caps)
+		}
 		flow := toFlow(rec)
 		agents[rec.Name] = &RegisteredAgent{
 			Flow:         flow,
@@ -258,21 +278,21 @@ func toFlow(rec configrepo.AgentRecord) *domain.Flow {
 	}
 
 	return &domain.Flow{
-		Type:           string(rec.Name),
-		Name:           rec.Name,
-		SystemPrompt:   systemPrompt,
-		ToolNames:      toolNames,
-		MaxSteps:       rec.MaxSteps,
+		Type:            string(rec.Name),
+		Name:            rec.Name,
+		SystemPrompt:    systemPrompt,
+		ToolNames:       toolNames,
+		MaxSteps:        rec.MaxSteps,
 		MaxContextSize:  rec.MaxContextSize,
 		MaxTurnDuration: rec.MaxTurnDuration,
 		ToolExecution:   rec.ToolExecution,
-		Lifecycle:      lifecycle,
-		Spawn:          spawn,
-		MCPServers:     rec.MCPServers,
-		ConfirmBefore:  rec.ConfirmBefore,
-		Temperature:    rec.Temperature,
-		TopP:           rec.TopP,
-		MaxTokens:      rec.MaxTokens,
-		StopSequences:  rec.StopSequences,
+		Lifecycle:       lifecycle,
+		Spawn:           spawn,
+		MCPServers:      rec.MCPServers,
+		ConfirmBefore:   rec.ConfirmBefore,
+		Temperature:     rec.Temperature,
+		TopP:            rec.TopP,
+		MaxTokens:       rec.MaxTokens,
+		StopSequences:   rec.StopSequences,
 	}
 }

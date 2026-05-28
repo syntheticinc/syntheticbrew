@@ -1,0 +1,82 @@
+- id: PM-LEAK-001
+  name: Water leak detection in apartment buildings
+  industry: PM
+  sensor_family: leak_sensor
+  status: approved
+  description: |
+    Detect water leaks early in basements, common bathrooms, and laundry
+    rooms. Notify the property manager within 60 seconds; integrate with
+    valve shutoff where available. Targets reduction of insurance claims.
+
+- id: PM-OCC-002
+  name: Common-area occupancy monitoring
+  industry: PM
+  sensor_family: pir_motion
+  status: approved
+  description: |
+    Monitor occupancy of gyms, lounges, and shared workspaces to schedule
+    cleaning and HVAC. Reports utilisation by hour-of-day and day-of-week.
+
+- id: PM-DOOR-003
+  name: Exterior door open-too-long alerts
+  industry: PM
+  sensor_family: door_contact
+  status: approved
+  description: |
+    Detect when exterior doors remain open beyond a threshold. Useful for
+    energy waste and security alerting in multi-family buildings.
+
+- id: AG-SOIL-001
+  name: Soil moisture monitoring for greenhouses
+  industry: AG
+  sensor_family: soil_moisture
+  status: approved
+
+- id: AG-DRAFT-007
+  name: Experimental yield prediction
+  industry: AG
+  sensor_family: soil_moisture
+  status: draft
+
+- id: WH-TEMP-001
+  name: Cold-chain temperature monitoring
+  industry: WH
+  sensor_family: temp_humidity
+  status: approved
+  description: |
+    Track temperature and humidity in refrigerated and frozen storage
+    zones. Trigger alerts on excursion; export compliance reports for
+    HACCP / FDA audits.
+
+- id: WH-DOOR-002
+  name: Cold-storage door open alerts
+  industry: WH
+  sensor_family: door_contact
+  status: approved
+
+- id: MF-MOTION-001
+  name: Production-line occupancy / utilization
+  industry: MF
+  sensor_family: pir_motion
+  status: approved
+
+- id: MF-LEGACY-009
+  name: Legacy pulse-meter rollup
+  industry: MF
+  sensor_family: smart_meter
+  status: deprecated
+  description: |
+    Replaced by direct OPC-UA integration. Kept in the taxonomy for
+    backwards compatibility with older bundles.
+
+- id: MU-FLOW-001
+  name: Stormwater flow monitoring
+  industry: MU
+  sensor_family: leak_sensor
+  status: approved
+
+- id: SH-TEMP-001
+  name: Per-room temperature awareness
+  industry: SH
+  sensor_family: temp_humidity
+  status: approved

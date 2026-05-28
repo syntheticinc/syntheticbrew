@@ -56,5 +56,12 @@ func (Noop) UsageExtras(_ context.Context, _ string) map[string]any { return nil
 // DocsMCPEndpoint returns "". CE seed data does not include a Docs MCP entry.
 func (Noop) DocsMCPEndpoint() string { return "" }
 
+// KGEnforcer returns nil — CE has no quota enforcement for Knowledge Graphs.
+// EE and Cloud plugins override to enforce plan limits.
+func (Noop) KGEnforcer() KGEnforcer { return nil }
+
+// KGCounter returns nil — CE reads counts directly from the database.
+func (Noop) KGCounter() KGCounter { return nil }
+
 // Stop is a no-op.
 func (Noop) Stop() {}

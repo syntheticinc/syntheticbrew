@@ -8,9 +8,32 @@ import (
 
 // configYAML is the top-level structure for YAML import/export.
 type configYAML struct {
-	Agents     flexList[agentYAML]     `yaml:"agents,omitempty"`
-	Models     flexList[modelYAML]     `yaml:"models,omitempty"`
-	MCPServers flexList[mcpServerYAML] `yaml:"mcp_servers,omitempty"`
+	Agents          flexList[agentYAML]     `yaml:"agents,omitempty"`
+	Models          flexList[modelYAML]     `yaml:"models,omitempty"`
+	MCPServers      flexList[mcpServerYAML] `yaml:"mcp_servers,omitempty"`
+	KnowledgeGraphs []knowledgeGraphYAML    `yaml:"knowledge_graphs,omitempty"`
+}
+
+// knowledgeGraphYAML is the bundle shape inside /config/import + /config/export
+// for Knowledge Graphs (engine 1.3.0+). One bundle per array entry; round-trip
+// `brewctl kg pull` produces byte-identical input for the same engine state.
+type knowledgeGraphYAML struct {
+	BundleName string                       `yaml:"bundle_name"`
+	Version    string                       `yaml:"version,omitempty"`
+	Schemas    []knowledgeGraphSchemaYAML   `yaml:"schemas"`
+	Entities   []knowledgeGraphEntitiesYAML `yaml:"entities"`
+}
+
+type knowledgeGraphSchemaYAML struct {
+	EntityType      string                 `yaml:"entity_type"`
+	Schema          map[string]interface{} `yaml:"schema"`
+	ExposeTools     []string               `yaml:"expose_tools,omitempty"`
+	ToolDescription string                 `yaml:"tool_description,omitempty"`
+}
+
+type knowledgeGraphEntitiesYAML struct {
+	EntityType string                   `yaml:"entity_type"`
+	Items      []map[string]interface{} `yaml:"items"`
 }
 
 // namedItem is implemented by YAML structs that can be keyed by name in map format.

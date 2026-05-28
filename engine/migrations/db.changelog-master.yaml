@@ -26,3 +26,9 @@ databaseChangeLog:
   - include:
       file: 009_messages_interrupt_event_types.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 010_knowledge_graphs.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 011_capabilities_kg_constraint.yaml
+      relativeToChangelogFile: true

@@ -1,0 +1,87 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010_knowledge_graphs
+      author: syntheticbrew
+      comment: |
+        Knowledge Graphs feature (engine 1.3.0). Three new tables plus two
+        indexes. Tenant-scoped on every row per cloud-first rule. No changes
+        to existing tables.
+
+          kg_bundle           -- customer's deploy unit per Knowledge Graph
+          kg_entity_schema    -- JSON Schema + x-* annotations per entity type
+          kg_entity           -- entity instances (JSONB data, GIN-indexed)
+
+        Agent-bundle bindings live in the existing capabilities.config JSONB
+        column (type='knowledge_graphs', config={"bundles":[...]}). The
+        partial GIN index on capabilities makes the reverse-lookup ("which
+        agents use bundle X?") O(log n) without a denormalised binding table.
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE kg_bundle (
+                tenant_id    uuid         NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                bundle_name  varchar(64)  NOT NULL,
+                version      varchar(32)  NOT NULL,
+                manifest     jsonb        NOT NULL DEFAULT '{}'::jsonb,
+                created_at   timestamptz  NOT NULL DEFAULT now(),
+                updated_at   timestamptz  NOT NULL DEFAULT now(),
+                CONSTRAINT pk_kg_bundle PRIMARY KEY (tenant_id, bundle_name),
+                CONSTRAINT chk_kg_bundle_name CHECK (
+                  bundle_name ~ '^[a-z][a-z0-9-]{0,62}[a-z0-9]$'
+                )
+              );
+
+              CREATE TABLE kg_entity_schema (
+                tenant_id         uuid         NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                bundle_name       varchar(64)  NOT NULL,
+                entity_type       varchar(64)  NOT NULL,
+                schema_json       jsonb        NOT NULL,
+                schema_hash       char(64)     NOT NULL,
+                id_field          varchar(64)  NOT NULL,
+                expose_tools      text[]       NOT NULL DEFAULT ARRAY['list','get']::text[],
+                tool_description  text,
+                created_at        timestamptz  NOT NULL DEFAULT now(),
+                updated_at        timestamptz  NOT NULL DEFAULT now(),
+                CONSTRAINT pk_kg_entity_schema PRIMARY KEY (tenant_id, bundle_name, entity_type),
+                CONSTRAINT fk_kg_entity_schema_bundle FOREIGN KEY (tenant_id, bundle_name)
+                  REFERENCES kg_bundle (tenant_id, bundle_name) ON DELETE CASCADE,
+                CONSTRAINT chk_kg_entity_type CHECK (
+                  entity_type ~ '^[a-z][a-z0-9_]{0,62}[a-z0-9]$'
+                )
+              );
+
+              CREATE TABLE kg_entity (
+                tenant_id    uuid          NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                bundle_name  varchar(64)   NOT NULL,
+                entity_type  varchar(64)   NOT NULL,
+                entity_id    varchar(128)  NOT NULL,
+                data         jsonb         NOT NULL,
+                schema_hash  char(64)      NOT NULL,
+                created_at   timestamptz   NOT NULL DEFAULT now(),
+                updated_at   timestamptz   NOT NULL DEFAULT now(),
+                CONSTRAINT pk_kg_entity PRIMARY KEY (tenant_id, bundle_name, entity_type, entity_id),
+                CONSTRAINT fk_kg_entity_schema FOREIGN KEY (tenant_id, bundle_name, entity_type)
+                  REFERENCES kg_entity_schema (tenant_id, bundle_name, entity_type) ON DELETE CASCADE
+              );
+
+              -- Generic GIN over the data JSONB. Covers any `data @> '{...}'`
+              -- filter, so customer-marked x-index fields do not need
+              -- per-field DDL. Constant-cardinality on bundles guarantees
+              -- the index stays small (no runtime ALTER ever).
+              CREATE INDEX ix_kg_entity_data_gin
+                ON kg_entity USING GIN (data jsonb_path_ops);
+
+              -- Partial GIN on capabilities.config -> 'bundles' so the
+              -- reverse-lookup "which agents are bound to bundle X" runs
+              -- O(log n) without a denormalised binding table. The WHERE
+              -- clause keeps the index small (only knowledge_graphs rows).
+              CREATE INDEX ix_capabilities_kg_bundles_gin
+                ON capabilities USING GIN ((config -> 'bundles'))
+                WHERE type = 'knowledge_graphs';
+        - rollback:
+            sql: |
+              DROP INDEX IF EXISTS ix_capabilities_kg_bundles_gin;
+              DROP INDEX IF EXISTS ix_kg_entity_data_gin;
+              DROP TABLE IF EXISTS kg_entity;
+              DROP TABLE IF EXISTS kg_entity_schema;
+              DROP TABLE IF EXISTS kg_bundle;

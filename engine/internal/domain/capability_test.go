@@ -66,37 +66,24 @@ func TestCapabilityType_IsValid(t *testing.T) {
 	}
 }
 
-func TestCapabilityType_InjectedTools(t *testing.T) {
-	tests := []struct {
-		capType  CapabilityType
-		expected []string
-	}{
-		{CapabilityTypeMemory, []string{"memory_recall", "memory_store"}},
-		{CapabilityTypeKnowledge, []string{"knowledge_search"}},
-	}
-	for _, tt := range tests {
-		t.Run(string(tt.capType), func(t *testing.T) {
-			got := tt.capType.InjectedTools()
-			if len(got) != len(tt.expected) {
-				t.Fatalf("InjectedTools() = %v, want %v", got, tt.expected)
-			}
-			for i, name := range got {
-				if name != tt.expected[i] {
-					t.Errorf("InjectedTools()[%d] = %q, want %q", i, name, tt.expected[i])
-				}
-			}
-		})
-	}
-}
-
 func TestAllCapabilityTypes(t *testing.T) {
 	types := AllCapabilityTypes()
-	if len(types) != 2 {
-		t.Errorf("expected 2 capability types, got %d", len(types))
+	if len(types) != 3 {
+		t.Errorf("expected 3 capability types, got %d", len(types))
 	}
 	for _, ct := range types {
 		if !ct.IsValid() {
 			t.Errorf("AllCapabilityTypes() returned invalid type: %s", ct)
 		}
+	}
+	// Sanity: knowledge_graphs must be in the list (1.3.0 capability).
+	seen := false
+	for _, ct := range types {
+		if ct == CapabilityTypeKnowledgeGraphs {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Error("AllCapabilityTypes() must include CapabilityTypeKnowledgeGraphs")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/audit"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/kgtools"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm/registry"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
@@ -21,6 +22,9 @@ import (
 	mcpcatalog "github.com/syntheticinc/syntheticbrew/internal/service/mcp"
 	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 	svcschematemplate "github.com/syntheticinc/syntheticbrew/internal/service/schematemplate"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgapply"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgmutate"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
 	ucschematemplate "github.com/syntheticinc/syntheticbrew/internal/usecase/schematemplate"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
@@ -61,6 +65,10 @@ type routesDeps struct {
 	// are stored. Sourced from BootstrapConfig.Knowledge.DataDir
 	// (env DATA_DIR). Empty string defaults to "data".
 	KnowledgeDataDir string
+	// KGToolProvider is the per-tenant Knowledge Graph tool resolver shared
+	// between the strategy registry (capability dispatch) and the apply usecase
+	// (collision detection). Constructed once in server.go.
+	KGToolProvider *kgtools.Provider
 }
 
 // registerHTTPRoutes registers the public health/registry/local-session
@@ -227,9 +235,10 @@ func registerHTTPRoutes(deps routesDeps) {
 		}
 
 		// Config
+		configImportExport := &configImportExportHTTPAdapter{db: pgDB}
 		configHandler := deliveryhttp.NewConfigHandler(
 			&configReloaderHTTPAdapter{registry: agentRegistry, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
-			&configImportExportHTTPAdapter{db: pgDB},
+			configImportExport,
 		)
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeConfig))
@@ -305,6 +314,94 @@ func registerHTTPRoutes(deps routesDeps) {
 				r.Delete("/api/v1/knowledge-bases/{name}/files/{file_id}", kbHandler.DeleteFile)
 				r.Post("/api/v1/knowledge-bases/{name}/files/{file_id}/reindex", kbHandler.ReindexFile)
 			})
+
+			// Knowledge Graphs (Этап 2 — engine 1.3.0). Wire repos → usecases →
+			// HTTP adapters → handlers, all behind the standard tenant-scoped
+			// middleware. The kgToolProvider was constructed earlier in server.go
+			// so the strategy registry already references it.
+			var kgReadHandler *deliveryhttp.KGReadHandler
+			var kgMutateHandler *deliveryhttp.KGMutateHandler
+			{
+				kgBundleRepo := configrepo.NewGORMKGBundleRepository(pgDB)
+				kgSchemaRepo := configrepo.NewGORMKGSchemaRepository(pgDB)
+				kgEntityRepo := configrepo.NewGORMKGEntityRepository(pgDB)
+				kgTxRunner := configrepo.NewGORMTransactionRunner(pgDB)
+
+				kgValidator := kgtools.NewSchemaValidator()
+				kgCollision := kgtools.NewCollisionDetector(
+					// Engine builtins: capability tools that ship with the engine
+					// and the spawn helpers. New entity_types that would generate
+					// any of these names are rejected at apply time.
+					kgtools.StaticToolNames{Names: []string{
+						"memory_recall", "memory_store",
+						"knowledge_search",
+						"spawn_agent", "spawn_async", "spawn_sync",
+					}},
+					// In-memory KG registry — catches collisions for bundles that
+					// have already served chat traffic in this engine process.
+					kgtools.RegistryToolNames{Provider: deps.KGToolProvider},
+					// Authoritative cross-bundle source — reads persisted schemas
+					// across the tenant so collisions are caught immediately at
+					// apply time, even on a freshly started engine.
+					kgtools.DBSchemaToolNames{Lister: kgSchemaRepo},
+				)
+
+				// Quota enforcer adapter — turns a plugin.KGEnforcer (nullable)
+				// into the usecase consumer-side interface. Nil enforcer is
+				// passed through as nil so the usecase short-circuits the gate.
+				var applyEnforcer kgapply.QuotaEnforcer
+				var mutateEnforcer kgmutate.QuotaEnforcer
+				if pe := deps.Plugin.KGEnforcer(); pe != nil {
+					applyEnforcer = &kgEnforcerAdapter{enforcer: pe}
+					mutateEnforcer = &kgEnforcerAdapter{enforcer: pe}
+				}
+
+				applyUC := kgapply.New(
+					kgBundleRepo, kgSchemaRepo, kgEntityRepo,
+					kgValidator, kgCollision, applyEnforcer,
+					&kgAdvisoryLockerNoop{}, kgTxRunner,
+				)
+				readUC := kgread.New(kgBundleRepo, kgSchemaRepo, &kgEntityReaderAdapter{repo: kgEntityRepo})
+				mutateUC := kgmutate.New(
+					kgBundleRepo, kgSchemaRepo, kgEntityRepo,
+					kgValidator, kgCollision, mutateEnforcer, kgTxRunner,
+				)
+
+				// Wire bundle invalidator so apply/mutate flush the per-tenant
+				// kgtools cache. Without this, in-flight chat sessions and new
+				// sessions in the same process would see stale tool lists
+				// until the engine restarts.
+				kgInvalidator := &kgProviderInvalidatorAdapter{provider: deps.KGToolProvider}
+				applyUC.SetInvalidator(kgInvalidator)
+				mutateUC.SetInvalidator(kgInvalidator)
+
+				// Wire KG into /config/import + /config/export so the existing
+				// GitOps endpoint round-trips bundles alongside agents/models/mcp.
+				configImportExport.SetKnowledgeGraphs(applyUC, kgBundleRepo, kgSchemaRepo, kgEntityRepo)
+
+				kgReadHandler = deliveryhttp.NewKGReadHandler(newKGReadHTTPAdapter(readUC))
+				kgMutateHandler = deliveryhttp.NewKGMutateHandler(newKGMutateHTTPAdapter(applyUC, mutateUC))
+			}
+			if kgReadHandler != nil && kgMutateHandler != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAgentsRead))
+					r.Get("/api/v1/knowledge-graphs", kgReadHandler.ListBundles)
+					r.Get("/api/v1/knowledge-graphs/{bundle}", kgReadHandler.GetBundle)
+					r.Get("/api/v1/knowledge-graphs/{bundle}/schemas", kgReadHandler.ListSchemas)
+					r.Get("/api/v1/knowledge-graphs/{bundle}/schemas/{entity_type}", kgReadHandler.GetSchema)
+					r.Get("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}", kgReadHandler.ListEntities)
+					r.Get("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/{id}", kgReadHandler.GetEntity)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAgentsWrite))
+					r.Post("/api/v1/knowledge-graphs/{bundle}/import", kgMutateHandler.BulkImport)
+					r.Post("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}", kgMutateHandler.CreateEntity)
+					r.Put("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/{id}", kgMutateHandler.UpdateEntity)
+					r.Delete("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/{id}", kgMutateHandler.DeleteEntity)
+					r.Put("/api/v1/knowledge-graphs/{bundle}/schemas/{entity_type}", kgMutateHandler.UpsertSchema)
+					r.Delete("/api/v1/knowledge-graphs/{bundle}", kgMutateHandler.DeleteBundle)
+				})
+			}
 		}
 
 		auditRepo := configrepo.NewGORMAuditRepository(pgDB)

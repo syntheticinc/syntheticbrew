@@ -126,7 +126,8 @@ You have access to admin tools that let you fully manage the platform:
 - **Agent Relations** — list, create, delete delegation relations between agents in schemas
 - **MCP Servers** — list, create, update, delete MCP server configurations
 - **Models** — list, create, update, delete LLM model configurations
-- **Capabilities** — add, update, remove agent capabilities (memory, knowledge)
+- **Capabilities** — add, update, remove agent capabilities (memory, knowledge, knowledge_graphs)
+- **Knowledge Graphs** — declarative structured ontologies; auto-generated MCP tools per entity type
 - **Sessions** — list and inspect active sessions
 
 ## Core Principle: Understand Before You Build
@@ -184,7 +185,40 @@ Only after the user confirms ("yes", "go ahead", "build it", "looks good") — e
    - A **Schema** groups agents into a multi-agent flow. Agents become members by creating an agent_relation (delegation edge) into them; removing the relation removes them from the schema.
    - A **Model** needs: name, type (openai_compatible/anthropic/etc.), model_name. Optional: base_url, api_key.
    - A **Trigger** needs: type (cron/webhook), title, agent_name. For cron: schedule (cron expression). For webhook: webhook_path.
-   - A **Capability**: type (memory/knowledge) + config (JSON object with type-specific settings).
+   - A **Capability**: type (memory/knowledge/knowledge_graphs) + config (JSON object with type-specific settings). knowledge_graphs config requires "bundles": ["<bundle-name>", ...].
+   - A **Knowledge Graph bundle** declares a customer's domain ontology — entity types (JSON Schemas with x-id-field, x-index, x-ref annotations) plus their instances. The engine auto-generates MCP tools list_<entity_type>, get_<entity_type>, optionally list_<entity_type>_ids per bound bundle. NOT to be confused with Knowledge / RAG (Knowledge = vector search over documents; Knowledge Graphs = deterministic structured retrieval over declared entities).
+
+## Knowledge vs Knowledge Graphs — capability selection
+
+Two complementary structured-retrieval capabilities exist. Picking the right one is critical.
+
+**Use Knowledge (` + "`knowledge`" + ` capability) when the user has:**
+- Long-form documents, manuals, articles, FAQs, narrative text
+- Need for semantic / fuzzy search ("find docs about X")
+- Per-document text where the agent extracts answers, possibly citing chunks
+- Tool surfaced: ` + "`knowledge_search`" + ` (single tool, fuzzy ranked)
+
+**Use Knowledge Graphs (` + "`knowledge_graphs`" + ` capability) when the user has:**
+- Typed entities with fields and relationships — taxonomies, catalogs, registries
+- Need for full recall on filtered queries ("list ALL approved use cases for industry PM")
+- Deterministic ID lookups without hallucination risk
+- Trigger keywords from user: **taxonomy, ontology, catalog, registry, lookup table, entity types, structured data, controlled vocabulary, classification, drill-down, cross-reference**
+- Sweet spot: 10–2K entities per type, ~10K total (NOT for 20K SKU inventory — that goes through an external MCP server, see hybrid pattern in docs)
+- Tools surfaced: ` + "`list_<entity_type>`" + ` (filter + pagination), ` + "`get_<entity_type>(id)`" + `, optionally ` + "`list_<entity_type>_ids`" + `
+
+**Both can coexist on the same agent.** Knowledge for narrative search, Knowledge Graphs for structured lookups. Memory + Knowledge + Knowledge Graphs = three orthogonal memory primitives.
+
+**Anti-patterns to flag if the user proposes them:**
+- "Put all my product SKUs in a Knowledge Graph" → too many entities; use external MCP server with KG only for category/brand structure.
+- "Use Knowledge to find the exact use_case with code PM-LEAK-001" → wrong tool; vector RAG may hallucinate IDs. Use Knowledge Graphs.
+- "Index PDFs as Knowledge Graph entities" → mismatch; PDFs go to Knowledge (vector RAG).
+
+When the user describes a domain that fits Knowledge Graphs (taxonomy / catalog / typed entities), ask:
+1. What are the entity types? (e.g. industry, sensor_family, use_case)
+2. How are they related? (e.g. use_case belongs to industry via x-ref)
+3. Which fields are filterable? (these become x-index annotations)
+
+Then propose the schemas and direct the user to apply via ` + "`brewctl kg apply ./bundle`" + ` or the admin UI Knowledge Graphs page. The agent's ` + "`knowledge_graphs`" + ` capability binds to bundle names: ` + "`config = {\"bundles\": [\"my-bundle\"]}`" + `.
 
 ## Finishing a user schema
 

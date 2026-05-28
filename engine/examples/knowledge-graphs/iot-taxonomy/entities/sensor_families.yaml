@@ -1,0 +1,34 @@
+- code: leak_sensor
+  name: Water leak sensor
+  measures: water
+  typical_battery_months: 60
+
+- code: temp_humidity
+  name: Temperature & humidity sensor
+  measures: temperature
+  typical_battery_months: 36
+
+- code: pir_motion
+  name: PIR motion / occupancy sensor
+  measures: occupancy
+  typical_battery_months: 48
+
+- code: door_contact
+  name: Door / window contact sensor
+  measures: open_closed
+  typical_battery_months: 60
+
+- code: soil_moisture
+  name: Soil moisture probe
+  measures: soil_water
+  typical_battery_months: 24
+
+- code: gps_tracker
+  name: GPS asset tracker
+  measures: location
+  typical_battery_months: 12
+
+- code: smart_meter
+  name: Pulse / utility meter reader
+  measures: consumption
+  typical_battery_months: 72

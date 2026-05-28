@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "industry",
+  "title": "Industry",
+  "description": "An industry vertical that an IoT solution might serve.",
+  "type": "object",
+  "x-id-field": "code",
+  "x-tool-expose": ["list", "get"],
+  "x-tool-description": "Industries served by the IoT taxonomy. Use list_industry to enumerate verticals and get_industry to fetch one by its 2-3 letter code.",
+  "required": ["code", "name", "popularity"],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,3}$",
+      "description": "Uppercase 2-3 letter industry code.",
+      "x-index": true
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 60
+    },
+    "popularity": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Rough adoption signal for this vertical.",
+      "x-index": true
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 500
+    }
+  }
+}

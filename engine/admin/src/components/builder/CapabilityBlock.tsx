@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { CapabilityConfig } from '../../types';
 import { CAPABILITY_META } from '../../types';
+import { api } from '../../api/client';
 
 interface CapabilityBlockProps {
   capability: CapabilityConfig;
@@ -37,6 +38,11 @@ export function capabilityIcon(name: string): React.ReactElement {
       return <svg {...props}><circle cx="12" cy="12" r="9" /><path d="M9 9c0-1 1-2 3-2s3 1 3 2-1 2-3 2v2" /><circle cx="12" cy="17" r=".5" fill="currentColor" /></svg>;
     case 'book-open':
       return <svg {...props}><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" /><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" /></svg>;
+    case 'graph':
+      // Taxonomy hierarchy — parent entity → 2 child entities. Same icon as
+      // Sidebar.knowledgeGraphs + KnowledgeGraphsPage empty state for visual
+      // continuity across all KG touchpoints.
+      return <svg {...props}><rect x="9" y="2.5" width="6" height="5" rx="1" /><rect x="2.5" y="14" width="6" height="5" rx="1" /><rect x="15.5" y="14" width="6" height="5" rx="1" /><path d="M12 7.5 V11" /><path d="M12 11 H5.5 V14" /><path d="M12 11 H18.5 V14" /></svg>;
     case 'file-json':
       return <svg {...props}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6" /><path d="M10 13l-1 3 1 3" /><path d="M14 13l1 3-1 3" /></svg>;
     case 'arrow-up-right':
@@ -105,6 +111,85 @@ function MemoryConfig({ cap, onChange }: PanelProps) {
           <input type="number" className={inputCls} data-testid="memory-max-entries" min={1} value={getKey(cap, 'max_entries', 500) as number} onChange={(e) => onChange(setKey(cap, 'max_entries', Number(e.target.value)))} />
         )}
         <p className={hintCls}>{unlimitedEntries ? 'No limit on stored entries (bounded by schema storage quota)' : 'Oldest entries removed first (FIFO) when limit reached'}</p>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeGraphsConfig({ cap, onChange }: PanelProps) {
+  const bundles = getKey<string[]>(cap, 'bundles', []);
+  const [available, setAvailable] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listKnowledgeGraphs()
+      .then((res) => {
+        if (!cancelled) {
+          setAvailable(res.map((b) => b.bundle_name));
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const toggle = (name: string) => {
+    const next = bundles.includes(name)
+      ? bundles.filter((b) => b !== name)
+      : [...bundles, name];
+    onChange(setKey(cap, 'bundles', next));
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className={descCls}>
+        Agents access customer-defined ontologies via auto-generated MCP tools. For each entity type the engine emits <code>list_X</code>, <code>get_X</code>, optionally <code>list_X_ids</code>. Deterministic structured retrieval — no hallucinated IDs, full recall on filtered queries.
+      </p>
+
+      <div className="bg-brand-dark rounded-card px-3 py-2 space-y-1">
+        <span className="text-[11px] text-brand-shade2 font-mono">Auto-generated tools per bound bundle:</span>
+        <div className="flex flex-wrap gap-2 mt-1">
+          <span className="text-[10px] px-2 py-0.5 bg-brand-dark-alt border border-brand-shade3/20 rounded-card text-brand-shade2">list_&lt;entity_type&gt;</span>
+          <span className="text-[10px] px-2 py-0.5 bg-brand-dark-alt border border-brand-shade3/20 rounded-card text-brand-shade2">get_&lt;entity_type&gt;</span>
+          <span className="text-[10px] px-2 py-0.5 bg-brand-dark-alt border border-brand-shade3/20 rounded-card text-brand-shade2">list_&lt;entity_type&gt;_ids</span>
+        </div>
+        <p className={hintCls}>Tool names derived from each entity_type in the bundle (e.g. <code>list_industry</code> if the schema declares <code>entity_type: industry</code>).</p>
+      </div>
+
+      <div>
+        <label className={labelCls}>Bound bundles</label>
+        {loading && <p className="text-xs text-brand-shade3">Loading available bundles…</p>}
+        {!loading && available.length === 0 && (
+          <div className="bg-brand-dark-alt rounded-card border border-brand-shade3/20 px-3 py-2">
+            <p className="text-xs text-brand-shade3 mb-2">No Knowledge Graph bundles in this tenant yet.</p>
+            <a href={`${import.meta.env.BASE_URL}knowledge-graphs`} className="text-xs text-brand-accent hover:underline">
+              Create or import bundles →
+            </a>
+          </div>
+        )}
+        {!loading && available.length > 0 && (
+          <div className="space-y-1">
+            {available.map((name) => (
+              <label key={name} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-brand-dark-alt/30 rounded px-2 py-1">
+                <input
+                  type="checkbox"
+                  checked={bundles.includes(name)}
+                  onChange={() => toggle(name)}
+                  className="accent-brand-accent"
+                />
+                <span className="font-mono text-xs text-brand-light">{name}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        <p className={hintCls}>
+          Bundles selected here are exposed to this agent as MCP tools. Agents not bound to a bundle do not see its tools.{' '}
+          <a href={`${import.meta.env.BASE_URL}knowledge-graphs`} className="text-brand-accent hover:underline">Manage bundles →</a>
+        </p>
       </div>
     </div>
   );
@@ -181,6 +266,12 @@ function getSummary(cap: CapabilityConfig): string {
       if (topK) parts.push(`top-k: ${topK}`);
       return parts.length > 0 ? parts.join(', ') : 'No sources configured';
     }
+    case 'knowledge_graphs': {
+      const bundles = (c.bundles as string[] | undefined) ?? [];
+      if (bundles.length === 0) return 'No bundles bound';
+      if (bundles.length === 1) return bundles[0] ?? '';
+      return `${bundles.length} bundles: ${bundles.slice(0, 2).join(', ')}${bundles.length > 2 ? '…' : ''}`;
+    }
     default: return '';
   }
 }
@@ -192,6 +283,7 @@ function getSummary(cap: CapabilityConfig): string {
 const configMap: Record<string, React.FC<PanelProps>> = {
   memory: MemoryConfig,
   knowledge: KnowledgeConfig,
+  knowledge_graphs: KnowledgeGraphsConfig,
 };
 
 export default function CapabilityBlock({ capability, onChange, onRemove, agentName, models }: CapabilityBlockProps) {

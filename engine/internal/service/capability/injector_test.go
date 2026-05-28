@@ -3,7 +3,19 @@ package capability
 import (
 	"context"
 	"testing"
+
+	"github.com/syntheticinc/syntheticbrew/internal/domain/capabilities"
 )
+
+// testRegistry returns the production capability registry used in tests:
+// memory + knowledge. New capabilities added in code automatically appear here
+// because the registry is constructed via the production constructor.
+func testRegistry() *capabilities.Registry {
+	return capabilities.NewRegistry(
+		capabilities.MemoryCapability{},
+		capabilities.KnowledgeCapability{},
+	)
+}
 
 type mockCapReader struct {
 	caps map[string][]CapabilityRecord
@@ -25,7 +37,7 @@ func TestInjectedTools_Memory(t *testing.T) {
 			},
 		},
 	}
-	inj := NewInjector(reader)
+	inj := NewInjector(reader, testRegistry())
 
 	tools, err := inj.InjectedTools(context.Background(), "agent-a")
 	if err != nil {
@@ -48,7 +60,7 @@ func TestInjectedTools_Multiple(t *testing.T) {
 			},
 		},
 	}
-	inj := NewInjector(reader)
+	inj := NewInjector(reader, testRegistry())
 
 	tools, err := inj.InjectedTools(context.Background(), "agent-a")
 	if err != nil {
@@ -69,7 +81,7 @@ func TestInjectedTools_NoDuplicates(t *testing.T) {
 			},
 		},
 	}
-	inj := NewInjector(reader)
+	inj := NewInjector(reader, testRegistry())
 
 	tools, err := inj.InjectedTools(context.Background(), "agent-a")
 	if err != nil {
@@ -82,7 +94,7 @@ func TestInjectedTools_NoDuplicates(t *testing.T) {
 
 func TestInjectedTools_NoCapabilities(t *testing.T) {
 	reader := &mockCapReader{caps: map[string][]CapabilityRecord{}}
-	inj := NewInjector(reader)
+	inj := NewInjector(reader, testRegistry())
 
 	tools, err := inj.InjectedTools(context.Background(), "agent-a")
 	if err != nil {
@@ -101,7 +113,7 @@ func TestInjectedTools_UnknownCapabilityNoTools(t *testing.T) {
 			},
 		},
 	}
-	inj := NewInjector(reader)
+	inj := NewInjector(reader, testRegistry())
 
 	tools, err := inj.InjectedTools(context.Background(), "agent-a")
 	if err != nil {

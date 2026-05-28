@@ -432,7 +432,8 @@ export interface ForkTemplateResponse {
 
 export type CapabilityType =
   | 'memory'
-  | 'knowledge';
+  | 'knowledge'
+  | 'knowledge_graphs';
 
 export interface CapabilityConfig {
   id?: string;
@@ -466,8 +467,9 @@ export interface UpdateCapabilityRequest {
 }
 
 export const CAPABILITY_META: Record<CapabilityType, { label: string; icon: string; description: string }> = {
-  memory:        { label: 'Memory',           icon: 'brain',          description: 'Per-schema cross-session persistence' },
-  knowledge:     { label: 'Knowledge',        icon: 'book-open',      description: 'RAG sources (PDF, DOCX, TXT, MD, CSV)' },
+  memory:            { label: 'Memory',           icon: 'brain',          description: 'Per-schema cross-session persistence' },
+  knowledge:         { label: 'Knowledge',        icon: 'book-open',      description: 'RAG sources (PDF, DOCX, TXT, MD, CSV)' },
+  knowledge_graphs:  { label: 'Knowledge Graphs', icon: 'graph',          description: 'Structured taxonomy lookups exposed as tools' },
 };
 
 // ============================================================================
@@ -615,6 +617,49 @@ export interface KnowledgeStatus {
   total_files: number;
   indexed_files: number;
   status: 'ready' | 'indexing' | 'empty';
+}
+
+// ============================================================================
+// Knowledge Graphs (KG) types — bundles of structured entities with JSON
+// schemas. Backend endpoints under /api/v1/knowledge-graphs are pending; the
+// admin SPA renders these via prototype mocks until the engine ships them.
+// ============================================================================
+
+export interface KGBundle {
+  bundle_name: string;
+  version: string;
+  manifest: {
+    entity_types?: string[];
+    counts?: Record<string, number>;
+    schema_hashes?: Record<string, string>;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KGEntitySchema {
+  bundle_name: string;
+  entity_type: string;
+  schema_json: Record<string, unknown>;
+  schema_hash: string;
+  id_field: string;
+  expose_tools: string[];
+  tool_description?: string;
+}
+
+export interface KGEntity {
+  bundle_name: string;
+  entity_type: string;
+  entity_id: string;
+  data: Record<string, unknown>;
+  schema_hash: string;
+}
+
+export interface KGEntitiesListResponse {
+  items: KGEntity[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 // ============================================================================

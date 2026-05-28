@@ -131,6 +131,15 @@ const icons = {
       <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
     </svg>
   ),
+  knowledgeGraphs: (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="6" r="2.5" />
+      <circle cx="12" cy="18" r="2.5" />
+      <line x1="7.8" y1="7.8" x2="10.5" y2="16" />
+      <line x1="16.2" y1="7.8" x2="13.5" y2="16" />
+    </svg>
+  ),
   logout: (
     <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
@@ -164,6 +173,7 @@ const sections: NavSection[] = [
       { to: '/mcp', label: 'MCP Servers', icon: icons.mcp },
       { to: '/models', label: 'Models', icon: icons.models },
       { to: '/knowledge', label: 'Knowledge', icon: icons.knowledge },
+      { to: '/knowledge-graphs', label: 'Knowledge Graphs', icon: icons.knowledgeGraphs },
       { to: '/widget', label: 'Widgets', icon: icons.widget },
     ],
   },

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "use_case",
+  "title": "Use Case",
+  "description": "An approved IoT use case scoped to one industry and a primary sensor family.",
+  "type": "object",
+  "x-id-field": "id",
+  "x-tool-expose": ["list", "get"],
+  "x-tool-description": "Approved IoT use cases. Filter by industry, sensor_family, or status. Use get_use_case to fetch the full description and metadata for a specific use case ID.",
+  "required": ["id", "name", "industry", "sensor_family", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,3}-[A-Z0-9_]+-[0-9]{3,4}$",
+      "description": "Use case ID, format INDUSTRY-TOPIC-NNN (e.g. PM-LEAK-001).",
+      "x-index": true
+    },
+    "name": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 120
+    },
+    "industry": {
+      "type": "string",
+      "x-ref": "industry",
+      "x-index": true
+    },
+    "sensor_family": {
+      "type": "string",
+      "x-ref": "sensor_family",
+      "x-index": true
+    },
+    "status": {
+      "type": "string",
+      "enum": ["approved", "draft", "deprecated"],
+      "x-index": true
+    },
+    "description": {
+      "type": "string",
+      "x-content-type": "markdown",
+      "maxLength": 2000
+    }
+  }
+}

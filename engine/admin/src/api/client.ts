@@ -40,6 +40,10 @@ import type {
   CreateKnowledgeBaseRequest,
   KnowledgeFile,
   KnowledgeStatus,
+  KGBundle,
+  KGEntitySchema,
+  KGEntity,
+  KGEntitiesListResponse,
   CircuitBreakerState,
   MessageResponse,
   EventResponse,
@@ -59,6 +63,7 @@ import { MOCK_AGENTS } from '../mocks/agents';
 import { MOCK_SESSIONS_LIST } from '../mocks/sessions';
 import { MOCK_SCHEMA_TEMPLATES } from '../mocks/schemaTemplates';
 import { mockSchemas, mockAgentRelations } from '../mocks/schemas';
+import { MOCK_KG_BUNDLES, MOCK_KG_SCHEMAS, MOCK_KG_ENTITIES } from '../mocks/knowledgeGraphs';
 
 const BASE_URL = '/api/v1';
 
@@ -1023,6 +1028,101 @@ class APIClient {
   async restoreBuilderAssistant(): Promise<void> {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
     await this.request<void>('POST', '/admin/builder-assistant/restore', undefined);
+  }
+
+  // ─── Knowledge Graphs ────────────────────────────────────────────────────
+  //
+  // Backend endpoints under /api/v1/knowledge-graphs are not deployed yet.
+  // Real calls will return whatever error the engine surfaces (typically a
+  // 404); prototype mode serves mock data so the UI is usable today.
+
+  async listKnowledgeGraphs(): Promise<KGBundle[]> {
+    if (this.isPrototype) return this.mock<KGBundle[]>(MOCK_KG_BUNDLES);
+    return this.request<KGBundle[]>('GET', '/knowledge-graphs');
+  }
+
+  async getKnowledgeGraph(bundleName: string): Promise<KGBundle> {
+    if (this.isPrototype) {
+      const found = MOCK_KG_BUNDLES.find((b) => b.bundle_name === bundleName);
+      if (!found) throw new Error(`bundle ${bundleName} not found`);
+      return this.mock<KGBundle>(found);
+    }
+    return this.request<KGBundle>('GET', `/knowledge-graphs/${encodeURIComponent(bundleName)}`);
+  }
+
+  async listKGSchemas(bundleName: string): Promise<KGEntitySchema[]> {
+    if (this.isPrototype) return this.mock<KGEntitySchema[]>(MOCK_KG_SCHEMAS[bundleName] ?? []);
+    return this.request<KGEntitySchema[]>(
+      'GET',
+      `/knowledge-graphs/${encodeURIComponent(bundleName)}/schemas`,
+    );
+  }
+
+  async getKGSchema(bundleName: string, entityType: string): Promise<KGEntitySchema> {
+    if (this.isPrototype) {
+      const schemas = MOCK_KG_SCHEMAS[bundleName] ?? [];
+      const found = schemas.find((s) => s.entity_type === entityType);
+      if (!found) throw new Error(`schema ${entityType} not found in ${bundleName}`);
+      return this.mock<KGEntitySchema>(found);
+    }
+    return this.request<KGEntitySchema>(
+      'GET',
+      `/knowledge-graphs/${encodeURIComponent(bundleName)}/schemas/${encodeURIComponent(entityType)}`,
+    );
+  }
+
+  async listKGEntities(
+    bundleName: string,
+    entityType: string,
+    filters?: Record<string, string>,
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<KGEntitiesListResponse> {
+    if (this.isPrototype) {
+      const all = MOCK_KG_ENTITIES[bundleName]?.[entityType] ?? [];
+      const filtered = filters
+        ? all.filter((e) =>
+            Object.entries(filters).every(([k, v]) => {
+              if (!v) return true;
+              const field = e.data[k];
+              if (field == null) return false;
+              return String(field).toLowerCase().includes(v.toLowerCase());
+            }),
+          )
+        : all;
+      const slice = filtered.slice(offset, offset + limit);
+      return this.mock<KGEntitiesListResponse>({
+        items: slice,
+        total: filtered.length,
+        limit,
+        offset,
+      });
+    }
+    const qp = new URLSearchParams();
+    qp.set('limit', String(limit));
+    qp.set('offset', String(offset));
+    if (filters) {
+      for (const [k, v] of Object.entries(filters)) {
+        if (v) qp.set(`filter[${k}]`, v);
+      }
+    }
+    return this.request<KGEntitiesListResponse>(
+      'GET',
+      `/knowledge-graphs/${encodeURIComponent(bundleName)}/entities/${encodeURIComponent(entityType)}?${qp.toString()}`,
+    );
+  }
+
+  async getKGEntity(bundleName: string, entityType: string, entityID: string): Promise<KGEntity> {
+    if (this.isPrototype) {
+      const all = MOCK_KG_ENTITIES[bundleName]?.[entityType] ?? [];
+      const found = all.find((e) => e.entity_id === entityID);
+      if (!found) throw new Error(`entity ${entityID} not found`);
+      return this.mock<KGEntity>(found);
+    }
+    return this.request<KGEntity>(
+      'GET',
+      `/knowledge-graphs/${encodeURIComponent(bundleName)}/entities/${encodeURIComponent(entityType)}/${encodeURIComponent(entityID)}`,
+    );
   }
 
   /**

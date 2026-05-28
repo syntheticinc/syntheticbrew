@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011_capabilities_kg_constraint
+      author: syntheticbrew
+      comment: |
+        Relax chk_capabilities_type to accept 'knowledge_graphs' so the
+        Knowledge Graphs capability (engine 1.3.0) can bind bundles to
+        agents via the existing /api/v1/agents/{name}/capabilities
+        endpoint. Without this, the application-level validator accepts
+        knowledge_graphs but the database CHECK constraint rejects the
+        insert with SQLSTATE 23514.
+
+        The 001_initial_schema constraint only listed memory/knowledge
+        because those were the only capabilities at the time. Plan
+        migration 010 added the KG tables and the partial GIN index on
+        capabilities.config but did not relax this CHECK — caught by
+        the TestKG16 binding test that exposes the capability through
+        the public agent endpoint.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE capabilities
+                DROP CONSTRAINT chk_capabilities_type;
+
+              ALTER TABLE capabilities
+                ADD CONSTRAINT chk_capabilities_type
+                CHECK (type IN ('memory','knowledge','knowledge_graphs'));
+            rollback: |
+              ALTER TABLE capabilities
+                DROP CONSTRAINT chk_capabilities_type;
+
+              ALTER TABLE capabilities
+                ADD CONSTRAINT chk_capabilities_type
+                CHECK (type IN ('memory','knowledge'));
