@@ -21,13 +21,16 @@ type mockKGReadService struct {
 	schema      *KGSchemaInfo
 	entitiesRes *KGEntitiesListResponse
 	entity      *KGEntityInfo
+	batchRes    *KGBatchGetResponse
 	err         error
 
 	// captured args
 	lastBundleName string
 	lastEntityType string
 	lastEntityID   string
+	lastIDs        []string
 	lastFilters    map[string]any
+	lastSort       []KGSortParam
 	lastLimit      int
 	lastOffset     int
 }
@@ -52,10 +55,11 @@ func (m *mockKGReadService) GetSchema(_ *http.Request, bundleName, entityType st
 	return m.schema, m.err
 }
 
-func (m *mockKGReadService) ListEntities(_ *http.Request, bundleName, entityType string, filters map[string]any, limit, offset int) (*KGEntitiesListResponse, error) {
+func (m *mockKGReadService) ListEntities(_ *http.Request, bundleName, entityType string, filters map[string]any, sort []KGSortParam, limit, offset int) (*KGEntitiesListResponse, error) {
 	m.lastBundleName = bundleName
 	m.lastEntityType = entityType
 	m.lastFilters = filters
+	m.lastSort = sort
 	m.lastLimit = limit
 	m.lastOffset = offset
 	return m.entitiesRes, m.err
@@ -66,6 +70,16 @@ func (m *mockKGReadService) GetEntity(_ *http.Request, bundleName, entityType, e
 	m.lastEntityType = entityType
 	m.lastEntityID = entityID
 	return m.entity, m.err
+}
+
+func (m *mockKGReadService) BatchGetEntities(_ *http.Request, bundleName, entityType string, ids []string) (*KGBatchGetResponse, error) {
+	m.lastBundleName = bundleName
+	m.lastEntityType = entityType
+	m.lastIDs = ids
+	if m.batchRes != nil {
+		return m.batchRes, m.err
+	}
+	return &KGBatchGetResponse{Entities: []KGEntityInfo{}, NotFound: []string{}}, m.err
 }
 
 // newKGReadRouter wires the handler routes for tests using chi so URL params work.

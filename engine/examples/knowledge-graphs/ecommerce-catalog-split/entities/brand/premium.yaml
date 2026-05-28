@@ -1,0 +1,15 @@
+# Premium-tier brands. Array form — multiple entities per file, split by
+# the natural authoring axis (brand tier in this catalog). Reviewers
+# touching premium offerings only edit this file; budget tier in a
+# parallel PR doesn't conflict.
+- code: north-aurora
+  name: North Aurora
+  tier: premium
+  category: outerwear
+  headquarters: Vancouver, Canada
+
+- code: alpenfeld
+  name: Alpenfeld Hiking
+  tier: premium
+  category: outdoor
+  headquarters: Munich, Germany

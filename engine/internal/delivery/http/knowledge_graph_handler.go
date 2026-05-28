@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -48,15 +49,38 @@ type KGEntitiesListResponse struct {
 	Offset int            `json:"offset"`
 }
 
+// KGSortParam carries one entry of the `sort=field:order,field:order` REST
+// query parameter. The handler parses the raw string into this list; the
+// service layer converts it to the typed kgread.SortSpec downstream.
+type KGSortParam struct {
+	Field string
+	Order string
+}
+
+// KGBatchGetResponse is the body returned by POST /entities/{type}/batch-get.
+// Entities preserve input-id order; missing ids appear in NotFound (also in
+// input order). The shape mirrors the auto-MCP tool response so REST and
+// tool consumers see the same model.
+type KGBatchGetResponse struct {
+	Entities []KGEntityInfo `json:"entities"`
+	NotFound []string       `json:"not_found"`
+}
+
 // KGReadService is the consumer-side interface the read handler depends on.
 // Implemented by a thin adapter wrapping the kgread usecase.
+//
+// 1.4.0: ListEntities gained a sort parameter; filters now carry operator
+// bags (nested maps recognised by the downstream FilterSpec normalisation).
+// BatchGetEntities is added for REST/tool API symmetry — same shape as the
+// auto-MCP `get_<entity>(ids[])` tool response.
 type KGReadService interface {
 	ListBundles(r *http.Request) ([]KGBundleInfo, error)
 	GetBundle(r *http.Request, bundleName string) (*KGBundleInfo, error)
 	ListSchemas(r *http.Request, bundleName string) ([]KGSchemaInfo, error)
 	GetSchema(r *http.Request, bundleName, entityType string) (*KGSchemaInfo, error)
-	ListEntities(r *http.Request, bundleName, entityType string, filters map[string]any, limit, offset int) (*KGEntitiesListResponse, error)
+	ListEntities(r *http.Request, bundleName, entityType string, filters map[string]any, sort []KGSortParam, limit, offset int) (*KGEntitiesListResponse, error)
 	GetEntity(r *http.Request, bundleName, entityType, entityID string) (*KGEntityInfo, error)
+	BatchGetEntities(r *http.Request, bundleName, entityType string, ids []string) (*KGBatchGetResponse, error)
 }
 
 // KGReadHandler exposes the read endpoints for Knowledge Graphs.
@@ -137,6 +161,11 @@ func (h *KGReadHandler) ListEntities(w http.ResponseWriter, r *http.Request) {
 	entityType := chi.URLParam(r, "entity_type")
 
 	filters := parseFilterQuery(r.URL.Query())
+	sort, err := parseSortQuery(r.URL.Query().Get("sort"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	limit, err := parseLimitParam(r.URL.Query().Get("limit"), 50, 500)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -144,10 +173,44 @@ func (h *KGReadHandler) ListEntities(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := parsePositiveInt(r.URL.Query().Get("offset"), 0, 1<<31-1)
 
-	resp, err := h.svc.ListEntities(r, bundleName, entityType, filters, limit, offset)
+	resp, err := h.svc.ListEntities(r, bundleName, entityType, filters, sort, limit, offset)
 	if err != nil {
 		writeDomainError(w, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// BatchGetEntities handles POST /api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/batch-get.
+// Body shape: {"ids": ["A","B","C"]}. Response preserves input order; missing
+// ids appear in `not_found`. Partial success — 200 even when some ids miss.
+// Edge cases (empty / >500 / dedup) surface as 400 from the usecase.
+func (h *KGReadHandler) BatchGetEntities(w http.ResponseWriter, r *http.Request) {
+	bundleName := chi.URLParam(r, "bundle")
+	entityType := chi.URLParam(r, "entity_type")
+
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "[INVALID_INPUT] body must be {\"ids\": [...]}",
+		})
+		return
+	}
+
+	resp, err := h.svc.BatchGetEntities(r, bundleName, entityType, body.IDs)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	if resp.NotFound == nil {
+		resp.NotFound = []string{}
+	}
+	if resp.Entities == nil {
+		resp.Entities = []KGEntityInfo{}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -170,32 +233,125 @@ func (h *KGReadHandler) GetEntity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, e)
 }
 
-// parseFilterQuery extracts `filter[field]=value` style params into a map
-// suitable for JSONB containment filtering. Only string values are produced
-// at this layer; numeric / boolean coercion is the service layer's concern
-// based on the schema's property types.
+// parseFilterQuery extracts the filter family of query params:
+//   - `filter[<field>]=<value>`                  → equality (1.3.0 syntax)
+//   - `filter[<field>][in]=v1,v2,v3`             → IN (1.4.0)
+//   - `filter[<field>][gte|gt|lte|lt]=<value>`   → range  (1.4.0)
+//
+// Range and IN params collapse into a nested map under the same field key
+// (`{"score": {"gte": "70", "lte": "95"}}`) — the downstream FilterSpec
+// adapter recognises this shape and emits typed operators. Equality params
+// produce the bare value the 1.3.x adapter expected, preserving backward
+// compat on query strings.
+//
+// Only string values are produced here; numeric / date coercion happens
+// inside the SQL builder which knows the schema property types.
 func parseFilterQuery(q map[string][]string) map[string]any {
 	out := make(map[string]any)
+	const prefix = "filter["
+
 	for key, vals := range q {
-		if len(vals) == 0 {
+		if len(vals) == 0 || !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, "]") {
 			continue
 		}
-		// Match keys of the form "filter[<field>]".
-		const prefix = "filter["
-		const suffix = "]"
-		if len(key) <= len(prefix)+len(suffix) {
-			continue
-		}
-		if key[:len(prefix)] != prefix || key[len(key)-1:] != suffix {
-			continue
-		}
-		field := key[len(prefix) : len(key)-1]
+		inner := strings.TrimSuffix(strings.TrimPrefix(key, prefix), "]")
+		// inner is either "field" (bare) or "field][operator".
+		field, op := splitFilterFieldAndOp(inner)
 		if field == "" {
 			continue
 		}
-		out[field] = vals[0]
+
+		switch op {
+		case "":
+			// Bare filter[field] — equality. Last writer wins if both bare and
+			// operator forms appear (callers shouldn't mix them).
+			out[field] = vals[0]
+		case "in":
+			ensureOpMap(out, field)["in"] = splitCommaList(vals[0])
+		case "gte", "gt", "lte", "lt":
+			ensureOpMap(out, field)[op] = vals[0]
+		default:
+			// Unknown operator — ignore silently. Sending a clear error here
+			// would surface to LLMs as a tool failure even for typos that the
+			// service layer already rejects with a friendlier message.
+		}
 	}
 	return out
+}
+
+// splitFilterFieldAndOp parses the inner part of a filter[…] key:
+//   - "score"               → ("score", "")
+//   - "score][gte"          → ("score", "gte")
+//   - "industry][in"        → ("industry", "in")
+//
+// Returns ("", "") on shapes we don't recognise.
+func splitFilterFieldAndOp(inner string) (field, op string) {
+	if !strings.Contains(inner, "][") {
+		return inner, ""
+	}
+	idx := strings.Index(inner, "][")
+	return inner[:idx], inner[idx+2:]
+}
+
+// ensureOpMap returns the operator-bag nested map for field, creating it if
+// the slot currently holds a non-map value. A bare equality previously
+// recorded is overwritten — callers should not mix forms on the same field.
+func ensureOpMap(out map[string]any, field string) map[string]any {
+	if existing, ok := out[field].(map[string]any); ok {
+		return existing
+	}
+	bag := make(map[string]any)
+	out[field] = bag
+	return bag
+}
+
+// splitCommaList parses `a,b,c` into `["a","b","c"]`. Empty segments are
+// preserved as empty strings — the validation layer rejects empty IN entries
+// with a clear error, so we don't silently filter here.
+func splitCommaList(raw string) []any {
+	parts := strings.Split(raw, ",")
+	out := make([]any, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, p)
+	}
+	return out
+}
+
+// parseSortQuery turns `field1:order,field2:order` into a typed slice. Each
+// entry must be `field:asc` or `field:desc`. Empty input returns nil. Invalid
+// shape produces a 400-eligible error envelope.
+//
+// Per CLAUDE.md "no client names in tracked artefacts" + KG-SEC-08 (query
+// string size DoS): the handler rejects strings longer than maxSortQuerySize
+// before parsing, so a 1MB sort= burst never enters the splitter.
+func parseSortQuery(raw string) ([]KGSortParam, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	const maxSortQuerySize = 2048
+	if len(raw) > maxSortQuerySize {
+		return nil, fmt.Errorf("[INVALID_INPUT] sort query too long (max %d bytes)", maxSortQuerySize)
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]KGSortParam, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return nil, fmt.Errorf("[INVALID_INPUT] sort entry must be field:order")
+		}
+		colon := strings.Index(p, ":")
+		if colon <= 0 || colon == len(p)-1 {
+			return nil, fmt.Errorf("[INVALID_INPUT] sort entry %q must be field:order", p)
+		}
+		field := p[:colon]
+		order := strings.ToLower(p[colon+1:])
+		if order != "asc" && order != "desc" {
+			return nil, fmt.Errorf("[INVALID_INPUT] sort order must be asc or desc, got %q", order)
+		}
+		out = append(out, KGSortParam{Field: field, Order: order})
+	}
+	return out, nil
 }
 
 // parsePositiveInt returns the parsed int clamped between 0 and max.

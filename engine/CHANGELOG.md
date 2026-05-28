@@ -1,5 +1,68 @@
 # Changelog
 
+## [1.4.0] — 2026-05-28
+
+Knowledge Graphs query API ergonomics. Five LLM-tool / REST additions driven
+by first design-partner pilot feedback after the 1.3.0 launch. No schema
+changes, no migrations — all features layer on the existing `kg_entity`
+JSONB storage with the generic GIN index.
+
+### Added
+
+- **Batch `get_<entity>(ids[])`** auto MCP tool — agents fetch many entities
+  in one round-trip, response shape `{entities, not_found}` with input-order
+  preservation via `ORDER BY array_position($input, entity_id)`. Hard cap
+  500 ids per call. Partial success — missing ids surface in `not_found`,
+  the call never fails on misses.
+- **REST POST `/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/batch-get`**
+  for symmetry with the auto MCP tool. Same body and response shape.
+- **Range filter operators**: `filter[X][gte|gt|lte|lt]=N` on numeric and
+  date / date-time `x-index` properties. Type-aware validation rejects
+  range on string / enum / boolean.
+- **`filter[X][in]=a,b,c`** multi-value equality, capped at 500 values.
+- **`x-summary-fields: [...]`** schema annotation. When set, the
+  `list_<entity>_ids` tool returns `{items, total}` with each item carrying
+  the id field plus the declared summary fields, instead of the bare
+  `{ids, total}` shape. Default (annotation absent) preserves 1.3.x bare-ids
+  semantics.
+- **Server-side `sort: [{field, order}]`** on `list_<entity>` and
+  `list_<entity>_ids`. Enum properties sort by *declaration order* via
+  `array_position(ARRAY[...], data->>'field')` — NOT alphabetical. Missing
+  values appear last regardless of direction (NULLS LAST). Sort fields must
+  be `x-index`.
+- **`list_<entity>_ids` MCP tool** is now actually built. 1.3.0 declared the
+  tool name in `domain.ToolNames()` but the BuildTool switch missed the
+  `_ids` suffix case — names were silently dropped. Closed.
+
+### Breaking
+
+- `get_<entity>` MCP tool signature changed from single-id to array-of-ids.
+  Migration is a one-line prompt edit: `get_X(id="A")` → `get_X(ids=["A"])`.
+  REST single-id endpoint `GET /entities/{type}/{id}` is unchanged.
+
+### Hardened
+
+- **Sort field injection** (KG14-SEC-01): repo-layer `validIdentifier`
+  whitelist plus usecase x-index check — defence-in-depth.
+- **IN-list DoS cap** (KG14-SEC-04): `MaxFilterInSize = 500` mirrors batch
+  get cap.
+- **Query timeout** (KG14-SEC-05): `KGQueryTimeout = 5s` wraps every list /
+  batch get call via context cancellation.
+- **Sort `array_position` values** (KG14-SEC-07): enum values come from the
+  parsed schema, never from caller input. Repo escapes single quotes before
+  emitting the SQL literal as defence-in-depth.
+- **`x-summary-fields` path injection** (KG14-SEC-06): validation at apply
+  time (`pkg/jsonschema.normaliseSummaryFields`) rejects dot-notation,
+  unknown properties, empty entries, and duplicates.
+- **Sort query-string size cap** (KG14-SEC-08): parser rejects strings
+  longer than 2KB before splitting.
+
+### Compatibility
+
+- 1.3.x bundles continue to work without re-import — all new annotations
+  are opt-in; bare equality filters and existing tool signatures behave
+  identically to 1.3.0.
+
 ## [1.3.0] — 2026-05-27
 
 Knowledge Graphs — third capability primitive alongside `memory` and

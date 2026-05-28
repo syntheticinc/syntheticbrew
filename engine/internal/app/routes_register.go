@@ -390,6 +390,7 @@ func registerHTTPRoutes(deps routesDeps) {
 					r.Get("/api/v1/knowledge-graphs/{bundle}/schemas", kgReadHandler.ListSchemas)
 					r.Get("/api/v1/knowledge-graphs/{bundle}/schemas/{entity_type}", kgReadHandler.GetSchema)
 					r.Get("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}", kgReadHandler.ListEntities)
+					r.Post("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/batch-get", kgReadHandler.BatchGetEntities)
 					r.Get("/api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/{id}", kgReadHandler.GetEntity)
 				})
 				r.Group(func(r chi.Router) {

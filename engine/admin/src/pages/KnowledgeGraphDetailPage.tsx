@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import PageContainer from '../components/PageContainer';
 import type { KGBundle, KGEntitySchema } from '../types';
+import { kgSummaryFields } from '../types';
 
 /**
  * Detail view for one Knowledge Graph bundle. Shows the manifest summary,
@@ -66,30 +67,43 @@ export default function KnowledgeGraphDetailPage() {
                   <th className="text-left p-3 font-medium text-brand-light">Entity type</th>
                   <th className="text-left p-3 font-medium text-brand-light">ID field</th>
                   <th className="text-left p-3 font-medium text-brand-light">Generated tools</th>
+                  <th className="text-left p-3 font-medium text-brand-light">Summary fields</th>
                   <th className="text-right p-3 font-medium text-brand-light">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {(schemas ?? []).map((s) => (
-                  <tr key={s.entity_type} className="border-t border-brand-shade3/10">
-                    <td className="p-3 text-brand-light font-mono text-xs">{s.entity_type}</td>
-                    <td className="p-3 text-brand-shade2 font-mono text-xs">{s.id_field}</td>
-                    <td className="p-3 text-brand-shade2 text-xs">
-                      {(s.expose_tools ?? []).map((t) => `${t}_${s.entity_type}`).join(', ')}
-                    </td>
-                    <td className="p-3 text-right">
-                      <Link
-                        to={`/knowledge-graphs/${bundleName}/entities/${s.entity_type}`}
-                        className="text-xs text-brand-accent hover:underline"
-                      >
-                        Browse entities →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {(schemas ?? []).map((s) => {
+                  const summary = kgSummaryFields(s);
+                  return (
+                    <tr key={s.entity_type} className="border-t border-brand-shade3/10">
+                      <td className="p-3 text-brand-light font-mono text-xs">{s.entity_type}</td>
+                      <td className="p-3 text-brand-shade2 font-mono text-xs">{s.id_field}</td>
+                      <td className="p-3 text-brand-shade2 text-xs">
+                        {(s.expose_tools ?? [])
+                          .map((t) => (t === 'list_ids' ? `list_${s.entity_type}_ids` : `${t}_${s.entity_type}`))
+                          .join(', ')}
+                      </td>
+                      <td className="p-3 text-brand-shade2 font-mono text-xs">
+                        {summary.length === 0 ? (
+                          <span className="text-brand-shade3">— (bare ids)</span>
+                        ) : (
+                          summary.join(', ')
+                        )}
+                      </td>
+                      <td className="p-3 text-right">
+                        <Link
+                          to={`/knowledge-graphs/${bundleName}/entities/${s.entity_type}`}
+                          className="text-xs text-brand-accent hover:underline"
+                        >
+                          Browse entities →
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {(schemas ?? []).length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-6 text-center text-brand-shade3 text-xs">
+                    <td colSpan={5} className="p-6 text-center text-brand-shade3 text-xs">
                       No schemas — apply a bundle via{' '}
                       <code className="bg-brand-dark-alt px-1 py-0.5 rounded">brewctl kg apply</code>
                     </td>

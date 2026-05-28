@@ -1,0 +1,7 @@
+# Single-document form — one entity per file. Useful when each entity
+# needs independent PR approval (compliance taxonomy, customer-facing
+# inventory, anything where the author wants a clean per-entity audit).
+code: budget-basics
+name: Budget Basics
+tier: budget
+category: apparel

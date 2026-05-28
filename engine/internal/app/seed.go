@@ -202,9 +202,18 @@ Two complementary structured-retrieval capabilities exist. Picking the right one
 - Typed entities with fields and relationships — taxonomies, catalogs, registries
 - Need for full recall on filtered queries ("list ALL premium brands in the apparel category")
 - Deterministic ID lookups without hallucination risk
-- Trigger keywords from user: **taxonomy, ontology, catalog, registry, lookup table, entity types, structured data, controlled vocabulary, classification, drill-down, cross-reference**
+- Trigger keywords from user: **taxonomy, ontology, catalog, registry, lookup table, entity types, structured data, controlled vocabulary, classification, drill-down, cross-reference, batch lookup, top-N, ranked, filter range, between values**
 - Sweet spot: 10–2K entities per type, ~10K total (NOT for 20K SKU inventory — that goes through an external MCP server, see hybrid pattern in docs)
-- Tools surfaced: ` + "`list_<entity_type>`" + ` (filter + pagination), ` + "`get_<entity_type>(id)`" + `, optionally ` + "`list_<entity_type>_ids`" + `
+- Tools surfaced (engine 1.4.0+):
+  - ` + "`list_<entity_type>(filters, sort, limit, offset)`" + ` — full payloads. Filters support equality, ` + "`[in]`" + ` (multi-value), and ` + "`[gte/gt/lte/lt]`" + ` range (numeric/date fields only). Sort accepts ` + "`[{field, order}]`" + ` arrays on ` + "`x-index`" + ` fields; enum properties sort by **declaration order**, not alphabetical.
+  - ` + "`get_<entity_type>(ids: string[])`" + ` — batch fetch (1.4.0 BREAKING: was single id in 1.3.x). Response shape ` + "`{entities, not_found}`" + `, max 500 ids, order-preserved.
+  - ` + "`list_<entity_type>_ids(filters, sort, limit, offset)`" + ` — cheap preview. Returns bare ids by default; when the schema declares ` + "`x-summary-fields: [...]`" + ` the response shape switches to ` + "`{items, total}`" + ` with the chosen fields. Use this for discovery then batch ` + "`get_<entity_type>`" + ` with the chosen ids — typical token cost reduction is ~12× vs full ` + "`list_<entity_type>`" + ` over the same matches.
+
+**1.4.0 schema-design checklist when proposing Knowledge Graphs:**
+- Mark filterable scalars ` + "`x-index: true`" + `. Only x-index fields can be filtered or sorted.
+- Set ` + "`x-summary-fields`" + ` on schemas with >50 entities — list_X_ids becomes useful as a preview pass.
+- If the user has enum fields with semantic ordering (severity, criticality, popularity), declare ` + "`enum: [...]`" + ` in the order they want — sort respects declaration order, not alphabetical.
+- For large catalogs (≥100 entities per type), recommend the split layout: ` + "`entities_path: entities/<type>/`" + ` in the manifest instead of one big ` + "`entities_file`" + `. brewctl 0.4.0+ merges *.yaml files atomically; each file can be an array OR a single entity document.
 
 **Both can coexist on the same agent.** Knowledge for narrative search, Knowledge Graphs for structured lookups. Memory + Knowledge + Knowledge Graphs = three orthogonal memory primitives.
 

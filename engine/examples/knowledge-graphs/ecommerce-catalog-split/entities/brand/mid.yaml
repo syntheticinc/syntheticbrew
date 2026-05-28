@@ -1,0 +1,23 @@
+# Mid-tier brands. Array form.
+- code: harborline
+  name: Harborline Apparel
+  tier: mid
+  category: apparel
+  headquarters: Boston, USA
+
+- code: stride-co
+  name: Stride Co.
+  tier: mid
+  category: footwear
+  headquarters: Portland, USA
+
+- code: terracotta-press
+  name: Terracotta Press
+  tier: mid
+  category: books
+
+- code: oakwood-home
+  name: Oakwood Home
+  tier: mid
+  category: home_goods
+  headquarters: Stockholm, Sweden

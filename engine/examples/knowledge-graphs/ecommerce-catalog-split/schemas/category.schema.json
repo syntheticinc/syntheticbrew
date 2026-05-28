@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "category",
+  "title": "Category",
+  "description": "A product category in the e-commerce taxonomy.",
+  "type": "object",
+  "x-id-field": "code",
+  "x-tool-expose": ["list", "get"],
+  "x-tool-description": "Product categories in the catalog. Use list_category to enumerate top-level categories and get_category to fetch one by its short code.",
+  "required": ["code", "name", "tier"],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,30}$",
+      "description": "Lowercase short code for the category.",
+      "x-index": true
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 60
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["primary", "secondary"],
+      "description": "primary = top-level browse category; secondary = refinement.",
+      "x-index": true
+    },
+    "popularity": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "x-index": true
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    }
+  }
+}

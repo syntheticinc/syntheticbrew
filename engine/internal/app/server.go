@@ -24,9 +24,9 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/auth"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/flowregistry"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/kgtools"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/lsp"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/kgtools"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
@@ -46,6 +46,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	"github.com/syntheticinc/syntheticbrew/pkg/logger"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
@@ -488,9 +489,21 @@ func Run(sc ServerConfig) error {
 	if components.AgentToolResolver != nil && pgDB != nil && kgToolProvider != nil {
 		kgEntityRepo := configrepo.NewGORMKGEntityRepository(pgDB)
 		kgSchemaRepo := configrepo.NewGORMKGSchemaRepository(pgDB)
+		// Route the tool-path EntityReader through kgread.Usecase so it
+		// inherits the same hardening as the REST path: schema-bound filter
+		// whitelist, range-on-non-numeric rejection, MaxFilterInSize cap,
+		// MaxBatchGetIDs cap, and KGQueryTimeout wrap. Without this, a
+		// prompt-injected LLM call could bypass every 1.4.0 mitigation
+		// (security review KG14-SEC-09).
+		kgBundleRepo := configrepo.NewGORMKGBundleRepository(pgDB)
+		kgToolUC := kgread.New(
+			kgBundleRepo,
+			kgSchemaRepo,
+			&kgEntityReaderAdapter{repo: kgEntityRepo},
+		)
 		kgFactory := kgtools.NewAgentToolFactory(
 			kgToolProvider,
-			&kgEntityReaderForToolFactory{repo: kgEntityRepo},
+			&kgEntityReaderForToolFactory{uc: kgToolUC, schemas: kgSchemaRepo},
 			kgSchemaRepo,
 		)
 		components.AgentToolResolver.SetKGToolFactory(kgFactory)

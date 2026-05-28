@@ -647,6 +647,23 @@ export interface KGEntitySchema {
   tool_description?: string;
 }
 
+/**
+ * KGSummaryFields lifts the `x-summary-fields` annotation out of the raw
+ * schema JSON so views can render it without re-parsing. Engine 1.4.0
+ * introduced this annotation; absent / empty preserves the 1.3.x
+ * bare-ids tool response shape.
+ *
+ * Callers extract via: schema.schema_json["x-summary-fields"] as string[]
+ * — wrapped here so the page-level components stay typed.
+ */
+export function kgSummaryFields(schema: KGEntitySchema): string[] {
+  const raw = (schema.schema_json as Record<string, unknown>)['x-summary-fields'];
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter((v): v is string => typeof v === 'string');
+}
+
 export interface KGEntity {
   bundle_name: string;
   entity_type: string;
