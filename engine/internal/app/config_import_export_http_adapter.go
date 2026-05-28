@@ -11,13 +11,43 @@ import (
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgapply"
 )
 
 // configImportExportHTTPAdapter bridges GORM DB to the http.ConfigImportExporter interface.
 // YAML types used by this adapter are defined in config_yaml_types.go.
+//
+// Knowledge Graphs sections (engine 1.3.0+) round-trip via:
+//   - kgApply (apply usecase)         — for import: atomic schema + entity persistence
+//   - kgBundleRepo / kgSchemaRepo / kgEntityRepo — for export: direct DB reads
+// Tenant scope is taken from ctx (or CETenantID fallback) so single-tenant CE
+// continues to work unchanged.
 type configImportExportHTTPAdapter struct {
-	db *gorm.DB
+	db           *gorm.DB
+	kgApply      *kgapply.Usecase
+	kgBundleRepo *configrepo.GORMKGBundleRepository
+	kgSchemaRepo *configrepo.GORMKGSchemaRepository
+	kgEntityRepo *configrepo.GORMKGEntityRepository
+}
+
+// SetKnowledgeGraphs wires KG dependencies into the adapter after the
+// adapter has been constructed (KG repos + usecase are built later in
+// routes_register.go to share with the dedicated /knowledge-graphs handlers).
+// Pointer mutation: any deliveryhttp.ConfigHandler that already captured
+// this adapter sees the wired KG dependencies on its next call.
+func (a *configImportExportHTTPAdapter) SetKnowledgeGraphs(
+	apply *kgapply.Usecase,
+	bundles *configrepo.GORMKGBundleRepository,
+	schemas *configrepo.GORMKGSchemaRepository,
+	entities *configrepo.GORMKGEntityRepository,
+) {
+	a.kgApply = apply
+	a.kgBundleRepo = bundles
+	a.kgSchemaRepo = schemas
+	a.kgEntityRepo = entities
 }
 
 // ExportYAML reads all config from DB and marshals to YAML.
@@ -57,7 +87,84 @@ func (a *configImportExportHTTPAdapter) buildExportConfig(ctx context.Context) (
 	}
 	cfg.MCPServers.Items = mcpYAML
 
+	kgYAML, err := a.exportKnowledgeGraphs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("export knowledge_graphs: %w", err)
+	}
+	cfg.KnowledgeGraphs = kgYAML
+
 	return &cfg, nil
+}
+
+// exportKnowledgeGraphs reads all bundles for the calling tenant and returns
+// the YAML representation. Bundles, schemas, and entities are pulled in
+// separate queries; the assembled structure round-trips through ImportYAML
+// without information loss (apart from server-generated timestamps).
+func (a *configImportExportHTTPAdapter) exportKnowledgeGraphs(ctx context.Context) ([]knowledgeGraphYAML, error) {
+	if a.kgBundleRepo == nil {
+		return nil, nil
+	}
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+
+	bundles, err := a.kgBundleRepo.List(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list bundles: %w", err)
+	}
+	out := make([]knowledgeGraphYAML, 0, len(bundles))
+	for _, b := range bundles {
+		schemas, err := a.kgSchemaRepo.ListByBundle(ctx, tenantID, b.BundleName)
+		if err != nil {
+			return nil, fmt.Errorf("list schemas for %s: %w", b.BundleName, err)
+		}
+		schemaYAMLs := make([]knowledgeGraphSchemaYAML, 0, len(schemas))
+		entityGroups := make([]knowledgeGraphEntitiesYAML, 0, len(schemas))
+		for _, s := range schemas {
+			var schemaMap map[string]interface{}
+			if err := json.Unmarshal(s.SchemaJSON, &schemaMap); err != nil {
+				return nil, fmt.Errorf("decode schema %s/%s: %w", b.BundleName, s.EntityType, err)
+			}
+			schemaYAMLs = append(schemaYAMLs, knowledgeGraphSchemaYAML{
+				EntityType:      s.EntityType,
+				Schema:          schemaMap,
+				ExposeTools:     s.ExposeTools,
+				ToolDescription: s.ToolDescription,
+			})
+
+			// Pull up to 10K entities (per-bundle limit from the plan).
+			items, _, err := a.kgEntityRepo.ListEntities(ctx, configrepo.ListEntitiesQuery{
+				TenantID:   tenantID,
+				BundleName: b.BundleName,
+				EntityType: s.EntityType,
+				Limit:      500,
+				Offset:     0,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list entities for %s/%s: %w", b.BundleName, s.EntityType, err)
+			}
+			itemsYAML := make([]map[string]interface{}, 0, len(items))
+			for _, e := range items {
+				var data map[string]interface{}
+				if err := json.Unmarshal(e.Data, &data); err != nil {
+					return nil, fmt.Errorf("decode entity %s/%s/%s: %w", b.BundleName, s.EntityType, e.EntityID, err)
+				}
+				itemsYAML = append(itemsYAML, data)
+			}
+			entityGroups = append(entityGroups, knowledgeGraphEntitiesYAML{
+				EntityType: s.EntityType,
+				Items:      itemsYAML,
+			})
+		}
+		out = append(out, knowledgeGraphYAML{
+			BundleName: b.BundleName,
+			Version:    b.Version,
+			Schemas:    schemaYAMLs,
+			Entities:   entityGroups,
+		})
+	}
+	return out, nil
 }
 
 func (a *configImportExportHTTPAdapter) exportAgents(_ context.Context) ([]agentYAML, error) {
@@ -195,7 +302,7 @@ func (a *configImportExportHTTPAdapter) ImportYAML(ctx context.Context, yamlData
 		return fmt.Errorf("parse yaml: %w", err)
 	}
 
-	return a.db.Transaction(func(tx *gorm.DB) error {
+	if err := a.db.Transaction(func(tx *gorm.DB) error {
 		if err := a.importModels(tx, cfg.Models.Items); err != nil {
 			return fmt.Errorf("import models: %w", err)
 		}
@@ -212,9 +319,69 @@ func (a *configImportExportHTTPAdapter) ImportYAML(ctx context.Context, yamlData
 			"agents", len(cfg.Agents.Items),
 			"models", len(cfg.Models.Items),
 			"mcp_servers", len(cfg.MCPServers.Items),
+			"knowledge_graphs", len(cfg.KnowledgeGraphs),
 		)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Knowledge Graphs apply runs OUTSIDE the agents/models/mcp transaction
+	// because kgapply requires its own transaction-aware repository chain.
+	// Best-effort sequential: a failing bundle stops the loop but does not
+	// undo the already-committed agents/models/mcp inserts.
+	if err := a.importKnowledgeGraphs(ctx, cfg.KnowledgeGraphs); err != nil {
+		return fmt.Errorf("import knowledge_graphs: %w", err)
+	}
+	return nil
+}
+
+// importKnowledgeGraphs delegates each bundle to the apply usecase, which
+// runs its own atomic transaction with cross-ref validation + tool collision
+// detection. Failing apply rejects the bundle but does NOT undo previously
+// imported sections (agents/models/mcp) since they were committed earlier —
+// callers should treat /config/import as best-effort sequential for KG.
+//
+// (Original design called for a single outer transaction, but KG apply
+// requires its own transaction-aware repositories, so we keep KG apply
+// stand-alone and document the partial-success semantic.)
+func (a *configImportExportHTTPAdapter) importKnowledgeGraphs(ctx context.Context, items []knowledgeGraphYAML) error {
+	if a.kgApply == nil || len(items) == 0 {
+		return nil
+	}
+	for _, item := range items {
+		input := kgapply.Input{
+			BundleName: item.BundleName,
+			Version:    item.Version,
+			Schemas:    make([]kgapply.SchemaInput, 0, len(item.Schemas)),
+			Entities:   make([]kgapply.EntitySetInput, 0, len(item.Entities)),
+		}
+		if input.Version == "" {
+			input.Version = "1.0.0"
+		}
+		for _, s := range item.Schemas {
+			schemaJSON, err := json.Marshal(s.Schema)
+			if err != nil {
+				return fmt.Errorf("marshal schema %s/%s: %w", item.BundleName, s.EntityType, err)
+			}
+			input.Schemas = append(input.Schemas, kgapply.SchemaInput{
+				EntityType:      s.EntityType,
+				SchemaJSON:      schemaJSON,
+				ExposeTools:     s.ExposeTools,
+				ToolDescription: s.ToolDescription,
+			})
+		}
+		for _, e := range item.Entities {
+			input.Entities = append(input.Entities, kgapply.EntitySetInput{
+				EntityType: e.EntityType,
+				Items:      e.Items,
+			})
+		}
+		if _, err := a.kgApply.Execute(ctx, input); err != nil {
+			return fmt.Errorf("apply bundle %s: %w", item.BundleName, err)
+		}
+	}
+	return nil
 }
 
 func (a *configImportExportHTTPAdapter) importModels(tx *gorm.DB, items []modelYAML) error {

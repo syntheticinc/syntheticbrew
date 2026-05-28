@@ -9,8 +9,9 @@ import (
 type CapabilityType string
 
 const (
-	CapabilityTypeMemory    CapabilityType = "memory"
-	CapabilityTypeKnowledge CapabilityType = "knowledge"
+	CapabilityTypeMemory          CapabilityType = "memory"
+	CapabilityTypeKnowledge       CapabilityType = "knowledge"
+	CapabilityTypeKnowledgeGraphs CapabilityType = "knowledge_graphs"
 )
 
 // AllCapabilityTypes returns all valid capability types.
@@ -18,6 +19,7 @@ func AllCapabilityTypes() []CapabilityType {
 	return []CapabilityType{
 		CapabilityTypeMemory,
 		CapabilityTypeKnowledge,
+		CapabilityTypeKnowledgeGraphs,
 	}
 }
 
@@ -65,20 +67,8 @@ func (c *Capability) Validate() error {
 // IsValid returns true if the capability type is one of the known types.
 func (ct CapabilityType) IsValid() bool {
 	switch ct {
-	case CapabilityTypeMemory, CapabilityTypeKnowledge:
+	case CapabilityTypeMemory, CapabilityTypeKnowledge, CapabilityTypeKnowledgeGraphs:
 		return true
 	}
 	return false
-}
-
-// InjectedTools returns the tool names that should be auto-injected for this capability type.
-func (ct CapabilityType) InjectedTools() []string {
-	switch ct {
-	case CapabilityTypeMemory:
-		return []string{"memory_recall", "memory_store"}
-	case CapabilityTypeKnowledge:
-		return []string{"knowledge_search"}
-	default:
-		return nil
-	}
 }

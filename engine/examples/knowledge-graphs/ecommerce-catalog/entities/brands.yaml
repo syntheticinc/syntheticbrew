@@ -1,0 +1,39 @@
+- code: north-aurora
+  name: North Aurora
+  tier: premium
+  category: outerwear
+  headquarters: Vancouver, Canada
+
+- code: harborline
+  name: Harborline Apparel
+  tier: mid
+  category: apparel
+  headquarters: Boston, USA
+
+- code: stride-co
+  name: Stride Co.
+  tier: mid
+  category: footwear
+  headquarters: Portland, USA
+
+- code: alpenfeld
+  name: Alpenfeld Hiking
+  tier: premium
+  category: outdoor
+  headquarters: Munich, Germany
+
+- code: terracotta-press
+  name: Terracotta Press
+  tier: mid
+  category: books
+
+- code: oakwood-home
+  name: Oakwood Home
+  tier: mid
+  category: home_goods
+  headquarters: Stockholm, Sweden
+
+- code: budget-basics
+  name: Budget Basics
+  tier: budget
+  category: apparel

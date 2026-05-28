@@ -16,11 +16,25 @@ import (
 // tenant's agents on first access.
 type Manager struct {
 	perTenant bool
-	single    *AgentRegistry        // used when !perTenant
+	single    *AgentRegistry // used when !perTenant
 	mu        sync.RWMutex
 	tenants   map[string]*AgentRegistry // used when perTenant
 	repo      AgentReader
 	capRepo   CapabilityReader // optional; enables DerivedTools computation
+	deriver   *Deriver         // optional; injected into every registry on creation
+}
+
+// SetDeriver wires a strategy-based Deriver into the manager and propagates it
+// to the singleton (single-tenant mode) and every subsequently created
+// per-tenant registry. Call once at app startup, after constructing the
+// Manager and before Init.
+func (m *Manager) SetDeriver(d *Deriver) {
+	m.mu.Lock()
+	m.deriver = d
+	if m.single != nil {
+		m.single.SetDeriver(d)
+	}
+	m.mu.Unlock()
 }
 
 // NewManager creates a Manager. Pass perTenant=sc.RequireTenant.
@@ -51,12 +65,20 @@ func NewManagerWithCapabilities(repo AgentReader, capRepo CapabilityReader, perT
 	return m
 }
 
-// newRegistry creates a registry instance using the manager's configured readers.
+// newRegistry creates a registry instance using the manager's configured readers
+// and injects the deriver (if set) so capability dispatch uses the strategy
+// registry instead of the legacy switch-based free function.
 func (m *Manager) newRegistry() *AgentRegistry {
+	var r *AgentRegistry
 	if m.capRepo != nil {
-		return NewWithCapabilities(m.repo, m.capRepo)
+		r = NewWithCapabilities(m.repo, m.capRepo)
+	} else {
+		r = New(m.repo)
 	}
-	return New(m.repo)
+	if m.deriver != nil {
+		r.SetDeriver(m.deriver)
+	}
+	return r
 }
 
 // Init loads agents at startup.

@@ -86,6 +86,20 @@ func resolveAuditAction(method, pathOrPattern string, status int) string {
 	case (method == "PUT" || method == "PATCH") && strings.HasPrefix(pathOrPattern, "/api/v1/settings/"):
 		return "setting.update"
 
+	// Knowledge Graph mutations — searchable as `action LIKE 'kg.%'`.
+	case method == "POST" && strings.HasSuffix(pathOrPattern, "/api/v1/knowledge-graphs/{bundle}/import"):
+		return "kg.bundle.import"
+	case method == "DELETE" && pathOrPattern == "/api/v1/knowledge-graphs/{bundle}":
+		return "kg.bundle.delete"
+	case method == "POST" && strings.HasSuffix(pathOrPattern, "/entities/{entity_type}") && strings.HasPrefix(pathOrPattern, "/api/v1/knowledge-graphs/"):
+		return "kg.entity.create"
+	case method == "PUT" && strings.HasSuffix(pathOrPattern, "/entities/{entity_type}/{id}") && strings.HasPrefix(pathOrPattern, "/api/v1/knowledge-graphs/"):
+		return "kg.entity.update"
+	case method == "DELETE" && strings.HasSuffix(pathOrPattern, "/entities/{entity_type}/{id}") && strings.HasPrefix(pathOrPattern, "/api/v1/knowledge-graphs/"):
+		return "kg.entity.delete"
+	case method == "PUT" && strings.HasSuffix(pathOrPattern, "/schemas/{entity_type}") && strings.HasPrefix(pathOrPattern, "/api/v1/knowledge-graphs/"):
+		return "kg.schema.upsert"
+
 	// Session CRUD.
 	case method == "DELETE" && strings.HasPrefix(pathOrPattern, "/api/v1/sessions/"):
 		return "session.delete"

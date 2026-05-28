@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // CapabilityInfo is a capability returned in API responses.
@@ -82,12 +85,16 @@ func (h *CapabilityHandler) Add(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "type is required")
 		return
 	}
-	// BUG-001: Validate capability type against allowed list.
-	validTypes := map[string]bool{
-		"memory": true, "knowledge": true,
-	}
-	if !validTypes[req.Type] {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid capability type %q: must be one of memory, knowledge", req.Type))
+	// Validate capability type against the canonical allowlist. The list
+	// lives in domain.AllCapabilityTypes so adding a new capability is a
+	// one-file change — handler just mirrors that list.
+	if !domain.CapabilityType(req.Type).IsValid() {
+		allowed := make([]string, 0, len(domain.AllCapabilityTypes()))
+		for _, t := range domain.AllCapabilityTypes() {
+			allowed = append(allowed, string(t))
+		}
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid capability type %q: must be one of %s",
+			req.Type, strings.Join(allowed, ", ")))
 		return
 	}
 

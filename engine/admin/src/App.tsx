@@ -15,6 +15,9 @@ import AgentDrillInPage from './pages/AgentDrillInPage';
 import AgentsPage from './pages/AgentsPage';
 import WidgetConfigPage from './pages/WidgetConfigPage';
 import KnowledgePage from './pages/KnowledgePage';
+import KnowledgeGraphsPage from './pages/KnowledgeGraphsPage';
+import KnowledgeGraphDetailPage from './pages/KnowledgeGraphDetailPage';
+import KnowledgeGraphEntitiesPage from './pages/KnowledgeGraphEntitiesPage';
 import OverviewPage from './pages/OverviewPage';
 import SchemasPage from './pages/SchemasPage';
 import SchemaDetailPage from './pages/SchemaDetailPage';
@@ -76,6 +79,9 @@ export default function App() {
             <Route path="/resilience" element={<ResiliencePage />} />
             <Route path="/tool-call-log" element={<ToolCallLogPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
+            <Route path="/knowledge-graphs" element={<KnowledgeGraphsPage />} />
+            <Route path="/knowledge-graphs/:bundle" element={<KnowledgeGraphDetailPage />} />
+            <Route path="/knowledge-graphs/:bundle/entities/:entityType" element={<KnowledgeGraphEntitiesPage />} />
             <Route path="/widget" element={<WidgetConfigPage />} />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/agents/:agent" element={<AgentDrillInPage />} />

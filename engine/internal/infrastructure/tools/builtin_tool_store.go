@@ -84,20 +84,28 @@ type CapabilityConfigReader interface {
 	ReadConfig(ctx context.Context, agentName, capType string) (map[string]interface{}, error)
 }
 
+// KGToolFactory builds dynamic list_<entity_type> / get_<entity_type> tools
+// for the auto-generated KG tool names that are NOT pre-registered in the
+// builtin store. Implemented by infrastructure/kgtools.AgentToolFactory.
+type KGToolFactory interface {
+	BuildTool(ctx context.Context, name string, bundles []string) (tool.InvokableTool, bool)
+}
+
 // AgentToolResolver composes tools for a specific agent from various sources.
 type AgentToolResolver struct {
-	builtins                *BuiltinToolStore
-	knowledgeSearcher       KnowledgeSearcher
-	knowledgeEmbedder       KnowledgeEmbedder       // global fallback (Ollama)
-	knowledgeEmbedResolver  KnowledgeEmbedderResolver // per-agent from capability config (WP-4)
-	mcpProvider             MCPClientProvider
-	spawner                 GenericAgentSpawner
-	inspector               GenericAgentInspector
-	capInjector             CapabilityToolInjector
-	cbRegistry              CircuitBreakerRegistry
-	capConfigReader         CapabilityConfigReader
-	knowledgeKBResolver     KnowledgeKBResolver // resolves agent → linked KB IDs
-	toolTimeoutMs           int64 // 0 = disabled
+	builtins               *BuiltinToolStore
+	knowledgeSearcher      KnowledgeSearcher
+	knowledgeEmbedder      KnowledgeEmbedder         // global fallback (Ollama)
+	knowledgeEmbedResolver KnowledgeEmbedderResolver // per-agent from capability config (WP-4)
+	mcpProvider            MCPClientProvider
+	spawner                GenericAgentSpawner
+	inspector              GenericAgentInspector
+	capInjector            CapabilityToolInjector
+	cbRegistry             CircuitBreakerRegistry
+	capConfigReader        CapabilityConfigReader
+	knowledgeKBResolver    KnowledgeKBResolver // resolves agent → linked KB IDs
+	kgToolFactory          KGToolFactory       // dynamic KG tools (list_X / get_X)
+	toolTimeoutMs          int64               // 0 = disabled
 }
 
 // NewAgentToolResolver creates a new AgentToolResolver.
@@ -124,6 +132,47 @@ func (r *AgentToolResolver) SetKnowledgeEmbedderResolver(resolver KnowledgeEmbed
 // SetKnowledgeKBResolver configures agent → KB IDs resolution (many-to-many).
 func (r *AgentToolResolver) SetKnowledgeKBResolver(resolver KnowledgeKBResolver) {
 	r.knowledgeKBResolver = resolver
+}
+
+// SetKGToolFactory wires the dynamic KG tool factory so list_<entity_type>
+// and get_<entity_type> names in DerivedTools resolve to real tools at chat
+// time. Without this, KG-derived tool names are silently skipped.
+func (r *AgentToolResolver) SetKGToolFactory(f KGToolFactory) {
+	r.kgToolFactory = f
+}
+
+// tryBuildKGTool reads the agent's knowledge_graphs capability config,
+// extracts bound bundle names, and delegates to the KG factory. Returns
+// (nil, false) when the agent has no KG capability, the capability is
+// disabled, the name doesn't match a list_/get_ shape, or the entity_type
+// isn't in any bound bundle. Used by both the legacy Resolve and the newer
+// ResolveForAgent paths.
+func (r *AgentToolResolver) tryBuildKGTool(ctx context.Context, agentName, name string) (tool.InvokableTool, bool) {
+	if r.capConfigReader == nil {
+		return nil, false
+	}
+	cfg, err := r.capConfigReader.ReadConfig(ctx, agentName, "knowledge_graphs")
+	if err != nil || cfg == nil {
+		return nil, false
+	}
+	rawBundles, ok := cfg["bundles"]
+	if !ok {
+		return nil, false
+	}
+	arr, ok := rawBundles.([]any)
+	if !ok {
+		return nil, false
+	}
+	bundles := make([]string, 0, len(arr))
+	for _, it := range arr {
+		if s, ok := it.(string); ok && s != "" {
+			bundles = append(bundles, s)
+		}
+	}
+	if len(bundles) == 0 {
+		return nil, false
+	}
+	return r.kgToolFactory.BuildTool(ctx, name, bundles)
 }
 
 // SetMCPProvider configures the MCP client provider for MCP tool resolution.
@@ -157,16 +206,15 @@ func (r *AgentToolResolver) SetCapabilityConfigReader(reader CapabilityConfigRea
 	r.capConfigReader = reader
 }
 
-
 // ResolveContext holds per-agent resolution context.
 type ResolveContext struct {
-	Agent            *agentregistry.RegisteredAgent
-	Deps             ToolDependencies
-	ConfirmRequester ConfirmationRequester    // nil if no confirmation support
-	Spawner          GenericAgentSpawner      // nil if spawn not available
-	Inspector        GenericAgentInspector    // nil if inspect not available
-	KnowledgeSearcher KnowledgeSearcher       // nil if no knowledge DB
-	KnowledgeEmbedder KnowledgeEmbedder       // nil if no embeddings
+	Agent             *agentregistry.RegisteredAgent
+	Deps              ToolDependencies
+	ConfirmRequester  ConfirmationRequester // nil if no confirmation support
+	Spawner           GenericAgentSpawner   // nil if spawn not available
+	Inspector         GenericAgentInspector // nil if inspect not available
+	KnowledgeSearcher KnowledgeSearcher     // nil if no knowledge DB
+	KnowledgeEmbedder KnowledgeEmbedder     // nil if no embeddings
 	// Ctx carries the per-request context so MCP tool resolution can route
 	// to the correct per-tenant ClientRegistry. Zero value (nil) is treated
 	// as context.Background() — safe in CE single-tenant mode.
@@ -200,6 +248,16 @@ func (r *AgentToolResolver) ResolveForAgent(ctx context.Context, rc ResolveConte
 		}
 		factory, ok := r.builtins.Get(name)
 		if !ok {
+			// Dynamic KG-derived tools (list_<entity_type>, get_<entity_type>)
+			// are NOT pre-registered in the builtin store — they are constructed
+			// on the fly from the agent's bound bundles. Try the KG factory
+			// before giving up.
+			if r.kgToolFactory != nil {
+				if kgTool, built := r.tryBuildKGTool(ctx, rc.Agent.Record.Name, name); built {
+					tools = append(tools, kgTool)
+					continue
+				}
+			}
 			// Capability-derived tools (memory_recall, memory_store) or custom tool
 			// names that aren't registered as builtins → warn and skip gracefully.
 			slog.WarnContext(ctx, "tool in DerivedTools not registered as builtin, skipping",
@@ -353,6 +411,16 @@ func (r *AgentToolResolver) Resolve(ctx context.Context, toolNames []string, dep
 		}
 		factory, ok := r.builtins.Get(name)
 		if !ok {
+			// Dynamic KG-derived tools (list_<entity_type>, get_<entity_type>) are
+			// constructed on the fly from the agent's bound bundles — they are NOT
+			// pre-registered in the builtin store. Try the KG factory before
+			// falling through to the legacy capability-injected warning path.
+			if r.kgToolFactory != nil && deps.AgentName != "" {
+				if kgTool, built := r.tryBuildKGTool(ctx, deps.AgentName, name); built {
+					resolved = append(resolved, kgTool)
+					continue
+				}
+			}
 			// BUG-006: capability-injected tools that aren't registered yet → warn and skip.
 			if capInjectedTools[name] {
 				slog.WarnContext(ctx, "capability-injected tool not registered, skipping",

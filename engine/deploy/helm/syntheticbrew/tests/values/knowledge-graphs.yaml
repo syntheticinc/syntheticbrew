@@ -1,0 +1,104 @@
+# Test scenario: declarative Knowledge Graph deployment via Helm + configApply.
+#
+# - configApply pushes a small Knowledge Graph bundle (category entity_type +
+#   3 entities) through the existing /api/v1/config/import endpoint extended
+#   with `knowledge_graphs:` top-level section in engine 1.3.0.
+# - Agent is bound to the bundle via the `knowledge_graphs` capability so the
+#   engine auto-generates `list_category`, `get_category` MCP tools and
+#   injects them into the agent's runtime tool list.
+#
+# Smoke (smoke.sh) asserts:
+#   GET /api/v1/knowledge-graphs                       → 200, contains "kind-smoke-kg"
+#   GET /api/v1/knowledge-graphs/kind-smoke-kg          → manifest with entity_types
+#   GET /api/v1/knowledge-graphs/kind-smoke-kg/entities/category → 3 entities
+#   GET /api/v1/agents/kind-smoke-kg-agent              → derived_tools includes
+#                                                          "list_category", "get_category"
+replicaCount: 1
+
+image:
+  repository: syntheticinc/syntheticbrew
+  # Engine 1.3.0 — first version with Knowledge Graphs support.
+  tag: "1.3.0"
+  pullPolicy: IfNotPresent
+
+postgresql:
+  external:
+    existingSecret: postgres-credentials
+    existingSecretKey: DATABASE_URL
+
+config:
+  auth:
+    mode: local
+    jwtKeysPath: /var/lib/syntheticbrew/keys
+
+persistence:
+  keys:
+    enabled: true
+    size: 1Mi
+    storageClass: standard
+
+ingress: { enabled: false }
+httpRoute: { enabled: false }
+
+migrations:
+  enabled: true
+  image:
+    repository: syntheticinc/syntheticbrew-migrations
+    tag: "1.3.0"
+
+bootstrapAdminToken:
+  enabled: true
+  existingSecret: postgres-credentials
+  existingSecretKey: token
+
+configApply:
+  enabled: true
+  # brewctl 0.3.0 — first version with `kg apply / diff / pull` subcommands
+  # AND extended /config/import payload understanding `knowledge_graphs:` key.
+  image:
+    tag: "0.3.0"
+  tokenSecret: postgres-credentials
+  config: |
+    knowledge_graphs:
+      - bundle_name: kind-smoke-kg
+        version: 1.0.0
+        schemas:
+          - entity_type: category
+            schema: |
+              {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "category",
+                "type": "object",
+                "x-id-field": "code",
+                "x-tool-expose": ["list", "get"],
+                "required": ["code", "name"],
+                "additionalProperties": false,
+                "properties": {
+                  "code": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{1,30}$", "x-index": true},
+                  "name": {"type": "string", "minLength": 3},
+                  "popularity": {"type": "string", "enum": ["high", "medium", "low"], "x-index": true}
+                }
+              }
+        entities:
+          - entity_type: category
+            items:
+              - {code: footwear, name: "Footwear", popularity: high}
+              - {code: apparel, name: "Apparel", popularity: medium}
+              - {code: home_goods, name: "Home Goods", popularity: high}
+    agents:
+      - name: kind-smoke-kg-agent
+        lifecycle: persistent
+        system_prompt: "Smoke test agent for Knowledge Graphs. Use list_category to enumerate."
+        capabilities:
+          - type: knowledge_graphs
+            enabled: true
+            config:
+              bundles: [kind-smoke-kg]
+    schemas:
+      - name: kind-smoke-kg-schema
+        entry_agent: kind-smoke-kg-agent
+        chat_enabled: true
+
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits:   { cpu: 500m, memory: 512Mi }

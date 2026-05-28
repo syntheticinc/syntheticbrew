@@ -1,49 +1,39 @@
 package agentregistry
 
 import (
-	"sort"
+	"context"
 
+	"github.com/syntheticinc/syntheticbrew/internal/domain/capabilities"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 )
 
-// DeriveRuntimeTools returns the sorted, deduplicated tool names available to
-// the agent at execution time. Deterministic: same inputs → same output order.
-func DeriveRuntimeTools(agent configrepo.AgentRecord, capabilities []configrepo.CapabilityRecord) []string {
-	seen := make(map[string]bool)
-	var tools []string
+// defaultDeriver is the package-level fallback Deriver used by the legacy
+// DeriveRuntimeTools free function. Constructed once with the built-in
+// memory + knowledge capabilities so callers without injected DI still
+// produce the same tool list.
+//
+// Production wiring (app.NewServer) bypasses this fallback by calling
+// Manager.SetDeriver with a Deriver constructed over the shared registry.
+// This package-level instance exists only for tests and legacy callers
+// that haven't migrated to the Deriver-based API yet.
+var defaultDeriver = NewDeriver(capabilities.NewRegistry(
+	capabilities.MemoryCapability{},
+	capabilities.KnowledgeCapability{},
+))
 
-	add := func(name string) {
-		if seen[name] {
-			return
-		}
-		seen[name] = true
-		tools = append(tools, name)
+// DeriveRuntimeTools is the legacy free-function entry point. New code should
+// construct a Deriver via NewDeriver and inject it. This wrapper exists so
+// untouched callers continue compiling during the capability strategy
+// refactor (Этап 0).
+//
+// Deprecated: use Deriver.DeriveRuntimeTools through DI. Will be removed
+// once all callers (including tests) are migrated.
+func DeriveRuntimeTools(agent configrepo.AgentRecord, caps []configrepo.CapabilityRecord) []string {
+	tools, err := defaultDeriver.DeriveRuntimeTools(context.Background(), agent, caps)
+	if err != nil {
+		// Built-in capabilities never return errors; this branch is
+		// defensive against future strategies misbehaving in tests.
+		return nil
 	}
-
-	for _, t := range agent.BuiltinTools {
-		add(t)
-	}
-	for _, ct := range agent.CustomTools {
-		add(ct.Name)
-	}
-
-	for _, name := range agent.CanSpawn {
-		add("spawn_" + name)
-	}
-
-	for _, c := range capabilities {
-		if !c.Enabled {
-			continue
-		}
-		switch c.Type {
-		case "memory":
-			add("memory_recall")
-			add("memory_store")
-		case "knowledge":
-			add("knowledge_search")
-		}
-	}
-
-	sort.Strings(tools)
 	return tools
 }

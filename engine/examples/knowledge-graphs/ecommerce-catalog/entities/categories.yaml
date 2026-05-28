@@ -1,0 +1,49 @@
+- code: apparel
+  name: Apparel
+  tier: primary
+  popularity: high
+  description: |
+    Clothing for everyday and athletic wear. Carries multiple secondary
+    categories underneath (tops, bottoms, outerwear).
+
+- code: footwear
+  name: Footwear
+  tier: primary
+  popularity: high
+  description: |
+    Shoes and boots across casual, athletic, and dress segments.
+
+- code: home_goods
+  name: Home Goods
+  tier: primary
+  popularity: medium
+  description: |
+    Furniture, kitchenware, decor.
+
+- code: books
+  name: Books
+  tier: primary
+  popularity: medium
+
+- code: outdoor
+  name: Outdoor & Sports
+  tier: primary
+  popularity: high
+
+- code: tops
+  name: Tops
+  tier: secondary
+  popularity: high
+  description: T-shirts, blouses, sweaters.
+
+- code: bottoms
+  name: Bottoms
+  tier: secondary
+  popularity: high
+  description: Pants, shorts, skirts.
+
+- code: outerwear
+  name: Outerwear
+  tier: secondary
+  popularity: medium
+  description: Jackets and coats.

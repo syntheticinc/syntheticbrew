@@ -114,6 +114,17 @@ type Plugin interface {
 	// Docs MCP entry.
 	DocsMCPEndpoint() string
 
+	// KGEnforcer returns the optional Cloud quota/metering enforcer for
+	// Knowledge Graph entity writes. Nil means no enforcement (CE/EE default).
+	// Engine fail-closes on enforcer errors — quota cannot be bypassed.
+	KGEnforcer() KGEnforcer
+
+	// KGCounter returns the optional counter source for tenant-level KG
+	// stats (bundles count, entities count). Used in the admin UI bundles
+	// header and billing displays. Nil means the engine reads counts
+	// directly from the database without plan enrichment.
+	KGCounter() KGCounter
+
 	// Stop releases any background resources held by the plugin
 	// (watchers, tickers, etc.).
 	Stop()
