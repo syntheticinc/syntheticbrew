@@ -89,7 +89,7 @@ func TestKGMutateHandler_BulkImport_OK(t *testing.T) {
 	h := NewKGMutateHandler(svc)
 	r := newKGMutateRouter(h)
 
-	body := `{"version":"1","schemas":[{"entity_type":"industry","schema":{}}],"entities":[]}`
+	body := `{"version":"1","schemas":[{"entity_type":"category","schema":{}}],"entities":[]}`
 	req := httptest.NewRequest(http.MethodPost, "/knowledge-graphs/demo/import", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -103,7 +103,7 @@ func TestKGMutateHandler_BulkImport_OK(t *testing.T) {
 	if svc.bulkBundle != "demo" {
 		t.Fatalf("bundle = %q, want demo", svc.bulkBundle)
 	}
-	if len(svc.bulkReq.Schemas) != 1 || svc.bulkReq.Schemas[0].EntityType != "industry" {
+	if len(svc.bulkReq.Schemas) != 1 || svc.bulkReq.Schemas[0].EntityType != "category" {
 		t.Fatalf("schemas not parsed: %+v", svc.bulkReq.Schemas)
 	}
 }
@@ -127,20 +127,20 @@ func TestKGMutateHandler_BulkImport_MalformedJSON_400(t *testing.T) {
 
 func TestKGMutateHandler_CreateEntity_FlatShape_201(t *testing.T) {
 	svc := &mockKGMutateService{
-		createReturn: &KGEntityInfo{BundleName: "demo", EntityType: "industry", EntityID: "X"},
+		createReturn: &KGEntityInfo{BundleName: "demo", EntityType: "category", EntityID: "X"},
 	}
 	h := NewKGMutateHandler(svc)
 	r := newKGMutateRouter(h)
 
 	body := `{"code":"X","name":"Y"}`
-	req := httptest.NewRequest(http.MethodPost, "/knowledge-graphs/demo/entities/industry", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/knowledge-graphs/demo/entities/category", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body=%s", w.Code, w.Body.String())
 	}
-	if svc.createBundle != "demo" || svc.createType != "industry" {
+	if svc.createBundle != "demo" || svc.createType != "category" {
 		t.Fatalf("svc got bundle=%q type=%q", svc.createBundle, svc.createType)
 	}
 	if svc.createData["code"] != "X" || svc.createData["name"] != "Y" {
@@ -153,7 +153,7 @@ func TestKGMutateHandler_CreateEntity_EmptyBody_400(t *testing.T) {
 	h := NewKGMutateHandler(svc)
 	r := newKGMutateRouter(h)
 
-	req := httptest.NewRequest(http.MethodPost, "/knowledge-graphs/demo/entities/industry", strings.NewReader(`null`))
+	req := httptest.NewRequest(http.MethodPost, "/knowledge-graphs/demo/entities/category", strings.NewReader(`null`))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -169,13 +169,13 @@ func TestKGMutateHandler_CreateEntity_WrappedShape_PassesThrough(t *testing.T) {
 	// Handler should treat the body verbatim as the entity. So {"data":{"code":"X"}}
 	// is passed as-is to the service; schema validation downstream will reject it.
 	svc := &mockKGMutateService{
-		createReturn: &KGEntityInfo{BundleName: "demo", EntityType: "industry", EntityID: "wrapped"},
+		createReturn: &KGEntityInfo{BundleName: "demo", EntityType: "category", EntityID: "wrapped"},
 	}
 	h := NewKGMutateHandler(svc)
 	r := newKGMutateRouter(h)
 
 	body := `{"data":{"code":"X"}}`
-	req := httptest.NewRequest(http.MethodPost, "/knowledge-graphs/demo/entities/industry", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/knowledge-graphs/demo/entities/category", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -190,21 +190,21 @@ func TestKGMutateHandler_CreateEntity_WrappedShape_PassesThrough(t *testing.T) {
 
 func TestKGMutateHandler_UpdateEntity_FlatShape_200(t *testing.T) {
 	svc := &mockKGMutateService{
-		updateReturn: &KGEntityInfo{BundleName: "demo", EntityType: "industry", EntityID: "PM"},
+		updateReturn: &KGEntityInfo{BundleName: "demo", EntityType: "category", EntityID: "FW"},
 	}
 	h := NewKGMutateHandler(svc)
 	r := newKGMutateRouter(h)
 
-	body := `{"code":"PM","name":"renamed"}`
-	req := httptest.NewRequest(http.MethodPut, "/knowledge-graphs/demo/entities/industry/PM", strings.NewReader(body))
+	body := `{"code":"FW","name":"renamed"}`
+	req := httptest.NewRequest(http.MethodPut, "/knowledge-graphs/demo/entities/category/FW", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if svc.updateID != "PM" {
-		t.Fatalf("svc got id=%q, want PM", svc.updateID)
+	if svc.updateID != "FW" {
+		t.Fatalf("svc got id=%q, want FW", svc.updateID)
 	}
 	if svc.updateData["name"] != "renamed" {
 		t.Fatalf("data = %+v, want flat with name=renamed", svc.updateData)
@@ -216,14 +216,14 @@ func TestKGMutateHandler_DeleteEntity_204(t *testing.T) {
 	h := NewKGMutateHandler(svc)
 	r := newKGMutateRouter(h)
 
-	req := httptest.NewRequest(http.MethodDelete, "/knowledge-graphs/demo/entities/industry/PM", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/knowledge-graphs/demo/entities/category/FW", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
-	if svc.deleteEntityArgs != [3]string{"demo", "industry", "PM"} {
+	if svc.deleteEntityArgs != [3]string{"demo", "category", "FW"} {
 		t.Fatalf("svc got %+v", svc.deleteEntityArgs)
 	}
 }
@@ -247,20 +247,20 @@ func TestKGMutateHandler_DeleteBundle_204(t *testing.T) {
 
 func TestKGMutateHandler_UpsertSchema_OK(t *testing.T) {
 	svc := &mockKGMutateService{
-		schemaReturn: &KGSchemaInfo{BundleName: "demo", EntityType: "industry"},
+		schemaReturn: &KGSchemaInfo{BundleName: "demo", EntityType: "category"},
 	}
 	h := NewKGMutateHandler(svc)
 	r := newKGMutateRouter(h)
 
 	body := `{"schema":{"type":"object"},"expose_tools":["list"]}`
-	req := httptest.NewRequest(http.MethodPut, "/knowledge-graphs/demo/schemas/industry", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/knowledge-graphs/demo/schemas/category", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if svc.upsertBundle != "demo" || svc.upsertType != "industry" {
+	if svc.upsertBundle != "demo" || svc.upsertType != "category" {
 		t.Fatalf("svc got bundle=%q type=%q", svc.upsertBundle, svc.upsertType)
 	}
 	if len(svc.upsertReq.ExposeTools) != 1 || svc.upsertReq.ExposeTools[0] != "list" {

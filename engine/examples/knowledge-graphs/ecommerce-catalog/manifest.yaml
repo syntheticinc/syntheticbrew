@@ -1,0 +1,16 @@
+bundle_name: ecommerce-catalog-example
+version: 1.0.0
+description: |
+  Generic e-commerce product taxonomy: categories, brands, product attributes.
+  Public example bundle for SyntheticBrew Knowledge Graphs. Apply with:
+  brewctl kg apply ./ecommerce-catalog
+entity_types:
+  - name: category
+    schema_file: schemas/category.schema.json
+    entities_file: entities/categories.yaml
+  - name: brand
+    schema_file: schemas/brand.schema.json
+    entities_file: entities/brands.yaml
+  - name: product_attribute
+    schema_file: schemas/product_attribute.schema.json
+    entities_file: entities/product_attributes.yaml

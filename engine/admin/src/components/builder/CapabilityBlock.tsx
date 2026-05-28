@@ -157,7 +157,7 @@ function KnowledgeGraphsConfig({ cap, onChange }: PanelProps) {
           <span className="text-[10px] px-2 py-0.5 bg-brand-dark-alt border border-brand-shade3/20 rounded-card text-brand-shade2">get_&lt;entity_type&gt;</span>
           <span className="text-[10px] px-2 py-0.5 bg-brand-dark-alt border border-brand-shade3/20 rounded-card text-brand-shade2">list_&lt;entity_type&gt;_ids</span>
         </div>
-        <p className={hintCls}>Tool names derived from each entity_type in the bundle (e.g. <code>list_industry</code> if the schema declares <code>entity_type: industry</code>).</p>
+        <p className={hintCls}>Tool names derived from each entity_type in the bundle (e.g. <code>list_category</code> if the schema declares <code>entity_type: category</code>).</p>
       </div>
 
       <div>

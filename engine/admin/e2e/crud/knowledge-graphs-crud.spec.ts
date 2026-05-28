@@ -5,9 +5,9 @@
 
 import { test, expect, apiFetch } from '../fixtures';
 
-const INDUSTRY_SCHEMA = {
+const CATEGORY_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'industry',
+  $id: 'category',
   type: 'object',
   'x-id-field': 'code',
   'x-tool-expose': ['list', 'get'],
@@ -22,8 +22,8 @@ const INDUSTRY_SCHEMA = {
 
 const bulkPayload = (entities: Array<Record<string, unknown>>, version = '1.0.0') => ({
   version,
-  schemas: [{ entity_type: 'industry', schema: INDUSTRY_SCHEMA }],
-  entities: [{ entity_type: 'industry', items: entities }],
+  schemas: [{ entity_type: 'category', schema: CATEGORY_SCHEMA }],
+  entities: [{ entity_type: 'category', items: entities }],
 });
 
 const newBundle = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -35,7 +35,7 @@ test.describe('Knowledge Graphs — bulk import', () => {
       const importRes = await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'Property Management', popularity: 'high' }]),
+        body: bulkPayload([{ code: 'fw', name: 'Footwear', popularity: 'high' }]),
       });
       expect([200, 201]).toContain(importRes.status());
 
@@ -55,7 +55,7 @@ test.describe('Knowledge Graphs — bulk import', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'Property Management' }]),
+        body: bulkPayload([{ code: 'fw', name: 'Footwear' }]),
       });
       const getRes = await apiFetch(request, `/knowledge-graphs/${bundle}`, { token: adminToken });
       expect(getRes.status()).toBe(200);
@@ -76,14 +76,14 @@ test.describe('Knowledge Graphs — entities list & filter', () => {
         method: 'POST',
         token: adminToken,
         body: bulkPayload([
-          { code: 'PM', name: 'Property Management', popularity: 'high' },
-          { code: 'AG', name: 'Agriculture', popularity: 'medium' },
-          { code: 'WH', name: 'Warehousing', popularity: 'high' },
+          { code: 'fw', name: 'Footwear', popularity: 'high' },
+          { code: 'ap', name: 'Apparel', popularity: 'medium' },
+          { code: 'hg', name: 'Home Goods', popularity: 'high' },
         ]),
       });
       const filtRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry?filter[popularity]=high`,
+        `/knowledge-graphs/${bundle}/entities/category?filter[popularity]=high`,
         { token: adminToken },
       );
       expect(filtRes.status()).toBe(200);
@@ -91,7 +91,7 @@ test.describe('Knowledge Graphs — entities list & filter', () => {
       expect(body.items).toBeDefined();
       expect(body.items.length).toBe(2);
       const codes = body.items.map((e: { data: { code: string } }) => e.data.code).sort();
-      expect(codes).toEqual(['PM', 'WH']);
+      expect(codes).toEqual(['fw', 'hg']);
     } finally {
       await apiFetch(request, `/knowledge-graphs/${bundle}`, { method: 'DELETE', token: adminToken });
     }
@@ -103,11 +103,11 @@ test.describe('Knowledge Graphs — entities list & filter', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'PM' }]),
+        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
       });
       const res = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry?limit=501`,
+        `/knowledge-graphs/${bundle}/entities/category?limit=501`,
         { token: adminToken },
       );
       expect(res.status()).toBe(400);
@@ -126,22 +126,22 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'Property Management' }]),
+        body: bulkPayload([{ code: 'fw', name: 'Footwear' }]),
       });
       const postRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry`,
+        `/knowledge-graphs/${bundle}/entities/category`,
         {
           method: 'POST',
           token: adminToken,
-          body: { code: 'NEW', name: 'New Industry' },
+          body: { code: 'NEW', name: 'New Category' },
         },
       );
       expect([200, 201]).toContain(postRes.status());
 
       const getRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/NEW`,
+        `/knowledge-graphs/${bundle}/entities/category/NEW`,
         { token: adminToken },
       );
       expect(getRes.status()).toBe(200);
@@ -158,15 +158,15 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'Original Name' }]),
+        body: bulkPayload([{ code: 'fw', name: 'Original Name' }]),
       });
       const putRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/PM`,
+        `/knowledge-graphs/${bundle}/entities/category/FW`,
         {
           method: 'PUT',
           token: adminToken,
-          body: { code: 'PM', name: 'Updated Name' },
+          body: { code: 'fw', name: 'Updated Name' },
         },
       );
       expect(putRes.status()).toBe(200);
@@ -183,18 +183,18 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'PM' }]),
+        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
       });
       const delRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/PM`,
+        `/knowledge-graphs/${bundle}/entities/category/FW`,
         { method: 'DELETE', token: adminToken },
       );
       expect([200, 204]).toContain(delRes.status());
 
       const getRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/PM`,
+        `/knowledge-graphs/${bundle}/entities/category/FW`,
         { token: adminToken },
       );
       expect(getRes.status()).toBe(404);
@@ -208,7 +208,7 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
     await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
       method: 'POST',
       token: adminToken,
-      body: bulkPayload([{ code: 'PM', name: 'PM' }]),
+      body: bulkPayload([{ code: 'fw', name: 'FW' }]),
     });
 
     const delRes = await apiFetch(request, `/knowledge-graphs/${bundle}`, {
@@ -222,7 +222,7 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
 
     const getEntity = await apiFetch(
       request,
-      `/knowledge-graphs/${bundle}/entities/industry/PM`,
+      `/knowledge-graphs/${bundle}/entities/category/FW`,
       { token: adminToken },
     );
     expect(getEntity.status()).toBe(404);
@@ -244,11 +244,11 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: unicodeName }]),
+        body: bulkPayload([{ code: 'fw', name: unicodeName }]),
       });
       const getRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/PM`,
+        `/knowledge-graphs/${bundle}/entities/category/FW`,
         { token: adminToken },
       );
       expect(getRes.status()).toBe(200);
@@ -272,11 +272,11 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'PM' }]),
+        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
       });
       const res = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/GHOST`,
+        `/knowledge-graphs/${bundle}/entities/category/GHOST`,
         { token: adminToken },
       );
       expect(res.status()).toBe(404);
@@ -291,19 +291,19 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'PM' }]),
+        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
       });
 
       const first = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/PM`,
+        `/knowledge-graphs/${bundle}/entities/category/FW`,
         { method: 'DELETE', token: adminToken },
       );
       expect([200, 204]).toContain(first.status());
 
       const second = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/PM`,
+        `/knowledge-graphs/${bundle}/entities/category/FW`,
         { method: 'DELETE', token: adminToken },
       );
       // Idempotent: second delete is either 204 (still OK) or 404 (already gone), never 500.
@@ -321,7 +321,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       const okRes = await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'PM', popularity: 'high', description: desc10k }]),
+        body: bulkPayload([{ code: 'fw', name: 'FW', popularity: 'high', description: desc10k }]),
       });
       // 10KB is fine — backend stores it (schema may not whitelist description; that's a 400 we expect)
       expect([200, 201, 400]).toContain(okRes.status());
@@ -343,7 +343,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
         token: adminToken,
         body: {
           version: '1.0.0',
-          schemas: [{ entity_type: 'industry', schema: badSchema }],
+          schemas: [{ entity_type: 'category', schema: badSchema }],
           entities: [],
         },
       });
@@ -360,7 +360,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
         method: 'POST',
         token: adminToken,
         // code "pm" violates pattern ^[A-Z]{2,4}$ (lowercase rejected)
-        body: bulkPayload([{ code: 'pm', name: 'PM' }]),
+        body: bulkPayload([{ code: 'pm', name: 'FW' }]),
       });
       expect(res.status()).toBe(400);
     } finally {
@@ -376,8 +376,8 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
         token: adminToken,
         body: {
           version: '1.0.0',
-          schemas: [{ entity_type: 'Industry', schema: INDUSTRY_SCHEMA }],
-          entities: [{ entity_type: 'Industry', items: [{ code: 'PM', name: 'PM' }] }],
+          schemas: [{ entity_type: 'Category', schema: CATEGORY_SCHEMA }],
+          entities: [{ entity_type: 'Category', items: [{ code: 'fw', name: 'FW' }] }],
         },
       });
       expect(res.status()).toBe(400);
@@ -393,14 +393,14 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
       { method: 'GET', path: '/knowledge-graphs' },
       { method: 'GET', path: '/knowledge-graphs/some-bundle' },
       { method: 'GET', path: '/knowledge-graphs/some-bundle/schemas' },
-      { method: 'GET', path: '/knowledge-graphs/some-bundle/schemas/industry' },
-      { method: 'GET', path: '/knowledge-graphs/some-bundle/entities/industry' },
-      { method: 'GET', path: '/knowledge-graphs/some-bundle/entities/industry/PM' },
+      { method: 'GET', path: '/knowledge-graphs/some-bundle/schemas/category' },
+      { method: 'GET', path: '/knowledge-graphs/some-bundle/entities/category' },
+      { method: 'GET', path: '/knowledge-graphs/some-bundle/entities/category/FW' },
       { method: 'POST', path: '/knowledge-graphs/some-bundle/import' },
-      { method: 'POST', path: '/knowledge-graphs/some-bundle/entities/industry' },
-      { method: 'PUT', path: '/knowledge-graphs/some-bundle/entities/industry/PM' },
-      { method: 'DELETE', path: '/knowledge-graphs/some-bundle/entities/industry/PM' },
-      { method: 'PUT', path: '/knowledge-graphs/some-bundle/schemas/industry' },
+      { method: 'POST', path: '/knowledge-graphs/some-bundle/entities/category' },
+      { method: 'PUT', path: '/knowledge-graphs/some-bundle/entities/category/FW' },
+      { method: 'DELETE', path: '/knowledge-graphs/some-bundle/entities/category/FW' },
+      { method: 'PUT', path: '/knowledge-graphs/some-bundle/schemas/category' },
       { method: 'DELETE', path: '/knowledge-graphs/some-bundle' },
     ];
 
@@ -418,12 +418,12 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: 'Property Management' }]),
+        body: bulkPayload([{ code: 'fw', name: 'Footwear' }]),
       });
       // Classic injection payload
       const injectionRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry?filter[code]=%27%20OR%201%3D1--`,
+        `/knowledge-graphs/${bundle}/entities/category?filter[code]=%27%20OR%201%3D1--`,
         { token: adminToken },
       );
       // Must not crash (500) — parameterised queries should return 200 (no match) or 400 (validation)
@@ -432,7 +432,7 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
       // Verify table intact — list still works and PM still there
       const listRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry`,
+        `/knowledge-graphs/${bundle}/entities/category`,
         { token: adminToken },
       );
       expect(listRes.status()).toBe(200);
@@ -447,7 +447,7 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
     const bundle = newBundle('kg-sec-ref');
     try {
       const malicious = {
-        $id: 'industry',
+        $id: 'category',
         type: 'object',
         'x-id-field': 'code',
         properties: {
@@ -460,8 +460,8 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
         token: adminToken,
         body: {
           version: '1.0.0',
-          schemas: [{ entity_type: 'industry', schema: malicious }],
-          entities: [{ entity_type: 'industry', items: [{ code: 'PM', name: 'PM' }] }],
+          schemas: [{ entity_type: 'category', schema: malicious }],
+          entities: [{ entity_type: 'category', items: [{ code: 'fw', name: 'FW' }] }],
         },
       });
       // External ref must be rejected. 400 (validation) or 422 acceptable; 500 is a bug.
@@ -480,11 +480,11 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'PM', name: xss }]),
+        body: bulkPayload([{ code: 'fw', name: xss }]),
       });
       const getRes = await apiFetch(
         request,
-        `/knowledge-graphs/${bundle}/entities/industry/PM`,
+        `/knowledge-graphs/${bundle}/entities/category/FW`,
         { token: adminToken },
       );
       expect(getRes.status()).toBe(200);

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "product_attribute",
+  "title": "Product attribute",
+  "description": "A controlled-vocabulary attribute that filters / facets the catalog.",
+  "type": "object",
+  "x-id-field": "code",
+  "x-tool-expose": ["list", "get"],
+  "x-tool-description": "Catalog filter attributes — material, fit, season, certification, etc. Use list_product_attribute to discover refinements available for a category.",
+  "required": ["code", "name", "category", "value_type"],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,40}$",
+      "x-index": true
+    },
+    "name": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 60
+    },
+    "category": {
+      "type": "string",
+      "x-ref": "category",
+      "x-index": true
+    },
+    "value_type": {
+      "type": "string",
+      "enum": ["enum", "boolean", "integer", "range"],
+      "x-index": true
+    },
+    "allowed_values": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "For value_type=enum, the canonical set of allowed values."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 300
+    }
+  }
+}

@@ -32,7 +32,7 @@ type SchemaByTypeReader interface {
 //
 // One factory is shared across all chat turns; the per-turn tenant scope
 // comes from ctx. The factory needs the tenant's bundle/entity_type schemas
-// to map a tool name (e.g. "list_industry") to the underlying KG bundle the
+// to map a tool name (e.g. "list_category") to the underlying KG bundle the
 // agent is bound to. Bundles are looked up via the Provider (already wired
 // for the capability resolver).
 type AgentToolFactory struct {
@@ -47,13 +47,13 @@ func NewAgentToolFactory(p *Provider, entities EntityReader, schemas SchemaByTyp
 }
 
 // BuildTool returns an InvokableTool implementation for a name like
-// `list_industry` or `get_industry`, scoping the lookup to the agent's bound
+// `list_category` or `get_category`, scoping the lookup to the agent's bound
 // bundles in the current tenant. Returns (nil, false) when the name is not a
 // KG tool name in any bound bundle — caller falls back to its next resolver.
 //
 // Examples of names handled:
-//   - list_industry → builds a list tool that queries kg_entity for entity_type=industry
-//   - get_industry  → builds a get tool that fetches one entity by id
+//   - list_category → builds a list tool that queries kg_entity for entity_type=category
+//   - get_category  → builds a get tool that fetches one entity by id
 //
 // Names that don't start with "list_" or "get_", or whose entity_type does not
 // resolve to a schema in any of the agent's bound bundles, return (nil, false).
@@ -109,8 +109,8 @@ func (f *AgentToolFactory) BuildTool(ctx context.Context, name string, bundles [
 	}
 }
 
-// splitVerbType parses a tool name like "list_industry" or "get_use_case"
-// into ("list", "industry") or ("get", "use_case"). Returns ("", "") on
+// splitVerbType parses a tool name like "list_category" or "get_brand"
+// into ("list", "category") or ("get", "brand"). Returns ("", "") on
 // names that don't match the KG tool pattern.
 func splitVerbType(name string) (verb, entityType string) {
 	switch {

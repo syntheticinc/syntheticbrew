@@ -11,7 +11,7 @@ func TestNewKGBundle_Valid(t *testing.T) {
 	t.Parallel()
 
 	b, err := domain.NewKGBundle("tenant-1", "chirp-iot", "1.0.0", map[string]any{
-		"entity_types": []string{"industry", "use_case"},
+		"entity_types": []string{"category", "product_attribute"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

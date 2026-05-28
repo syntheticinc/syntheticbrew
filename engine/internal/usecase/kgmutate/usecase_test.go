@@ -13,7 +13,7 @@ import (
 
 const validIndustrySchemaJSON = `{
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
-	"$id": "industry",
+	"$id": "category",
 	"type": "object",
 	"x-id-field": "code",
 	"x-tool-expose": ["list", "get"],
@@ -27,7 +27,7 @@ const validIndustrySchemaJSON = `{
 func newSchemaFixture(t *testing.T) *domain.KGEntitySchema {
 	t.Helper()
 	s, err := domain.NewKGEntitySchema(
-		"tenant-x", "bundle-x", "industry",
+		"tenant-x", "bundle-x", "category",
 		[]byte(validIndustrySchemaJSON), "code",
 		[]string{"list", "get"}, "Industries",
 	)
@@ -181,14 +181,14 @@ func TestCreateEntity_Happy(t *testing.T) {
 	entity, err := uc.CreateEntity(context.Background(), kgmutate.CreateEntityInput{
 		TenantID:   "tenant-x",
 		BundleName: "bundle-x",
-		EntityType: "industry",
-		Data:       map[string]any{"code": "PM", "name": "Property Management"},
+		EntityType: "category",
+		Data:       map[string]any{"code": "FW", "name": "Footwear"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if entity.EntityID != "PM" {
-		t.Errorf("EntityID: got %q, want \"PM\"", entity.EntityID)
+	if entity.EntityID != "FW" {
+		t.Errorf("EntityID: got %q, want \"FW\"", entity.EntityID)
 	}
 	if !tx.inTx {
 		t.Error("expected transaction to be opened")
@@ -210,8 +210,8 @@ func TestCreateEntity_SchemaNotFound(t *testing.T) {
 	_, err := uc.CreateEntity(context.Background(), kgmutate.CreateEntityInput{
 		TenantID:   "tenant-x",
 		BundleName: "bundle-x",
-		EntityType: "industry",
-		Data:       map[string]any{"code": "PM", "name": "PM Long"},
+		EntityType: "category",
+		Data:       map[string]any{"code": "FW", "name": "FW Long"},
 	})
 	if err == nil {
 		t.Fatal("expected NotFound error")
@@ -222,9 +222,9 @@ func TestCreateEntity_InvalidInput(t *testing.T) {
 	t.Parallel()
 	uc, _, _, _, _, _, _, _, _ := newUsecase()
 	cases := []kgmutate.CreateEntityInput{
-		{TenantID: "", BundleName: "b", EntityType: "industry", Data: map[string]any{"code": "PM"}},
-		{TenantID: "t", BundleName: "Bad-Name", EntityType: "industry", Data: map[string]any{"code": "PM"}},
-		{TenantID: "t", BundleName: "good-name", EntityType: "BadType", Data: map[string]any{"code": "PM"}},
+		{TenantID: "", BundleName: "b", EntityType: "category", Data: map[string]any{"code": "FW"}},
+		{TenantID: "t", BundleName: "Bad-Name", EntityType: "category", Data: map[string]any{"code": "FW"}},
+		{TenantID: "t", BundleName: "good-name", EntityType: "BadType", Data: map[string]any{"code": "FW"}},
 	}
 	for _, in := range cases {
 		_, err := uc.CreateEntity(context.Background(), in)
@@ -244,8 +244,8 @@ func TestCreateEntity_QuotaRejected(t *testing.T) {
 	_, err := uc.CreateEntity(context.Background(), kgmutate.CreateEntityInput{
 		TenantID:   "tenant-x",
 		BundleName: "bundle-x",
-		EntityType: "industry",
-		Data:       map[string]any{"code": "PM", "name": "Property Management"},
+		EntityType: "category",
+		Data:       map[string]any{"code": "FW", "name": "Footwear"},
 	})
 	if err == nil {
 		t.Fatal("expected quota error")
@@ -261,7 +261,7 @@ func TestCreateEntity_DataMissingIDField(t *testing.T) {
 	_, err := uc.CreateEntity(context.Background(), kgmutate.CreateEntityInput{
 		TenantID:   "tenant-x",
 		BundleName: "bundle-x",
-		EntityType: "industry",
+		EntityType: "category",
 		Data:       map[string]any{"name": "no code field here"},
 	})
 	if err == nil {
@@ -279,17 +279,17 @@ func TestUpdateEntity_Happy(t *testing.T) {
 	}
 	er.getFn = func(ctx context.Context, tenantID, bundle, entityType, id string) (*domain.KGEntity, error) {
 		return &domain.KGEntity{
-			TenantID: "tenant-x", BundleName: "bundle-x", EntityType: "industry",
-			EntityID: "PM", Data: []byte(`{"code":"PM","name":"Old Name"}`),
+			TenantID: "tenant-x", BundleName: "bundle-x", EntityType: "category",
+			EntityID: "FW", Data: []byte(`{"code":"FW","name":"Old Name"}`),
 			SchemaHash: "h",
 		}, nil
 	}
 	entity, err := uc.UpdateEntity(context.Background(), kgmutate.UpdateEntityInput{
 		TenantID:   "tenant-x",
 		BundleName: "bundle-x",
-		EntityType: "industry",
-		EntityID:   "PM",
-		Data:       map[string]any{"code": "PM", "name": "Updated Name"},
+		EntityType: "category",
+		EntityID:   "FW",
+		Data:       map[string]any{"code": "FW", "name": "Updated Name"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -310,8 +310,8 @@ func TestUpdateEntity_NotFound(t *testing.T) {
 	}
 	// entityRepo.getFn returns nil — entity not found
 	_, err := uc.UpdateEntity(context.Background(), kgmutate.UpdateEntityInput{
-		TenantID: "t", BundleName: "good-bundle", EntityType: "industry", EntityID: "ANY",
-		Data: map[string]any{"code": "PM", "name": "Property Management"},
+		TenantID: "t", BundleName: "good-bundle", EntityType: "category", EntityID: "ANY",
+		Data: map[string]any{"code": "FW", "name": "Footwear"},
 	})
 	if err == nil {
 		t.Fatal("expected NotFound error")
@@ -326,13 +326,13 @@ func TestUpdateEntity_IDMismatch(t *testing.T) {
 	}
 	er.getFn = func(ctx context.Context, tenantID, bundle, entityType, id string) (*domain.KGEntity, error) {
 		return &domain.KGEntity{
-			TenantID: "t", BundleName: "good-bundle", EntityType: "industry", EntityID: "PM",
-			Data: []byte(`{"code":"PM"}`), SchemaHash: "h",
+			TenantID: "t", BundleName: "good-bundle", EntityType: "category", EntityID: "FW",
+			Data: []byte(`{"code":"FW"}`), SchemaHash: "h",
 		}, nil
 	}
-	// URL says PM, body says DIFF — must reject
+	// URL says FW, body says DIFF — must reject
 	_, err := uc.UpdateEntity(context.Background(), kgmutate.UpdateEntityInput{
-		TenantID: "t", BundleName: "good-bundle", EntityType: "industry", EntityID: "PM",
+		TenantID: "t", BundleName: "good-bundle", EntityType: "category", EntityID: "FW",
 		Data: map[string]any{"code": "DIFF", "name": "Different ID"},
 	})
 	if err == nil {
@@ -347,16 +347,16 @@ func TestDeleteEntity_Happy(t *testing.T) {
 	uc, _, _, er, _, _, e, _, inv := newUsecase()
 	er.getFn = func(ctx context.Context, tenantID, bundle, entityType, id string) (*domain.KGEntity, error) {
 		return &domain.KGEntity{
-			TenantID: "t", BundleName: "b", EntityType: "industry", EntityID: "PM",
-			Data: []byte(`{"code":"PM"}`), SchemaHash: "h",
+			TenantID: "t", BundleName: "b", EntityType: "category", EntityID: "FW",
+			Data: []byte(`{"code":"FW"}`), SchemaHash: "h",
 		}, nil
 	}
-	err := uc.DeleteEntity(context.Background(), "t", "good-bundle", "industry", "PM")
+	err := uc.DeleteEntity(context.Background(), "t", "good-bundle", "category", "FW")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if er.deletedFor != "PM" {
-		t.Errorf("expected delete called for PM, got %q", er.deletedFor)
+	if er.deletedFor != "FW" {
+		t.Errorf("expected delete called for FW, got %q", er.deletedFor)
 	}
 	if len(e.calls) != 1 || e.calls[0] != -1 {
 		t.Errorf("expected enforcer call with delta=-1, got %v", e.calls)
@@ -370,7 +370,7 @@ func TestDeleteEntity_Idempotent(t *testing.T) {
 	t.Parallel()
 	uc, _, _, er, _, _, e, _, _ := newUsecase()
 	// entityRepo.getFn returns nil — entity does not exist
-	err := uc.DeleteEntity(context.Background(), "t", "good-bundle", "industry", "GHOST")
+	err := uc.DeleteEntity(context.Background(), "t", "good-bundle", "category", "GHOST")
 	if err != nil {
 		t.Fatalf("delete should be idempotent: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestDeleteEntity_Idempotent(t *testing.T) {
 func TestDeleteEntity_EmptyID(t *testing.T) {
 	t.Parallel()
 	uc, _, _, _, _, _, _, _, _ := newUsecase()
-	err := uc.DeleteEntity(context.Background(), "t", "good-bundle", "industry", "")
+	err := uc.DeleteEntity(context.Background(), "t", "good-bundle", "category", "")
 	if err == nil {
 		t.Fatal("expected error for empty entity_id")
 	}
@@ -399,7 +399,7 @@ func TestUpsertSchema_Happy(t *testing.T) {
 	_, err := uc.UpsertSchema(context.Background(), kgmutate.UpsertSchemaInput{
 		TenantID:   "t",
 		BundleName: "good-bundle",
-		EntityType: "industry",
+		EntityType: "category",
 		SchemaJSON: []byte(validIndustrySchemaJSON),
 	})
 	if err != nil {
@@ -420,7 +420,7 @@ func TestUpsertSchema_BundleNotFound(t *testing.T) {
 		return nil, nil
 	}
 	_, err := uc.UpsertSchema(context.Background(), kgmutate.UpsertSchemaInput{
-		TenantID: "t", BundleName: "good-bundle", EntityType: "industry",
+		TenantID: "t", BundleName: "good-bundle", EntityType: "category",
 		SchemaJSON: []byte(validIndustrySchemaJSON),
 	})
 	if err == nil {
@@ -432,7 +432,7 @@ func TestUpsertSchema_BadJSON(t *testing.T) {
 	t.Parallel()
 	uc, _, _, _, _, _, _, _, _ := newUsecase()
 	_, err := uc.UpsertSchema(context.Background(), kgmutate.UpsertSchemaInput{
-		TenantID: "t", BundleName: "good-bundle", EntityType: "industry",
+		TenantID: "t", BundleName: "good-bundle", EntityType: "category",
 		SchemaJSON: []byte(`not json at all`),
 	})
 	if err == nil {
@@ -445,7 +445,7 @@ func TestUpsertSchema_Collision(t *testing.T) {
 	uc, _, _, _, _, c, _, _, _ := newUsecase()
 	c.colliding = []string{"list_industry"}
 	_, err := uc.UpsertSchema(context.Background(), kgmutate.UpsertSchemaInput{
-		TenantID: "t", BundleName: "good-bundle", EntityType: "industry",
+		TenantID: "t", BundleName: "good-bundle", EntityType: "category",
 		SchemaJSON: []byte(validIndustrySchemaJSON),
 	})
 	if err == nil {

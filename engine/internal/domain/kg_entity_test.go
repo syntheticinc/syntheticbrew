@@ -11,15 +11,15 @@ func TestNewKGEntity_Valid(t *testing.T) {
 	t.Parallel()
 
 	e, err := domain.NewKGEntity(
-		"tenant-1", "chirp-iot", "industry", "PM",
-		[]byte(`{"code":"PM","name":"Property Management"}`),
+		"tenant-1", "chirp-iot", "category", "FW",
+		[]byte(`{"code":"FW","name":"Footwear"}`),
 		"abc123",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if e.EntityID != "PM" {
-		t.Errorf("EntityID: got %q, want %q", e.EntityID, "PM")
+	if e.EntityID != "FW" {
+		t.Errorf("EntityID: got %q, want %q", e.EntityID, "FW")
 	}
 }
 
@@ -36,14 +36,14 @@ func TestNewKGEntity_ValidationFailures(t *testing.T) {
 		schemaHash string
 		want       string
 	}{
-		{"empty tenant", "", "bundle", "industry", "id", []byte("{}"), "h", "tenant_id"},
+		{"empty tenant", "", "bundle", "category", "id", []byte("{}"), "h", "tenant_id"},
 		{"bad bundle", "t", "Bad", "e", "id", []byte("{}"), "h", "bundle_name"},
 		{"bad entity type", "t", "bundle", "Bad", "id", []byte("{}"), "h", "entity_type"},
-		{"empty id", "t", "bundle", "industry", "", []byte("{}"), "h", "entity_id"},
-		{"long id", "t", "bundle", "industry", strings.Repeat("x", 129), []byte("{}"), "h", "entity_id"},
-		{"empty data", "t", "bundle", "industry", "id", []byte{}, "h", "data"},
-		{"invalid JSON data", "t", "bundle", "industry", "id", []byte(`not json`), "h", "valid JSON"},
-		{"empty schema hash", "t", "bundle", "industry", "id", []byte("{}"), "", "schema_hash"},
+		{"empty id", "t", "bundle", "category", "", []byte("{}"), "h", "entity_id"},
+		{"long id", "t", "bundle", "category", strings.Repeat("x", 129), []byte("{}"), "h", "entity_id"},
+		{"empty data", "t", "bundle", "category", "id", []byte{}, "h", "data"},
+		{"invalid JSON data", "t", "bundle", "category", "id", []byte(`not json`), "h", "valid JSON"},
+		{"empty schema hash", "t", "bundle", "category", "id", []byte("{}"), "", "schema_hash"},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestNewKGEntity_RejectsHugeData(t *testing.T) {
 	// fires first.
 	wrapped := append([]byte(`{"x":"`), append(huge, []byte(`"}`)...)...)
 
-	_, err := domain.NewKGEntity("t", "bundle", "industry", "id", wrapped, "h")
+	_, err := domain.NewKGEntity("t", "bundle", "category", "id", wrapped, "h")
 	if err == nil {
 		t.Fatal("expected size limit error")
 	}
@@ -86,8 +86,8 @@ func TestNewKGEntity_AcceptsUnicodeInData(t *testing.T) {
 	t.Parallel()
 
 	e, err := domain.NewKGEntity(
-		"t", "bundle", "industry", "PM",
-		[]byte(`{"name":"사용자 🎉 测试","code":"PM"}`),
+		"t", "bundle", "category", "FW",
+		[]byte(`{"name":"사용자 🎉 测试","code":"FW"}`),
 		"h",
 	)
 	if err != nil {

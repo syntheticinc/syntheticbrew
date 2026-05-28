@@ -130,9 +130,9 @@ export default function KnowledgeGraphsPage() {
 bundle_name: my-catalog
 version: 1.0.0
 entity_types:
-  - name: industry
-    schema_file: schemas/industry.schema.json
-    entities_file: entities/industries.yaml
+  - name: category
+    schema_file: schemas/category.schema.json
+    entities_file: entities/categories.yaml
 
 $ brewctl kg apply ./my-bundle`}
               </pre>

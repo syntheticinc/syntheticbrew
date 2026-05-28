@@ -9,7 +9,7 @@ import (
 )
 
 const validIndustrySchema = `{
-  "$id": "industry",
+  "$id": "category",
   "type": "object",
   "x-id-field": "code",
   "x-tool-expose": ["list", "get"],
@@ -111,8 +111,8 @@ func TestParseAnnotations_RefAnnotations(t *testing.T) {
 		"x-id-field": "code",
 		"properties": {
 			"code": {"type": "string"},
-			"industry": {"type": "string", "x-ref": "industry"},
-			"sensor": {"type": "string", "x-ref": "sensor_family", "x-ref-field": "slug"}
+			"category": {"type": "string", "x-ref": "category"},
+			"sensor": {"type": "string", "x-ref": "brand", "x-ref-field": "slug"}
 		}
 	}`
 	ann, err := jsonschema.ParseAnnotations([]byte(schema))
@@ -126,8 +126,8 @@ func TestParseAnnotations_RefAnnotations(t *testing.T) {
 
 	// Refs sorted alphabetically by Property name.
 	wantRefs := []jsonschema.RefAnnotation{
-		{Property: "industry", TargetType: "industry", TargetField: ""},
-		{Property: "sensor", TargetType: "sensor_family", TargetField: "slug"},
+		{Property: "category", TargetType: "category", TargetField: ""},
+		{Property: "sensor", TargetType: "brand", TargetField: "slug"},
 	}
 	if !reflect.DeepEqual(ann.Refs, wantRefs) {
 		t.Errorf("Refs: got %v, want %v", ann.Refs, wantRefs)

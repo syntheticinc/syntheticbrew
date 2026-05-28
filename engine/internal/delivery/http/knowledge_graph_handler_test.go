@@ -149,7 +149,7 @@ func TestKGReadHandler_GetBundle_OK(t *testing.T) {
 func TestKGReadHandler_GetSchemas_OK(t *testing.T) {
 	svc := &mockKGReadService{
 		schemas: []KGSchemaInfo{
-			{BundleName: "demo", EntityType: "industry"},
+			{BundleName: "demo", EntityType: "category"},
 		},
 	}
 	h := NewKGReadHandler(svc)
@@ -169,19 +169,19 @@ func TestKGReadHandler_GetSchemas_OK(t *testing.T) {
 
 func TestKGReadHandler_GetSchemaByType_OK(t *testing.T) {
 	svc := &mockKGReadService{
-		schema: &KGSchemaInfo{BundleName: "demo", EntityType: "industry", IDField: "code"},
+		schema: &KGSchemaInfo{BundleName: "demo", EntityType: "category", IDField: "code"},
 	}
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/schemas/industry", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/schemas/category", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if svc.lastBundleName != "demo" || svc.lastEntityType != "industry" {
+	if svc.lastBundleName != "demo" || svc.lastEntityType != "category" {
 		t.Fatalf("svc got bundle=%q type=%q", svc.lastBundleName, svc.lastEntityType)
 	}
 }
@@ -195,7 +195,7 @@ func TestKGReadHandler_ListEntities_DefaultPagination_OK(t *testing.T) {
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/industry", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/category", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -217,7 +217,7 @@ func TestKGReadHandler_ListEntities_LimitTooHigh_400(t *testing.T) {
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/industry?limit=501", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/category?limit=501", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -234,7 +234,7 @@ func TestKGReadHandler_ListEntities_LimitTooLow_400(t *testing.T) {
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/industry?limit=0", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/category?limit=0", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -248,7 +248,7 @@ func TestKGReadHandler_ListEntities_LimitNonNumeric_400(t *testing.T) {
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/industry?limit=abc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/category?limit=abc", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -264,14 +264,14 @@ func TestKGReadHandler_ListEntities_FilterParsing(t *testing.T) {
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/industry?filter[code]=PM&filter[name]=foo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/category?filter[code]=FW&filter[name]=foo", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if got, want := fmt.Sprint(svc.lastFilters["code"]), "PM"; got != want {
+	if got, want := fmt.Sprint(svc.lastFilters["code"]), "FW"; got != want {
 		t.Fatalf("filter[code] = %q, want %q (full=%+v)", got, want, svc.lastFilters)
 	}
 	if got, want := fmt.Sprint(svc.lastFilters["name"]), "foo"; got != want {
@@ -284,7 +284,7 @@ func TestKGReadHandler_GetEntity_NotFound_404(t *testing.T) {
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/industry/PM", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/category/FW", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -296,21 +296,21 @@ func TestKGReadHandler_GetEntity_NotFound_404(t *testing.T) {
 func TestKGReadHandler_GetEntity_Found_200(t *testing.T) {
 	svc := &mockKGReadService{
 		entity: &KGEntityInfo{
-			BundleName: "demo", EntityType: "industry", EntityID: "PM",
-			Data: json.RawMessage(`{"code":"PM"}`),
+			BundleName: "demo", EntityType: "category", EntityID: "FW",
+			Data: json.RawMessage(`{"code":"FW"}`),
 		},
 	}
 	h := NewKGReadHandler(svc)
 	r := newKGReadRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/industry/PM", nil)
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-graphs/demo/entities/category/FW", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if svc.lastEntityID != "PM" {
-		t.Fatalf("svc got entityID=%q, want PM", svc.lastEntityID)
+	if svc.lastEntityID != "FW" {
+		t.Fatalf("svc got entityID=%q, want FW", svc.lastEntityID)
 	}
 }

@@ -4,8 +4,8 @@
 // exercised in prototype mode. Real API calls will replace them once the
 // engine exposes /api/v1/knowledge-graphs.
 //
-// Naming is intentionally generic ("industrial-iot-taxonomy") to avoid
-// client/partner names. Schemas (industry, sensor_family, use_case) are
+// Naming is intentionally generic ("ecommerce-catalog") to avoid
+// client/partner names. Schemas (category, brand, product_attribute) are
 // representative of a small taxonomy bundle.
 
 import type { KGBundle, KGEntitySchema, KGEntity } from '../types';
@@ -14,15 +14,15 @@ import type { KGBundle, KGEntitySchema, KGEntity } from '../types';
 
 export const MOCK_KG_BUNDLES: KGBundle[] = [
   {
-    bundle_name: 'industrial-iot-taxonomy',
+    bundle_name: 'ecommerce-catalog',
     version: '0.3.1',
     manifest: {
-      entity_types: ['industry', 'sensor_family', 'use_case'],
-      counts: { industry: 8, sensor_family: 10, use_case: 9 },
+      entity_types: ['category', 'brand', 'product_attribute'],
+      counts: { category: 8, brand: 7, product_attribute: 8 },
       schema_hashes: {
-        industry: 'sha256:c4d1a2b9',
-        sensor_family: 'sha256:8b22f0e7',
-        use_case: 'sha256:71e9adcb',
+        category: 'sha256:c4d1a2b9',
+        brand: 'sha256:8b22f0e7',
+        product_attribute: 'sha256:71e9adcb',
       },
     },
     created_at: '2026-05-01T09:30:00Z',
@@ -33,60 +33,61 @@ export const MOCK_KG_BUNDLES: KGBundle[] = [
 // ─── Entity Schemas ─────────────────────────────────────────────────────────
 
 export const MOCK_KG_SCHEMAS: Record<string, KGEntitySchema[]> = {
-  'industrial-iot-taxonomy': [
+  'ecommerce-catalog': [
     {
-      bundle_name: 'industrial-iot-taxonomy',
-      entity_type: 'industry',
-      id_field: 'id',
+      bundle_name: 'ecommerce-catalog',
+      entity_type: 'category',
+      id_field: 'code',
       schema_hash: 'sha256:c4d1a2b9',
-      expose_tools: ['lookup_industry', 'list_industries'],
-      tool_description: 'Vertical industry segments for IoT deployments',
+      expose_tools: ['list_category', 'get_category'],
+      tool_description: 'Catalog categories — top-level browse groupings',
       schema_json: {
         type: 'object',
-        required: ['id', 'name'],
+        required: ['code', 'name', 'tier'],
         properties: {
-          id: { type: 'string', 'x-index': true },
+          code: { type: 'string', 'x-index': true },
           name: { type: 'string', 'x-index': true },
-          parent_industry_id: { type: 'string', 'x-cross-ref': 'industry' },
+          tier: { type: 'string', 'x-index': true, enum: ['primary', 'secondary'] },
+          parent_code: { type: 'string', 'x-cross-ref': 'category' },
           description: { type: 'string' },
         },
       },
     },
     {
-      bundle_name: 'industrial-iot-taxonomy',
-      entity_type: 'sensor_family',
-      id_field: 'id',
+      bundle_name: 'ecommerce-catalog',
+      entity_type: 'brand',
+      id_field: 'code',
       schema_hash: 'sha256:8b22f0e7',
-      expose_tools: ['lookup_sensor_family'],
-      tool_description: 'Families of physical sensors used in monitoring',
+      expose_tools: ['list_brand', 'get_brand'],
+      tool_description: 'Brands carried in the catalog, grouped by category',
       schema_json: {
         type: 'object',
-        required: ['id', 'name', 'measurement'],
+        required: ['code', 'name', 'tier'],
         properties: {
-          id: { type: 'string', 'x-index': true },
+          code: { type: 'string', 'x-index': true },
           name: { type: 'string', 'x-index': true },
-          measurement: { type: 'string', 'x-index': true, enum: ['temperature', 'pressure', 'vibration', 'humidity', 'flow', 'level'] },
-          unit: { type: 'string' },
-          typical_range: { type: 'string' },
+          tier: { type: 'string', 'x-index': true, enum: ['budget', 'mid', 'premium', 'luxury'] },
+          category: { type: 'string', 'x-cross-ref': 'category', 'x-index': true },
+          headquarters: { type: 'string' },
         },
       },
     },
     {
-      bundle_name: 'industrial-iot-taxonomy',
-      entity_type: 'use_case',
-      id_field: 'id',
+      bundle_name: 'ecommerce-catalog',
+      entity_type: 'product_attribute',
+      id_field: 'code',
       schema_hash: 'sha256:71e9adcb',
-      expose_tools: ['lookup_use_case', 'list_use_cases'],
-      tool_description: 'Recurring operational scenarios where sensors are deployed',
+      expose_tools: ['list_product_attribute', 'get_product_attribute'],
+      tool_description: 'Filter / facet attributes available for a category',
       schema_json: {
         type: 'object',
-        required: ['id', 'name'],
+        required: ['code', 'name'],
         properties: {
-          id: { type: 'string', 'x-index': true },
+          code: { type: 'string', 'x-index': true },
           name: { type: 'string', 'x-index': true },
-          industry_id: { type: 'string', 'x-cross-ref': 'industry', 'x-index': true },
-          sensor_family_ids: { type: 'array', items: { type: 'string', 'x-cross-ref': 'sensor_family' } },
-          summary: { type: 'string' },
+          category: { type: 'string', 'x-cross-ref': 'category', 'x-index': true },
+          value_type: { type: 'string', 'x-index': true, enum: ['enum', 'boolean', 'integer', 'range'] },
+          allowed_values: { type: 'array', items: { type: 'string' } },
         },
       },
     },
@@ -95,75 +96,65 @@ export const MOCK_KG_SCHEMAS: Record<string, KGEntitySchema[]> = {
 
 // ─── Entities ───────────────────────────────────────────────────────────────
 
-const industries: Array<[string, string]> = [
-  ['manufacturing', 'Manufacturing'],
-  ['energy', 'Energy & Utilities'],
-  ['oil_gas', 'Oil & Gas'],
-  ['agriculture', 'Agriculture'],
-  ['logistics', 'Logistics & Transport'],
-  ['mining', 'Mining'],
-  ['water', 'Water & Wastewater'],
-  ['buildings', 'Smart Buildings'],
+const categories: Array<[string, string, string]> = [
+  ['apparel', 'Apparel', 'primary'],
+  ['footwear', 'Footwear', 'primary'],
+  ['home_goods', 'Home Goods', 'primary'],
+  ['books', 'Books', 'primary'],
+  ['outdoor', 'Outdoor & Sports', 'primary'],
+  ['tops', 'Tops', 'secondary'],
+  ['bottoms', 'Bottoms', 'secondary'],
+  ['outerwear', 'Outerwear', 'secondary'],
 ];
 
-const sensorFamilies: Array<[string, string, string, string]> = [
-  ['temp', 'Temperature Sensor', 'temperature', '°C'],
-  ['pressure', 'Pressure Transducer', 'pressure', 'bar'],
-  ['vibration', 'Vibration Probe', 'vibration', 'mm/s'],
-  ['humidity', 'Humidity Sensor', 'humidity', '%RH'],
-  ['flow_mag', 'Magnetic Flow Meter', 'flow', 'L/min'],
-  ['flow_ultra', 'Ultrasonic Flow Meter', 'flow', 'L/min'],
-  ['level_radar', 'Radar Level Sensor', 'level', 'm'],
-  ['level_capacitive', 'Capacitive Level Sensor', 'level', 'm'],
-  ['ph', 'pH Sensor', 'level', 'pH'],
-  ['gas_co2', 'CO2 Sensor', 'level', 'ppm'],
+const brands: Array<[string, string, string, string, string]> = [
+  ['north-aurora', 'North Aurora', 'premium', 'outerwear', 'Vancouver, Canada'],
+  ['harborline', 'Harborline Apparel', 'mid', 'apparel', 'Boston, USA'],
+  ['stride-co', 'Stride Co.', 'mid', 'footwear', 'Portland, USA'],
+  ['alpenfeld', 'Alpenfeld Hiking', 'premium', 'outdoor', 'Munich, Germany'],
+  ['terracotta-press', 'Terracotta Press', 'mid', 'books', ''],
+  ['oakwood-home', 'Oakwood Home', 'mid', 'home_goods', 'Stockholm, Sweden'],
+  ['budget-basics', 'Budget Basics', 'budget', 'apparel', ''],
 ];
 
-const useCases: Array<[string, string, string, string[]]> = [
-  ['predictive_maintenance', 'Predictive Maintenance', 'manufacturing', ['vibration', 'temp']],
-  ['cold_chain', 'Cold Chain Monitoring', 'logistics', ['temp', 'humidity']],
-  ['leak_detection', 'Pipeline Leak Detection', 'oil_gas', ['pressure', 'flow_ultra']],
-  ['greenhouse', 'Greenhouse Climate Control', 'agriculture', ['humidity', 'temp', 'gas_co2']],
-  ['energy_meter', 'Energy Sub-metering', 'energy', ['flow_mag']],
-  ['tank_level', 'Storage Tank Level', 'water', ['level_radar', 'level_capacitive']],
-  ['water_quality', 'Drinking Water Quality', 'water', ['ph', 'temp']],
-  ['mine_air', 'Underground Air Quality', 'mining', ['gas_co2', 'humidity']],
-  ['hvac_balancing', 'HVAC Balancing', 'buildings', ['temp', 'pressure', 'humidity']],
+const productAttributes: Array<[string, string, string, string]> = [
+  ['material', 'Material', 'apparel', 'enum'],
+  ['fit', 'Fit', 'apparel', 'enum'],
+  ['season', 'Season', 'apparel', 'enum'],
+  ['shoe_size_eu', 'Size (EU)', 'footwear', 'integer'],
+  ['arch_support', 'Arch support', 'footwear', 'enum'],
+  ['waterproof', 'Waterproof', 'outdoor', 'boolean'],
+  ['pages', 'Page count', 'books', 'range'],
+  ['assembly_required', 'Assembly required', 'home_goods', 'boolean'],
 ];
 
 function entitiesForBundle(): Record<string, KGEntity[]> {
-  const bundle = 'industrial-iot-taxonomy';
+  const bundle = 'ecommerce-catalog';
   return {
-    industry: industries.map(([id, name]) => ({
+    category: categories.map(([code, name, tier]) => ({
       bundle_name: bundle,
-      entity_type: 'industry',
-      entity_id: id,
+      entity_type: 'category',
+      entity_id: code,
       schema_hash: 'sha256:c4d1a2b9',
-      data: { id, name, description: `${name} sector` },
+      data: { code, name, tier, description: `${name} category` },
     })),
-    sensor_family: sensorFamilies.map(([id, name, measurement, unit]) => ({
+    brand: brands.map(([code, name, tier, category, headquarters]) => ({
       bundle_name: bundle,
-      entity_type: 'sensor_family',
-      entity_id: id,
+      entity_type: 'brand',
+      entity_id: code,
       schema_hash: 'sha256:8b22f0e7',
-      data: { id, name, measurement, unit, typical_range: '' },
+      data: { code, name, tier, category, headquarters },
     })),
-    use_case: useCases.map(([id, name, industry_id, sensors]) => ({
+    product_attribute: productAttributes.map(([code, name, category, value_type]) => ({
       bundle_name: bundle,
-      entity_type: 'use_case',
-      entity_id: id as string,
+      entity_type: 'product_attribute',
+      entity_id: code,
       schema_hash: 'sha256:71e9adcb',
-      data: {
-        id,
-        name,
-        industry_id,
-        sensor_family_ids: sensors,
-        summary: `Common ${name.toString().toLowerCase()} scenario`,
-      },
+      data: { code, name, category, value_type },
     })),
   };
 }
 
 export const MOCK_KG_ENTITIES: Record<string, Record<string, KGEntity[]>> = {
-  'industrial-iot-taxonomy': entitiesForBundle(),
+  'ecommerce-catalog': entitiesForBundle(),
 };

@@ -10,10 +10,10 @@ import (
 func TestNewKGEntitySchema_Valid(t *testing.T) {
 	t.Parallel()
 
-	schemaJSON := []byte(`{"$id":"industry","type":"object","x-id-field":"code"}`)
+	schemaJSON := []byte(`{"$id":"category","type":"object","x-id-field":"code"}`)
 	s, err := domain.NewKGEntitySchema(
-		"tenant-1", "chirp-iot", "industry", schemaJSON,
-		"code", nil, "An industry vertical in the taxonomy.",
+		"tenant-1", "chirp-iot", "category", schemaJSON,
+		"code", nil, "An category vertical in the taxonomy.",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -33,7 +33,7 @@ func TestNewKGEntitySchema_DefaultExposeWhenNil(t *testing.T) {
 	t.Parallel()
 
 	s, err := domain.NewKGEntitySchema(
-		"t", "bundle", "industry", []byte("{}"), "code", nil, "",
+		"t", "bundle", "category", []byte("{}"), "code", nil, "",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -47,7 +47,7 @@ func TestNewKGEntitySchema_AcceptsListIDs(t *testing.T) {
 	t.Parallel()
 
 	s, err := domain.NewKGEntitySchema(
-		"t", "bundle", "industry", []byte("{}"), "code",
+		"t", "bundle", "category", []byte("{}"), "code",
 		[]string{"list", "get", "list_ids"}, "",
 	)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestNewKGEntitySchema_RejectsUnknownExposeTool(t *testing.T) {
 	t.Parallel()
 
 	_, err := domain.NewKGEntitySchema(
-		"t", "bundle", "industry", []byte("{}"), "code",
+		"t", "bundle", "category", []byte("{}"), "code",
 		[]string{"list", "evil_tool"}, "",
 	)
 	if err == nil {
@@ -85,12 +85,12 @@ func TestNewKGEntitySchema_ValidationFailures(t *testing.T) {
 		idField    string
 		want       string
 	}{
-		{"empty tenant", "", "bundle", "industry", []byte("{}"), "id", "tenant_id"},
-		{"bad bundle", "t", "Bad-Name", "industry", []byte("{}"), "id", "bundle_name"},
-		{"bad entity type uppercase", "t", "bundle", "Industry", []byte("{}"), "id", "entity_type"},
-		{"bad entity type hyphen", "t", "bundle", "industry-name", []byte("{}"), "id", "entity_type"},
-		{"empty schema", "t", "bundle", "industry", []byte{}, "id", "schema_json"},
-		{"empty id_field", "t", "bundle", "industry", []byte("{}"), "", "id_field"},
+		{"empty tenant", "", "bundle", "category", []byte("{}"), "id", "tenant_id"},
+		{"bad bundle", "t", "Bad-Name", "category", []byte("{}"), "id", "bundle_name"},
+		{"bad entity type uppercase", "t", "bundle", "Category", []byte("{}"), "id", "entity_type"},
+		{"bad entity type hyphen", "t", "bundle", "category-name", []byte("{}"), "id", "entity_type"},
+		{"empty schema", "t", "bundle", "category", []byte{}, "id", "schema_json"},
+		{"empty id_field", "t", "bundle", "category", []byte("{}"), "", "id_field"},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -113,7 +113,7 @@ func TestKGEntitySchema_ShouldExpose(t *testing.T) {
 	t.Parallel()
 
 	s, err := domain.NewKGEntitySchema(
-		"t", "bundle", "industry", []byte("{}"), "id",
+		"t", "bundle", "category", []byte("{}"), "id",
 		[]string{"list", "get"}, "",
 	)
 	if err != nil {
@@ -144,21 +144,21 @@ func TestKGEntitySchema_ToolNames(t *testing.T) {
 	}{
 		{
 			name:        "default list+get",
-			entityType:  "industry",
+			entityType:  "category",
 			exposeTools: []string{"list", "get"},
-			want:        []string{"list_industry", "get_industry"},
+			want:        []string{"list_category", "get_category"},
 		},
 		{
 			name:        "list+get+list_ids",
-			entityType:  "use_case",
+			entityType:  "product_attribute",
 			exposeTools: []string{"list", "get", "list_ids"},
-			want:        []string{"list_use_case", "get_use_case", "list_use_case_ids"},
+			want:        []string{"list_product_attribute", "get_product_attribute", "list_product_attribute_ids"},
 		},
 		{
 			name:        "only get",
-			entityType:  "industry",
+			entityType:  "category",
 			exposeTools: []string{"get"},
-			want:        []string{"get_industry"},
+			want:        []string{"get_category"},
 		},
 	} {
 		tc := tc
@@ -191,16 +191,16 @@ func TestValidKGEntityType(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"industry", true},
-		{"use_case", true},
+		{"category", true},
+		{"product_attribute", true},
 		{"sensor_master_v2", true},
 		{"a_b", true},
 		{"a", false},                     // too short
 		{"", false},                      // empty
 		{"_x", false},                    // starts underscore
 		{"x_", false},                    // ends underscore
-		{"Industry", false},              // uppercase
-		{"industry-name", false},         // hyphen
+		{"Category", false},              // uppercase
+		{"category-name", false},         // hyphen
 		{"1industry", false},             // starts digit
 		{strings.Repeat("a", 65), false}, // too long
 	} {
@@ -217,18 +217,18 @@ func TestValidKGEntityType(t *testing.T) {
 func TestKGEntitySchema_HashStable(t *testing.T) {
 	t.Parallel()
 
-	schema := []byte(`{"$id":"industry","type":"object","x-id-field":"code"}`)
-	s1, err := domain.NewKGEntitySchema("t", "bundle", "industry", schema, "code", nil, "")
+	schema := []byte(`{"$id":"category","type":"object","x-id-field":"code"}`)
+	s1, err := domain.NewKGEntitySchema("t", "bundle", "category", schema, "code", nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	s2, _ := domain.NewKGEntitySchema("t", "bundle", "industry", schema, "code", nil, "")
+	s2, _ := domain.NewKGEntitySchema("t", "bundle", "category", schema, "code", nil, "")
 	if s1.SchemaHash != s2.SchemaHash {
 		t.Errorf("schema hash unstable: %q vs %q", s1.SchemaHash, s2.SchemaHash)
 	}
 
-	differentSchema := []byte(`{"$id":"industry","type":"object","x-id-field":"slug"}`)
-	s3, _ := domain.NewKGEntitySchema("t", "bundle", "industry", differentSchema, "slug", nil, "")
+	differentSchema := []byte(`{"$id":"category","type":"object","x-id-field":"slug"}`)
+	s3, _ := domain.NewKGEntitySchema("t", "bundle", "category", differentSchema, "slug", nil, "")
 	if s1.SchemaHash == s3.SchemaHash {
 		t.Error("different schemas must produce different hashes")
 	}

@@ -38,7 +38,7 @@ func tokenForTenant(t *testing.T, sub, tenantID string) string {
 func industrySchemaJSON() string {
 	return `{
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
-		"$id": "industry",
+		"$id": "category",
 		"type": "object",
 		"x-id-field": "code",
 		"x-tool-expose": ["list", "get"],
@@ -58,10 +58,10 @@ func bulkImportPayload(version string, entities []map[string]any) map[string]any
 	return map[string]any{
 		"version": version,
 		"schemas": []map[string]any{
-			{"entity_type": "industry", "schema": schemaDoc},
+			{"entity_type": "category", "schema": schemaDoc},
 		},
 		"entities": []map[string]any{
-			{"entity_type": "industry", "items": entities},
+			{"entity_type": "category", "items": entities},
 		},
 	}
 }
@@ -73,8 +73,8 @@ func TestKG01_BulkImportAndList(t *testing.T) {
 
 	bundleName := "tc-kg01-bundle"
 	payload := bulkImportPayload("1.0.0", []map[string]any{
-		{"code": "PM", "name": "Property Management", "popularity": "high"},
-		{"code": "AG", "name": "Agriculture", "popularity": "medium"},
+		{"code": "FW", "name": "Footwear", "popularity": "high"},
+		{"code": "AP", "name": "Apparel", "popularity": "medium"},
 	})
 
 	resp := do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
@@ -95,23 +95,23 @@ func TestKG02_ListEntitiesFilter(t *testing.T) {
 
 	bundleName := "tc-kg02-bundle"
 	payload := bulkImportPayload("1.0.0", []map[string]any{
-		{"code": "PM", "name": "Property Management", "popularity": "high"},
-		{"code": "AG", "name": "Agriculture", "popularity": "medium"},
-		{"code": "WH", "name": "Warehousing", "popularity": "high"},
+		{"code": "FW", "name": "Footwear", "popularity": "high"},
+		{"code": "AP", "name": "Apparel", "popularity": "medium"},
+		{"code": "HG", "name": "Home Goods", "popularity": "high"},
 	})
 	resp := do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
 		mustJSON(payload), adminToken)
 	assertStatusAny(t, resp, http.StatusOK, http.StatusCreated)
 
 	listResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry?filter[popularity]=high",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category?filter[popularity]=high",
 		nil, adminToken)
 	body := readBody(t, listResp)
 	require.Equal(t, http.StatusOK, listResp.StatusCode, "body=%s", body)
-	assert.Contains(t, string(body), "PM")
-	assert.Contains(t, string(body), "WH")
-	assert.NotContains(t, string(body), `"code":"AG"`,
-		"AG has popularity=medium and must not appear under filter popularity=high")
+	assert.Contains(t, string(body), "FW")
+	assert.Contains(t, string(body), "HG")
+	assert.NotContains(t, string(body), `"code":"AP"`,
+		"AP has popularity=medium and must not appear under filter popularity=high")
 }
 
 // TC-KG03 — get entity by ID, 404 on missing.
@@ -121,20 +121,20 @@ func TestKG03_GetEntityByID(t *testing.T) {
 
 	bundleName := "tc-kg03-bundle"
 	payload := bulkImportPayload("1.0.0", []map[string]any{
-		{"code": "PM", "name": "Property Management"},
+		{"code": "FW", "name": "Footwear"},
 	})
 	_ = do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
 		mustJSON(payload), adminToken)
 
 	getResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry/PM",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category/FW",
 		nil, adminToken)
 	body := readBody(t, getResp)
 	require.Equal(t, http.StatusOK, getResp.StatusCode, "body=%s", body)
-	assert.Contains(t, string(body), "Property Management")
+	assert.Contains(t, string(body), "Footwear")
 
 	missingResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry/GHOST",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category/GHOST",
 		nil, adminToken)
 	_ = readBody(t, missingResp)
 	assertStatusAny(t, missingResp, http.StatusNotFound)
@@ -148,33 +148,33 @@ func TestKG04_GranularCRUD(t *testing.T) {
 	bundleName := "tc-kg04-bundle"
 	_ = do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
 		mustJSON(bulkImportPayload("1.0.0", []map[string]any{
-			{"code": "PM", "name": "Property Management"},
+			{"code": "FW", "name": "Footwear"},
 		})), adminToken)
 
 	// Create — body is flat entity (mirrors bulk-import items[]).
 	postResp := do(t, http.MethodPost,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry",
-		mustJSON(map[string]any{"code": "NEW", "name": "New Industry"}), adminToken)
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category",
+		mustJSON(map[string]any{"code": "NEW", "name": "New Category"}), adminToken)
 	_ = readBody(t, postResp)
 	assertStatusAny(t, postResp, http.StatusOK, http.StatusCreated)
 
 	// Update — body is flat entity.
 	putResp := do(t, http.MethodPut,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry/NEW",
-		mustJSON(map[string]any{"code": "NEW", "name": "Updated New Industry"}), adminToken)
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category/NEW",
+		mustJSON(map[string]any{"code": "NEW", "name": "Updated New Category"}), adminToken)
 	putBody := readBody(t, putResp)
 	require.Equal(t, http.StatusOK, putResp.StatusCode, "body=%s", putBody)
 	assert.Contains(t, string(putBody), "Updated")
 
 	// Delete
 	delResp := do(t, http.MethodDelete,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry/NEW",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category/NEW",
 		nil, adminToken)
 	assertStatusAny(t, delResp, http.StatusNoContent, http.StatusOK)
 
 	// Verify gone
 	getResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry/NEW",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category/NEW",
 		nil, adminToken)
 	_ = readBody(t, getResp)
 	assertStatusAny(t, getResp, http.StatusNotFound)
@@ -190,18 +190,18 @@ func TestKG05_PaginationLimits(t *testing.T) {
 	bundleName := "tc-kg05-bundle"
 	_ = do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
 		mustJSON(bulkImportPayload("1.0.0", []map[string]any{
-			{"code": "PM", "name": "Property Management"},
+			{"code": "FW", "name": "Footwear"},
 		})), adminToken)
 
 	// limit=500 → OK
 	ok := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry?limit=500",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category?limit=500",
 		nil, adminToken)
 	require.Equal(t, http.StatusOK, ok.StatusCode, "body=%s", readBody(t, ok))
 
 	// limit=501 → 400
 	bad := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry?limit=501",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category?limit=501",
 		nil, adminToken)
 	body := readBody(t, bad)
 	require.Equal(t, http.StatusBadRequest, bad.StatusCode, "body=%s", body)
@@ -209,7 +209,7 @@ func TestKG05_PaginationLimits(t *testing.T) {
 
 	// limit=0 → 400 (must be >= 1)
 	zero := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry?limit=0",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category?limit=0",
 		nil, adminToken)
 	require.Equal(t, http.StatusBadRequest, zero.StatusCode, "body=%s", readBody(t, zero))
 }
@@ -222,7 +222,7 @@ func TestKG06_DeleteBundleCascade(t *testing.T) {
 	bundleName := "tc-kg06-bundle"
 	_ = do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
 		mustJSON(bulkImportPayload("1.0.0", []map[string]any{
-			{"code": "PM", "name": "Property Management"},
+			{"code": "FW", "name": "Footwear"},
 		})), adminToken)
 
 	delResp := do(t, http.MethodDelete, "/api/v1/knowledge-graphs/"+bundleName, nil, adminToken)
@@ -236,7 +236,7 @@ func TestKG06_DeleteBundleCascade(t *testing.T) {
 
 	// Entities gone (404 on any get)
 	entityResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry/PM",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category/FW",
 		nil, adminToken)
 	_ = readBody(t, entityResp)
 	assertStatusAny(t, entityResp, http.StatusNotFound)
@@ -252,14 +252,14 @@ func kgProtectedEndpoints() []struct{ method, path string } {
 		{"GET", "/api/v1/knowledge-graphs"},
 		{"GET", "/api/v1/knowledge-graphs/some-bundle"},
 		{"GET", "/api/v1/knowledge-graphs/some-bundle/schemas"},
-		{"GET", "/api/v1/knowledge-graphs/some-bundle/schemas/industry"},
-		{"GET", "/api/v1/knowledge-graphs/some-bundle/entities/industry"},
-		{"GET", "/api/v1/knowledge-graphs/some-bundle/entities/industry/PM"},
+		{"GET", "/api/v1/knowledge-graphs/some-bundle/schemas/category"},
+		{"GET", "/api/v1/knowledge-graphs/some-bundle/entities/category"},
+		{"GET", "/api/v1/knowledge-graphs/some-bundle/entities/category/FW"},
 		{"POST", "/api/v1/knowledge-graphs/some-bundle/import"},
-		{"POST", "/api/v1/knowledge-graphs/some-bundle/entities/industry"},
-		{"PUT", "/api/v1/knowledge-graphs/some-bundle/entities/industry/PM"},
-		{"DELETE", "/api/v1/knowledge-graphs/some-bundle/entities/industry/PM"},
-		{"PUT", "/api/v1/knowledge-graphs/some-bundle/schemas/industry"},
+		{"POST", "/api/v1/knowledge-graphs/some-bundle/entities/category"},
+		{"PUT", "/api/v1/knowledge-graphs/some-bundle/entities/category/FW"},
+		{"DELETE", "/api/v1/knowledge-graphs/some-bundle/entities/category/FW"},
+		{"PUT", "/api/v1/knowledge-graphs/some-bundle/schemas/category"},
 		{"DELETE", "/api/v1/knowledge-graphs/some-bundle"},
 	}
 }
@@ -296,13 +296,13 @@ func TestKG_SCC03_JSONInjection(t *testing.T) {
 	bundleName := "tc-kg-sec03-bundle"
 	_ = do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
 		mustJSON(bulkImportPayload("1.0.0", []map[string]any{
-			{"code": "PM", "name": "Property Management"},
+			{"code": "FW", "name": "Footwear"},
 		})), adminToken)
 
 	// Classic injection payload encoded as a filter value.
 	injection := `'%20OR%201%3D1--`
 	resp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry?filter[code]="+injection,
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category?filter[code]="+injection,
 		nil, adminToken)
 	_ = readBody(t, resp)
 	// Must return 200 (empty result, no match), 400 (validation), 404 (NotFound)
@@ -312,11 +312,11 @@ func TestKG_SCC03_JSONInjection(t *testing.T) {
 
 	// Verify the table is intact by listing — must still return existing entity.
 	listResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category",
 		nil, adminToken)
 	listBody := readBody(t, listResp)
 	require.Equal(t, http.StatusOK, listResp.StatusCode)
-	assert.Contains(t, string(listBody), "PM",
+	assert.Contains(t, string(listBody), "FW",
 		"existing entity must survive injection attempt — table not dropped")
 }
 
@@ -330,12 +330,12 @@ func TestKG_SCC03_FilterFieldWhitelist(t *testing.T) {
 	bundleName := "tc-kg-sec03b-bundle"
 	_ = do(t, http.MethodPost, "/api/v1/knowledge-graphs/"+bundleName+"/import",
 		mustJSON(bulkImportPayload("1.0.0", []map[string]any{
-			{"code": "PM", "name": "Property Management"},
+			{"code": "FW", "name": "Footwear"},
 		})), adminToken)
 
 	// "name" is NOT marked x-index in the schema; filter must be rejected.
 	resp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundleName+"/entities/industry?filter[name]=foo",
+		"/api/v1/knowledge-graphs/"+bundleName+"/entities/category?filter[name]=foo",
 		nil, adminToken)
 	body := readBody(t, resp)
 	assertStatusAny(t, resp, http.StatusBadRequest)
@@ -352,7 +352,7 @@ func TestKG_SCC04_SchemaWithExternalRef(t *testing.T) {
 	bundleName := "tc-kg-sec04-bundle"
 	malicious := `{
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
-		"$id": "industry",
+		"$id": "category",
 		"type": "object",
 		"x-id-field": "code",
 		"properties": {
@@ -364,10 +364,10 @@ func TestKG_SCC04_SchemaWithExternalRef(t *testing.T) {
 	payload := map[string]any{
 		"version": "1.0.0",
 		"schemas": []map[string]any{
-			{"entity_type": "industry", "schema": json.RawMessage(malicious)},
+			{"entity_type": "category", "schema": json.RawMessage(malicious)},
 		},
 		"entities": []map[string]any{
-			{"entity_type": "industry", "items": []map[string]any{{"code": "PM", "name": "X"}}},
+			{"entity_type": "category", "items": []map[string]any{{"code": "FW", "name": "X"}}},
 		},
 	}
 	resp := do(t, http.MethodPost,
@@ -388,7 +388,7 @@ func TestKG_SCC08_BundleNameTraversal(t *testing.T) {
 	// chi URL parsing strips ../ so try the URL-encoded form that survives routing.
 	urlEncodedBad := "%2E%2E%2Fetc%2Fpasswd"
 	payload := bulkImportPayload("1.0.0", []map[string]any{
-		{"code": "PM", "name": "X"},
+		{"code": "FW", "name": "X"},
 	})
 	resp := do(t, http.MethodPost,
 		"/api/v1/knowledge-graphs/"+urlEncodedBad+"/import",
@@ -416,7 +416,7 @@ func TestKG_SCC_MalformedSchemaRejected(t *testing.T) {
 	payload := map[string]any{
 		"version": "1.0.0",
 		"schemas": []map[string]any{
-			{"entity_type": "industry", "schema": json.RawMessage(bad)},
+			{"entity_type": "category", "schema": json.RawMessage(bad)},
 		},
 		"entities": []map[string]any{},
 	}
@@ -437,10 +437,10 @@ func TestKG_SCC_BadEntityTypeRejected(t *testing.T) {
 	payload := map[string]any{
 		"version": "1.0.0",
 		"schemas": []map[string]any{
-			{"entity_type": "Industry", "schema": json.RawMessage(industrySchemaJSON())},
+			{"entity_type": "Category", "schema": json.RawMessage(industrySchemaJSON())},
 		},
 		"entities": []map[string]any{
-			{"entity_type": "Industry", "items": []map[string]any{{"code": "PM", "name": "X"}}},
+			{"entity_type": "Category", "items": []map[string]any{{"code": "FW", "name": "X"}}},
 		},
 	}
 	resp := do(t, http.MethodPost,
@@ -480,10 +480,10 @@ func TestKG_SCC_CapabilityBindingPhantomBundle(t *testing.T) {
 // KG-SEC-02 — cross-tenant isolation (3 tests per plan).
 // ---------------------------------------------------------------------------
 
-// secretBundlePayload returns a bulk-import body for a single-industry bundle.
+// secretBundlePayload returns a bulk-import body for a single-category bundle.
 func secretBundlePayload(version string) map[string]any {
 	return bulkImportPayload(version, []map[string]any{
-		{"code": "PM", "name": "Property Management", "popularity": "high"},
+		{"code": "FW", "name": "Footwear", "popularity": "high"},
 	})
 }
 
@@ -535,14 +535,14 @@ func TestKG_SCC02_CrossTenantEntityHidden(t *testing.T) {
 
 	// Tenant B GET entity from A's bundle → 404.
 	getResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundle+"/entities/industry/PM", nil, tokenB)
+		"/api/v1/knowledge-graphs/"+bundle+"/entities/category/FW", nil, tokenB)
 	_ = readBody(t, getResp)
 	assert.Equal(t, http.StatusNotFound, getResp.StatusCode,
 		"cross-tenant entity GET must 404, body must not include any A data")
 
 	// Tenant B list entities → 404 (or empty) — bundle scope is per-tenant.
 	listResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundle+"/entities/industry", nil, tokenB)
+		"/api/v1/knowledge-graphs/"+bundle+"/entities/category", nil, tokenB)
 	listBody := readBody(t, listResp)
 	if listResp.StatusCode == http.StatusOK {
 		var page struct {
@@ -556,7 +556,7 @@ func TestKG_SCC02_CrossTenantEntityHidden(t *testing.T) {
 
 	// Tenant B POST entity to A's bundle → 404 (bundle invisible).
 	postResp := do(t, http.MethodPost,
-		"/api/v1/knowledge-graphs/"+bundle+"/entities/industry",
+		"/api/v1/knowledge-graphs/"+bundle+"/entities/category",
 		mustJSON(map[string]any{"code": "ZZ", "name": "Zenith"}), tokenB)
 	_ = readBody(t, postResp)
 	assertStatusAny(t, postResp, http.StatusNotFound, http.StatusBadRequest)
@@ -793,19 +793,19 @@ func TestKG13_ToolNameCollisionAcrossBundles(t *testing.T) {
 	requireSuite(t)
 	t.Cleanup(func() { truncateTables(t) })
 
-	// Bundle A: entity_type "industry" → list_industry / get_industry.
+	// Bundle A: entity_type "category" → list_industry / get_industry.
 	bundleA := "tc-kg13-bundle-a"
 	respA := do(t, http.MethodPost,
 		"/api/v1/knowledge-graphs/"+bundleA+"/import",
-		mustJSON(bulkImportPayload("1.0.0", []map[string]any{{"code": "PM", "name": "Property Management"}})),
+		mustJSON(bulkImportPayload("1.0.0", []map[string]any{{"code": "FW", "name": "Footwear"}})),
 		adminToken)
 	require.Equal(t, http.StatusOK, respA.StatusCode, "body=%s", readBody(t, respA))
 
-	// Bundle B: same entity_type "industry" → would generate same tool names.
+	// Bundle B: same entity_type "category" → would generate same tool names.
 	bundleB := "tc-kg13-bundle-b"
 	respB := do(t, http.MethodPost,
 		"/api/v1/knowledge-graphs/"+bundleB+"/import",
-		mustJSON(bulkImportPayload("1.0.0", []map[string]any{{"code": "AG", "name": "Agriculture"}})),
+		mustJSON(bulkImportPayload("1.0.0", []map[string]any{{"code": "AP", "name": "Apparel"}})),
 		adminToken)
 	body := readBody(t, respB)
 	if respB.StatusCode == http.StatusOK {
@@ -921,7 +921,7 @@ func TestKG16_AgentCapabilityBindingExposesKGTools(t *testing.T) {
 
 	industrySchema := json.RawMessage(`{
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
-		"$id": "industry",
+		"$id": "category",
 		"type": "object",
 		"x-id-field": "code",
 		"required": ["code", "name"],
@@ -945,11 +945,11 @@ func TestKG16_AgentCapabilityBindingExposesKGTools(t *testing.T) {
 	payload := map[string]any{
 		"version": "1.0.0",
 		"schemas": []map[string]any{
-			{"entity_type": "industry", "schema": industrySchema},
+			{"entity_type": "category", "schema": industrySchema},
 			{"entity_type": "product", "schema": productSchema},
 		},
 		"entities": []map[string]any{
-			{"entity_type": "industry", "items": []map[string]any{{"code": "PM", "name": "Property"}, {"code": "AG", "name": "Agriculture"}}},
+			{"entity_type": "category", "items": []map[string]any{{"code": "FW", "name": "Property"}, {"code": "AP", "name": "Apparel"}}},
 			{"entity_type": "product", "items": []map[string]any{{"sku": "P-001", "title": "Widget"}}},
 		},
 	}

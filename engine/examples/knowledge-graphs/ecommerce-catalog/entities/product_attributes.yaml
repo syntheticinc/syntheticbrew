@@ -1,0 +1,46 @@
+- code: material
+  name: Material
+  category: apparel
+  value_type: enum
+  allowed_values: [cotton, wool, polyester, linen, blend, leather]
+  description: Primary fabric or material of the garment.
+
+- code: fit
+  name: Fit
+  category: apparel
+  value_type: enum
+  allowed_values: [slim, regular, relaxed, oversized]
+
+- code: season
+  name: Season
+  category: apparel
+  value_type: enum
+  allowed_values: [spring, summer, autumn, winter, all-season]
+
+- code: shoe_size_eu
+  name: Size (EU)
+  category: footwear
+  value_type: integer
+  description: European shoe size, integer 30-50.
+
+- code: arch_support
+  name: Arch support
+  category: footwear
+  value_type: enum
+  allowed_values: [neutral, mild, structured, max]
+
+- code: waterproof
+  name: Waterproof
+  category: outdoor
+  value_type: boolean
+
+- code: pages
+  name: Page count
+  category: books
+  value_type: range
+  description: Lower–upper bound on number of pages.
+
+- code: assembly_required
+  name: Assembly required
+  category: home_goods
+  value_type: boolean
