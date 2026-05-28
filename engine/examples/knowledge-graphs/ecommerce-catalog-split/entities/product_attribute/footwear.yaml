@@ -1,0 +1,11 @@
+- code: shoe_size_eu
+  name: Size (EU)
+  category: footwear
+  value_type: integer
+  description: European shoe size, integer 30-50.
+
+- code: arch_support
+  name: Arch support
+  category: footwear
+  value_type: enum
+  allowed_values: [neutral, mild, structured, max]

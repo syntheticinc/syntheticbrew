@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "brand",
+  "title": "Brand",
+  "description": "A brand carried in the e-commerce catalog.",
+  "type": "object",
+  "x-id-field": "code",
+  "x-tool-expose": ["list", "get", "list_ids"],
+  "x-summary-fields": ["name", "tier", "category"],
+  "x-tool-description": "Brands in the catalog. Use list_brand to enumerate carried brands with full payloads, list_brand_ids for a cheap preview (id + name + tier + category) before fetching full payloads with get_brand(ids=[...]).",
+  "required": ["code", "name", "tier"],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,30}$",
+      "x-index": true
+    },
+    "name": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 60
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["luxury", "premium", "mid", "budget"],
+      "x-index": true
+    },
+    "category": {
+      "type": "string",
+      "x-ref": "category",
+      "description": "Primary category code the brand operates in.",
+      "x-index": true
+    },
+    "headquarters": {
+      "type": "string",
+      "maxLength": 60
+    }
+  }
+}

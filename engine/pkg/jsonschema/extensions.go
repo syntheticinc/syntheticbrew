@@ -54,6 +54,56 @@ type Annotations struct {
 	// admin UI to render markdown / code / URL fields appropriately. The
 	// engine ignores this map; it exists purely as a UI hint.
 	ContentTypes map[string]string
+
+	// SummaryFields lists the property names in the top-level `x-summary-fields`
+	// annotation. When non-empty, the auto-generated `list_<entity>_ids` tool
+	// returns `{items: [{id_field, ...summary_fields}], total}` instead of the
+	// default `{ids: [...], total}`. Default (nil/empty) preserves bare-ids
+	// shape for backward compat with 1.3.x bundles. ID field is auto-included
+	// — never duplicated here. Top-level properties only (no dot-notation).
+	SummaryFields []string
+
+	// FieldTypes maps property name → its JSON Schema type + format (e.g.
+	// {"popularity_score": {Type: "integer"}}, {"created_at": {Type: "string",
+	// Format: "date-time"}}). Populated for every property in the schema, not
+	// just indexed ones. Used by the filter parser to decide whether range
+	// operators (gte/gt/lte/lt) are valid on a field — only allowed on
+	// numeric (integer/number) or date/date-time properties.
+	FieldTypes map[string]FieldTypeSpec
+
+	// EnumValues maps property name → declared enum values in document order.
+	// Empty if the property is not an enum or has no `enum:` keyword. Used by
+	// the sort builder to produce `ORDER BY array_position(ARRAY['v1','v2'],
+	// data->>'field')` — sort order follows declaration order, NOT
+	// alphabetical (the natural assumption that bites users on enum sorts).
+	EnumValues map[string][]string
+}
+
+// FieldTypeSpec describes a property's JSON Schema type + format pair. Used
+// by filter validation to gate range operators to numeric/date fields.
+type FieldTypeSpec struct {
+	// Type is the JSON Schema type keyword ("string", "integer", "number",
+	// "boolean", "array", "object"). Empty if absent in source.
+	Type string
+
+	// Format is the JSON Schema format keyword (e.g. "date", "date-time",
+	// "email"). Empty if absent. Only "date" and "date-time" affect filter
+	// operator validation — both enable range operators on string-typed fields.
+	Format string
+}
+
+// IsRangeFilterable reports whether a property can be filtered with range
+// operators (gte/gt/lte/lt). True for numeric types and for strings annotated
+// as date / date-time format. Centralised so handler + repo + tool builder
+// agree on the rule.
+func (s FieldTypeSpec) IsRangeFilterable() bool {
+	switch s.Type {
+	case "integer", "number":
+		return true
+	case "string":
+		return s.Format == "date" || s.Format == "date-time"
+	}
+	return false
 }
 
 // RefAnnotation describes a cross-reference from one property to another
@@ -94,6 +144,8 @@ func ParseAnnotations(schemaJSON []byte) (*Annotations, error) {
 
 	ann := &Annotations{
 		ContentTypes: make(map[string]string),
+		FieldTypes:   make(map[string]FieldTypeSpec),
+		EnumValues:   make(map[string][]string),
 	}
 
 	// x-id-field (required).
@@ -149,9 +201,85 @@ func ParseAnnotations(schemaJSON []byte) (*Annotations, error) {
 				TargetField: prop.XRefField, // empty = default to target x-id-field
 			})
 		}
+		if prop.Type != "" || prop.Format != "" {
+			ann.FieldTypes[name] = FieldTypeSpec{Type: prop.Type, Format: prop.Format}
+		}
+		if enums := stringEnumValues(prop.Enum); len(enums) > 0 {
+			ann.EnumValues[name] = enums
+		}
+	}
+
+	// x-summary-fields (optional, opt-in projection for list_<entity>_ids).
+	// Empty / nil array == absent (bare-ids mode). Validation:
+	//   - each entry must reference an existing property
+	//   - no dot-notation (top-level properties only)
+	//   - ID field is auto-included downstream; silently de-dup if specified
+	//   - duplicates within the array are rejected (user typo signal)
+	if len(root.XSummaryFields) > 0 {
+		summary, err := normaliseSummaryFields(root.XSummaryFields, ann.IDField, root.Properties)
+		if err != nil {
+			return nil, err
+		}
+		ann.SummaryFields = summary
 	}
 
 	return ann, nil
+}
+
+// normaliseSummaryFields validates and de-duplicates the x-summary-fields
+// annotation. The ID field is silently dropped (auto-included downstream);
+// unknown properties / dot-notation / duplicates produce a typed error.
+func normaliseSummaryFields(raw []string, idField string, props map[string]rawProperty) ([]string, error) {
+	seen := make(map[string]struct{}, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, name := range raw {
+		if name == "" {
+			return nil, fmt.Errorf("x-summary-fields contains empty entry")
+		}
+		if strings.Contains(name, ".") {
+			return nil, fmt.Errorf("x-summary-fields entry %q uses dot-notation; only top-level properties are supported", name)
+		}
+		if name == idField {
+			// Silent dedup — ID field is auto-included.
+			continue
+		}
+		if _, ok := props[name]; !ok {
+			return nil, fmt.Errorf("x-summary-fields references unknown property %q", name)
+		}
+		if _, dup := seen[name]; dup {
+			return nil, fmt.Errorf("x-summary-fields lists property %q more than once", name)
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// stringEnumValues converts a raw JSON Schema `enum` array (any types) into
+// a []string for sort by declaration-order. Non-string enum values (numbers,
+// bools) are stringified via fmt.Sprintf("%v") — sort comparison happens via
+// data->>'field' which is also stringified, so this matches semantics.
+// Returns nil for empty or absent enum arrays.
+func stringEnumValues(raw []any) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if v == nil {
+			continue
+		}
+		switch t := v.(type) {
+		case string:
+			out = append(out, t)
+		default:
+			out = append(out, fmt.Sprintf("%v", t))
+		}
+	}
+	return out
 }
 
 // FilterableFields returns the property names that should appear as filter
@@ -180,10 +308,14 @@ type rawSchema struct {
 	XIDField         string                 `json:"x-id-field"`
 	XToolExpose      []string               `json:"x-tool-expose,omitempty"`
 	XToolDescription string                 `json:"x-tool-description,omitempty"`
+	XSummaryFields   []string               `json:"x-summary-fields,omitempty"`
 	Properties       map[string]rawProperty `json:"properties"`
 }
 
 type rawProperty struct {
+	Type         string `json:"type,omitempty"`
+	Format       string `json:"format,omitempty"`
+	Enum         []any  `json:"enum,omitempty"`
 	XIndex       bool   `json:"x-index,omitempty"`
 	XRef         string `json:"x-ref,omitempty"`
 	XRefField    string `json:"x-ref-field,omitempty"`

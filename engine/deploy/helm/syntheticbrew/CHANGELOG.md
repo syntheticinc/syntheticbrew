@@ -7,6 +7,21 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-28
+
+### Changed
+- Bumps `appVersion` to **1.4.0**. Engine 1.4.0 ships KG query API
+  ergonomics: batch `get_<entity>(ids[])` (BREAKING tool signature, REST
+  single-id unchanged), range / multi-value filter operators, server-side
+  sort with enum declaration-order semantics, `x-summary-fields` schema
+  annotation for `list_<entity>_ids` projection mode. Bundles authored
+  for 1.3.x continue to work without changes. See engine CHANGELOG 1.4.0
+  for the full list + migration notes.
+
+### Added
+- New REST endpoint exposed by the chart's read-path readiness check:
+  `POST /api/v1/knowledge-graphs/{bundle}/entities/{entity_type}/batch-get`.
+
 ## [0.7.4] - 2026-05-26
 
 ### Changed

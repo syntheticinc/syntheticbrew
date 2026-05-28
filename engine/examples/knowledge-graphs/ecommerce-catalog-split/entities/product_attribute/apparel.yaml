@@ -1,0 +1,19 @@
+# Attributes scoped to the apparel category.
+- code: material
+  name: Material
+  category: apparel
+  value_type: enum
+  allowed_values: [cotton, wool, polyester, linen, blend, leather]
+  description: Primary fabric or material of the garment.
+
+- code: fit
+  name: Fit
+  category: apparel
+  value_type: enum
+  allowed_values: [slim, regular, relaxed, oversized]
+
+- code: season
+  name: Season
+  category: apparel
+  value_type: enum
+  allowed_values: [spring, summer, autumn, winter, all-season]

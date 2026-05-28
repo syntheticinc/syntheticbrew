@@ -75,10 +75,31 @@ func (a *kgReadHTTPAdapter) GetSchema(r *http.Request, bundleName, entityType st
 	return &info, nil
 }
 
+func (a *kgReadHTTPAdapter) BatchGetEntities(
+	r *http.Request,
+	bundleName, entityType string,
+	ids []string,
+) (*deliveryhttp.KGBatchGetResponse, error) {
+	tenantID := tenantIDOrCE(r)
+	res, err := a.uc.GetEntities(r.Context(), tenantID, bundleName, entityType, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := &deliveryhttp.KGBatchGetResponse{
+		Entities: make([]deliveryhttp.KGEntityInfo, 0, len(res.Entities)),
+		NotFound: res.NotFound,
+	}
+	for _, e := range res.Entities {
+		out.Entities = append(out.Entities, kgEntityToInfo(e))
+	}
+	return out, nil
+}
+
 func (a *kgReadHTTPAdapter) ListEntities(
 	r *http.Request,
 	bundleName, entityType string,
 	filters map[string]any,
+	sort []deliveryhttp.KGSortParam,
 	limit, offset int,
 ) (*deliveryhttp.KGEntitiesListResponse, error) {
 	tenantID := tenantIDOrCE(r)
@@ -86,7 +107,8 @@ func (a *kgReadHTTPAdapter) ListEntities(
 		TenantID:   tenantID,
 		BundleName: bundleName,
 		EntityType: entityType,
-		Filters:    filters,
+		Filters:    plainFiltersToKgread(filters),
+		Sort:       httpSortToKgread(sort),
 		Limit:      limit,
 		Offset:     offset,
 	})

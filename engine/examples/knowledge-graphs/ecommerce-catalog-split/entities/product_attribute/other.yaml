@@ -1,0 +1,15 @@
+- code: waterproof
+  name: Waterproof
+  category: outdoor
+  value_type: boolean
+
+- code: pages
+  name: Page count
+  category: books
+  value_type: range
+  description: Lower–upper bound on number of pages.
+
+- code: assembly_required
+  name: Assembly required
+  category: home_goods
+  value_type: boolean

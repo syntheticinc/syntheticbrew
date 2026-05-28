@@ -1,0 +1,18 @@
+bundle_name: ecommerce-catalog-split-example
+version: 1.0.0
+description: |
+  Same content as ecommerce-catalog-example, organised with the 1.4.0
+  split-by-directory layout (entities_path). Brand entities live across
+  multiple yaml files inside entities/brand/ to demonstrate how a real
+  catalog grows on disk. Categories stays single-file because at 8 entries
+  the canonical layout is still the cleanest.
+entity_types:
+  - name: category
+    schema_file: schemas/category.schema.json
+    entities_file: entities/categories.yaml
+  - name: brand
+    schema_file: schemas/brand.schema.json
+    entities_path: entities/brand/
+  - name: product_attribute
+    schema_file: schemas/product_attribute.schema.json
+    entities_path: entities/product_attribute/

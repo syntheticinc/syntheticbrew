@@ -199,3 +199,228 @@ func TestParseAnnotations_EmptyExposeRejected(t *testing.T) {
 		t.Errorf("explicit empty array: got %v, want empty slice", ann.ExposeTools)
 	}
 }
+
+const summaryFieldsSchema = `{
+  "x-id-field": "code",
+  "x-summary-fields": ["title", "popularity", "industry"],
+  "properties": {
+    "code":       {"type": "string", "x-index": true},
+    "title":      {"type": "string"},
+    "popularity": {"type": "string", "enum": ["very_high", "high", "normal", "low"], "x-index": true},
+    "industry":   {"type": "string", "x-index": true},
+    "score":      {"type": "integer", "x-index": true},
+    "created_at": {"type": "string", "format": "date-time", "x-index": true}
+  }
+}`
+
+func TestParseAnnotations_SummaryFields_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	ann, err := jsonschema.ParseAnnotations([]byte(summaryFieldsSchema))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"title", "popularity", "industry"}
+	if !reflect.DeepEqual(ann.SummaryFields, want) {
+		t.Errorf("SummaryFields: got %v, want %v", ann.SummaryFields, want)
+	}
+}
+
+func TestParseAnnotations_SummaryFields_AbsentReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	ann, err := jsonschema.ParseAnnotations([]byte(validIndustrySchema))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ann.SummaryFields != nil {
+		t.Errorf("SummaryFields absent: got %v, want nil", ann.SummaryFields)
+	}
+}
+
+func TestParseAnnotations_SummaryFields_EmptyArrayEquivalentToAbsent(t *testing.T) {
+	t.Parallel()
+
+	schema := `{
+		"x-id-field": "id",
+		"x-summary-fields": [],
+		"properties": {"id": {"type": "string"}}
+	}`
+	ann, err := jsonschema.ParseAnnotations([]byte(schema))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ann.SummaryFields != nil {
+		t.Errorf("empty array: got %v, want nil (treated as absent)", ann.SummaryFields)
+	}
+}
+
+func TestParseAnnotations_SummaryFields_IDFieldSilentlyDeduped(t *testing.T) {
+	t.Parallel()
+
+	schema := `{
+		"x-id-field": "code",
+		"x-summary-fields": ["code", "title"],
+		"properties": {
+			"code":  {"type": "string"},
+			"title": {"type": "string"}
+		}
+	}`
+	ann, err := jsonschema.ParseAnnotations([]byte(schema))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"title"}
+	if !reflect.DeepEqual(ann.SummaryFields, want) {
+		t.Errorf("ID field should be silently de-duped: got %v, want %v", ann.SummaryFields, want)
+	}
+}
+
+func TestParseAnnotations_SummaryFields_ErrorCases(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		schema     string
+		wantSubstr string
+	}{
+		{
+			name: "unknown property",
+			schema: `{
+				"x-id-field": "id",
+				"x-summary-fields": ["ghost"],
+				"properties": {"id": {"type": "string"}}
+			}`,
+			wantSubstr: `unknown property "ghost"`,
+		},
+		{
+			name: "dot notation rejected",
+			schema: `{
+				"x-id-field": "id",
+				"x-summary-fields": ["address.city"],
+				"properties": {"id": {"type": "string"}, "address": {"type": "object"}}
+			}`,
+			wantSubstr: "dot-notation",
+		},
+		{
+			name: "empty entry rejected",
+			schema: `{
+				"x-id-field": "id",
+				"x-summary-fields": [""],
+				"properties": {"id": {"type": "string"}}
+			}`,
+			wantSubstr: "empty entry",
+		},
+		{
+			name: "duplicate entry rejected",
+			schema: `{
+				"x-id-field": "id",
+				"x-summary-fields": ["title", "title"],
+				"properties": {"id": {"type": "string"}, "title": {"type": "string"}}
+			}`,
+			wantSubstr: "more than once",
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := jsonschema.ParseAnnotations([]byte(tc.schema))
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantSubstr)
+			}
+			if !strings.Contains(err.Error(), tc.wantSubstr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tc.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestParseAnnotations_FieldTypes_Populated(t *testing.T) {
+	t.Parallel()
+
+	ann, err := jsonschema.ParseAnnotations([]byte(summaryFieldsSchema))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := ann.FieldTypes["score"]; got.Type != "integer" {
+		t.Errorf("score type: got %q, want \"integer\"", got.Type)
+	}
+	if got := ann.FieldTypes["created_at"]; got.Type != "string" || got.Format != "date-time" {
+		t.Errorf("created_at: got %+v, want {string, date-time}", got)
+	}
+	if got := ann.FieldTypes["title"]; got.Type != "string" || got.Format != "" {
+		t.Errorf("title: got %+v, want {string, \"\"}", got)
+	}
+}
+
+func TestFieldTypeSpec_IsRangeFilterable(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		typ, format string
+		want        bool
+	}{
+		{"integer", "", true},
+		{"number", "", true},
+		{"string", "date", true},
+		{"string", "date-time", true},
+		{"string", "", false},
+		{"string", "email", false},
+		{"boolean", "", false},
+		{"array", "", false},
+		{"object", "", false},
+		{"", "", false},
+	}
+	for _, tc := range cases {
+		got := jsonschema.FieldTypeSpec{Type: tc.typ, Format: tc.format}.IsRangeFilterable()
+		if got != tc.want {
+			t.Errorf("IsRangeFilterable(%q,%q): got %v, want %v", tc.typ, tc.format, got, tc.want)
+		}
+	}
+}
+
+func TestParseAnnotations_EnumValues_DeclarationOrder(t *testing.T) {
+	t.Parallel()
+
+	ann, err := jsonschema.ParseAnnotations([]byte(summaryFieldsSchema))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// CRITICAL: enum values must preserve declaration order — sort by
+	// declaration order is the whole point. Alphabetical sort would break it.
+	wantEnum := []string{"very_high", "high", "normal", "low"}
+	got := ann.EnumValues["popularity"]
+	if !reflect.DeepEqual(got, wantEnum) {
+		t.Errorf("EnumValues[popularity] must preserve declaration order: got %v, want %v (NOT alphabetical)", got, wantEnum)
+	}
+
+	// Non-enum field should have no entry.
+	if _, ok := ann.EnumValues["title"]; ok {
+		t.Errorf("EnumValues[title]: non-enum field should not be in map")
+	}
+}
+
+func TestParseAnnotations_EnumValues_MixedTypes(t *testing.T) {
+	t.Parallel()
+
+	schema := `{
+		"x-id-field": "id",
+		"properties": {
+			"id": {"type": "string"},
+			"level": {"type": "integer", "enum": [1, 2, 3]}
+		}
+	}`
+	ann, err := jsonschema.ParseAnnotations([]byte(schema))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Integer enum values stringified — comparison happens against data->>'level'
+	// which is also stringified at the SQL layer, so semantics match.
+	wantEnum := []string{"1", "2", "3"}
+	if got := ann.EnumValues["level"]; !reflect.DeepEqual(got, wantEnum) {
+		t.Errorf("EnumValues[level] integer enum: got %v, want %v", got, wantEnum)
+	}
+}

@@ -35,7 +35,7 @@ test.describe('Knowledge Graphs — bulk import', () => {
       const importRes = await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'Footwear', popularity: 'high' }]),
+        body: bulkPayload([{ code: 'FW', name: 'Footwear', popularity: 'high' }]),
       });
       expect([200, 201]).toContain(importRes.status());
 
@@ -55,7 +55,7 @@ test.describe('Knowledge Graphs — bulk import', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'Footwear' }]),
+        body: bulkPayload([{ code: 'FW', name: 'Footwear' }]),
       });
       const getRes = await apiFetch(request, `/knowledge-graphs/${bundle}`, { token: adminToken });
       expect(getRes.status()).toBe(200);
@@ -76,9 +76,9 @@ test.describe('Knowledge Graphs — entities list & filter', () => {
         method: 'POST',
         token: adminToken,
         body: bulkPayload([
-          { code: 'fw', name: 'Footwear', popularity: 'high' },
-          { code: 'ap', name: 'Apparel', popularity: 'medium' },
-          { code: 'hg', name: 'Home Goods', popularity: 'high' },
+          { code: 'FW', name: 'Footwear', popularity: 'high' },
+          { code: 'AP', name: 'Apparel', popularity: 'medium' },
+          { code: 'HG', name: 'Home Goods', popularity: 'high' },
         ]),
       });
       const filtRes = await apiFetch(
@@ -91,7 +91,7 @@ test.describe('Knowledge Graphs — entities list & filter', () => {
       expect(body.items).toBeDefined();
       expect(body.items.length).toBe(2);
       const codes = body.items.map((e: { data: { code: string } }) => e.data.code).sort();
-      expect(codes).toEqual(['fw', 'hg']);
+      expect(codes).toEqual(['FW', 'HG']);
     } finally {
       await apiFetch(request, `/knowledge-graphs/${bundle}`, { method: 'DELETE', token: adminToken });
     }
@@ -103,7 +103,7 @@ test.describe('Knowledge Graphs — entities list & filter', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
+        body: bulkPayload([{ code: 'FW', name: 'FW' }]),
       });
       const res = await apiFetch(
         request,
@@ -126,7 +126,7 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'Footwear' }]),
+        body: bulkPayload([{ code: 'FW', name: 'Footwear' }]),
       });
       const postRes = await apiFetch(
         request,
@@ -158,7 +158,7 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'Original Name' }]),
+        body: bulkPayload([{ code: 'FW', name: 'Original Name' }]),
       });
       const putRes = await apiFetch(
         request,
@@ -166,7 +166,7 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
         {
           method: 'PUT',
           token: adminToken,
-          body: { code: 'fw', name: 'Updated Name' },
+          body: { code: 'FW', name: 'Updated Name' },
         },
       );
       expect(putRes.status()).toBe(200);
@@ -183,7 +183,7 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
+        body: bulkPayload([{ code: 'FW', name: 'FW' }]),
       });
       const delRes = await apiFetch(
         request,
@@ -208,7 +208,7 @@ test.describe('Knowledge Graphs — granular CRUD', () => {
     await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
       method: 'POST',
       token: adminToken,
-      body: bulkPayload([{ code: 'fw', name: 'FW' }]),
+      body: bulkPayload([{ code: 'FW', name: 'FW' }]),
     });
 
     const delRes = await apiFetch(request, `/knowledge-graphs/${bundle}`, {
@@ -244,7 +244,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: unicodeName }]),
+        body: bulkPayload([{ code: 'FW', name: unicodeName }]),
       });
       const getRes = await apiFetch(
         request,
@@ -272,7 +272,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
+        body: bulkPayload([{ code: 'FW', name: 'FW' }]),
       });
       const res = await apiFetch(
         request,
@@ -291,7 +291,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'FW' }]),
+        body: bulkPayload([{ code: 'FW', name: 'FW' }]),
       });
 
       const first = await apiFetch(
@@ -321,7 +321,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
       const okRes = await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'FW', popularity: 'high', description: desc10k }]),
+        body: bulkPayload([{ code: 'FW', name: 'FW', popularity: 'high', description: desc10k }]),
       });
       // 10KB is fine — backend stores it (schema may not whitelist description; that's a 400 we expect)
       expect([200, 201, 400]).toContain(okRes.status());
@@ -377,7 +377,7 @@ test.describe('Knowledge Graphs — edge cases (mandatory per requirement #1)', 
         body: {
           version: '1.0.0',
           schemas: [{ entity_type: 'Category', schema: CATEGORY_SCHEMA }],
-          entities: [{ entity_type: 'Category', items: [{ code: 'fw', name: 'FW' }] }],
+          entities: [{ entity_type: 'Category', items: [{ code: 'FW', name: 'FW' }] }],
         },
       });
       expect(res.status()).toBe(400);
@@ -418,7 +418,7 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: 'Footwear' }]),
+        body: bulkPayload([{ code: 'FW', name: 'Footwear' }]),
       });
       // Classic injection payload
       const injectionRes = await apiFetch(
@@ -461,7 +461,7 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
         body: {
           version: '1.0.0',
           schemas: [{ entity_type: 'category', schema: malicious }],
-          entities: [{ entity_type: 'category', items: [{ code: 'fw', name: 'FW' }] }],
+          entities: [{ entity_type: 'category', items: [{ code: 'FW', name: 'FW' }] }],
         },
       });
       // External ref must be rejected. 400 (validation) or 422 acceptable; 500 is a bug.
@@ -480,7 +480,7 @@ test.describe('Knowledge Graphs — security gates (KG-SCC-*)', () => {
       await apiFetch(request, `/knowledge-graphs/${bundle}/import`, {
         method: 'POST',
         token: adminToken,
-        body: bulkPayload([{ code: 'fw', name: xss }]),
+        body: bulkPayload([{ code: 'FW', name: xss }]),
       });
       const getRes = await apiFetch(
         request,

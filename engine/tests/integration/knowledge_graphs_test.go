@@ -542,7 +542,7 @@ func TestKG_SCC02_CrossTenantEntityHidden(t *testing.T) {
 
 	// Tenant B list entities → 404 (or empty) — bundle scope is per-tenant.
 	listResp := do(t, http.MethodGet,
-		"/api/v1/knowledge-graphs/"+bundle+"/entities/category", nil, tokenB)
+		"/api/v1/knowledge-graphs/"+bundle+"/entities/"+auditEntityType, nil, tokenB)
 	listBody := readBody(t, listResp)
 	if listResp.StatusCode == http.StatusOK {
 		var page struct {
@@ -556,7 +556,7 @@ func TestKG_SCC02_CrossTenantEntityHidden(t *testing.T) {
 
 	// Tenant B POST entity to A's bundle → 404 (bundle invisible).
 	postResp := do(t, http.MethodPost,
-		"/api/v1/knowledge-graphs/"+bundle+"/entities/category",
+		"/api/v1/knowledge-graphs/"+bundle+"/entities/"+auditEntityType,
 		mustJSON(map[string]any{"code": "ZZ", "name": "Zenith"}), tokenB)
 	_ = readBody(t, postResp)
 	assertStatusAny(t, postResp, http.StatusNotFound, http.StatusBadRequest)
@@ -988,6 +988,43 @@ func TestKG16_AgentCapabilityBindingExposesKGTools(t *testing.T) {
 // KG-AUDIT — mutation paths leave a trace in /audit log.
 // ---------------------------------------------------------------------------
 
+// auditEntityType is unique to this test so the in-memory kgtools registry
+// cached by other KG tests in the same suite run does not produce a
+// tool-name collision when this bundle is applied. truncateTables clears
+// the DB layer; the registry is per-tenant cache and stays warm across
+// tests in the same process.
+const auditEntityType = "audit_category"
+
+// auditBundlePayload imports a schema with a unique entity_type so we get
+// the same audit_logs trace coverage as a typical bundle apply without
+// colliding with other tests' cached tool names.
+func auditBundlePayload(version string) map[string]any {
+	schema := json.RawMessage(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"$id": "audit_category",
+		"type": "object",
+		"x-id-field": "code",
+		"x-tool-expose": ["list", "get"],
+		"required": ["code", "name"],
+		"additionalProperties": false,
+		"properties": {
+			"code": {"type": "string", "pattern": "^[A-Z]{2,4}$", "x-index": true},
+			"name": {"type": "string", "minLength": 3}
+		}
+	}`)
+	return map[string]any{
+		"version": version,
+		"schemas": []map[string]any{
+			{"entity_type": auditEntityType, "schema": schema},
+		},
+		"entities": []map[string]any{
+			{"entity_type": auditEntityType, "items": []map[string]any{
+				{"code": "FW", "name": "Footwear"},
+			}},
+		},
+	}
+}
+
 func TestKG_AuditLog(t *testing.T) {
 	requireSuite(t)
 	t.Cleanup(func() { truncateTables(t) })
@@ -998,15 +1035,17 @@ func TestKG_AuditLog(t *testing.T) {
 	// Mutation 1: bulk import (kg.bundle.import).
 	resp := do(t, http.MethodPost,
 		"/api/v1/knowledge-graphs/"+bundle+"/import",
-		mustJSON(secretBundlePayload("1.0.0")), adminToken)
+		mustJSON(auditBundlePayload("1.0.0")), adminToken)
 	require.Equal(t, http.StatusOK, resp.StatusCode,
 		"import must succeed; body=%s", readBody(t, resp))
 
 	// Mutation 2: granular entity create (kg.entity.create).
+	// Payload must satisfy industrySchemaJSON's pattern + required fields —
+	// code is the id field (regex ^[A-Z]{2,4}$) and name is required.
 	createResp := do(t, http.MethodPost,
-		"/api/v1/knowledge-graphs/"+bundle+"/entities/secret",
+		"/api/v1/knowledge-graphs/"+bundle+"/entities/"+auditEntityType,
 		mustJSON(map[string]any{
-			"id":   "extra-1",
+			"code": "EX",
 			"name": "extra one",
 		}), adminToken)
 	require.Equal(t, http.StatusCreated, createResp.StatusCode,
@@ -1033,8 +1072,8 @@ func TestKG_AuditLog(t *testing.T) {
 	var actions []string
 	if err := testDB.WithContext(context.Background()).
 		Raw(`SELECT action FROM audit_logs
-			   WHERE action LIKE 'kg.%' AND created_at >= ?
-			ORDER BY created_at ASC`, start).
+			   WHERE action LIKE 'kg.%' AND occurred_at >= ?
+			ORDER BY occurred_at ASC`, start).
 		Scan(&actions).Error; err != nil {
 		t.Fatalf("audit_logs SELECT: %v", err)
 	}
