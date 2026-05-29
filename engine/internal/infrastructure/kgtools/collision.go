@@ -93,7 +93,7 @@ type RegistryToolNames struct {
 	Provider *Provider
 }
 
-func (r RegistryToolNames) ToolNamesForTenant(ctx context.Context, tenantID, _ string) ([]string, error) {
+func (r RegistryToolNames) ToolNamesForTenant(ctx context.Context, tenantID, excludeBundle string) ([]string, error) {
 	if r.Provider == nil {
 		return nil, nil
 	}
@@ -101,7 +101,7 @@ func (r RegistryToolNames) ToolNamesForTenant(ctx context.Context, tenantID, _ s
 	if err != nil {
 		return nil, err
 	}
-	return reg.AllToolNamesForTenant(), nil
+	return reg.AllToolNamesForTenantExceptBundle(excludeBundle), nil
 }
 
 // SchemaToolLister reads all KG schemas across a tenant's bundles —
