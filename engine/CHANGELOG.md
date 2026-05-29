@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.4.1] — 2026-05-29
+
+### Fixed
+
+- **KG bundle re-apply self-collision (HTTP 409)** — re-applying the same
+  bundle to an engine that had already cached its tools in the in-memory
+  registry (after at least one chat session warmed the cache) raised
+  `[ALREADY_EXISTS] tool name collision: [...]` listing the bundle's own
+  tools. Root cause: `RegistryToolNames.ToolNamesForTenant` ignored the
+  `excludeBundle` argument the collision detector passed in, so the
+  bundle's cached tools registered as pre-existing during its own re-apply.
+  The `DBSchemaToolNames` source already excluded correctly; the in-memory
+  registry source did not. Added `Registry.AllToolNamesForTenantExceptBundle`
+  and wired the detector through it. Apply is now genuinely idempotent
+  for the same `bundle_name` across CI re-runs without manual delete or
+  engine restart, matching the documented contract. Regression covered by
+  three unit tests in `kgtools` package.
+
 ## [1.4.0] — 2026-05-28
 
 Knowledge Graphs query API ergonomics. Five LLM-tool / REST additions driven

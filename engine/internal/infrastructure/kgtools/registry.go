@@ -88,11 +88,22 @@ func (r *Registry) ToolsForBundles(bundles []string) []string {
 // AllToolNamesForTenant returns the union of tool names currently cached for
 // the tenant. Used by the collision detector to spot conflicts at apply time.
 func (r *Registry) AllToolNamesForTenant() []string {
+	return r.AllToolNamesForTenantExceptBundle("")
+}
+
+// AllToolNamesForTenantExceptBundle returns the union of tool names currently
+// cached for the tenant, skipping any bundle whose name matches excludeBundle.
+// The collision detector passes the bundle being re-applied so its own cached
+// tools do not register as self-collisions.
+func (r *Registry) AllToolNamesForTenantExceptBundle(excludeBundle string) []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	seen := make(map[string]struct{})
 	out := make([]string, 0)
-	for _, entry := range r.bundles {
+	for name, entry := range r.bundles {
+		if name == excludeBundle {
+			continue
+		}
 		for _, t := range entry.tools {
 			if _, dup := seen[t]; dup {
 				continue
