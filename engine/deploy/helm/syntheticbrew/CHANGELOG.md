@@ -7,6 +7,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-05-29
+
+### Changed
+- Bumps `appVersion` to **1.4.1**. Engine 1.4.1 fixes the KG bundle
+  re-apply self-collision (HTTP 409) caused by the in-memory tool
+  registry source not excluding the bundle being re-applied. No chart
+  template changes; pulling 0.9.1 picks up the engine fix.
+
 ## [0.9.0] - 2026-05-28
 
 ### Changed
