@@ -2,6 +2,8 @@ package callbacks
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent"
@@ -119,4 +121,36 @@ func (b *AgentCallbackBuilder) GetTotalTokens() int {
 // HITLSeen reports whether a HITL tool fired during this run.
 func (b *AgentCallbackBuilder) HITLSeen() bool {
 	return b.modelHandler.HITLSeen()
+}
+
+// EmitToolLoopAbortAnswer emits a final assistant answer when the tool
+// error-loop breaker force-stopped the turn, and returns the message text (for
+// history). Returns "" when the breaker did not trip. Called post-drain, like
+// FinalizeAccumulatedText.
+func (b *AgentCallbackBuilder) EmitToolLoopAbortAnswer(ctx context.Context) string {
+	tool, lastErr, ok := b.toolHandler.Aborted()
+	if !ok {
+		return ""
+	}
+	msg := formatToolLoopAbortMessage(tool, lastErr)
+	b.emitter.Emit(ctx, &domain.AgentEvent{
+		Type:       domain.EventTypeAnswer,
+		Content:    msg,
+		IsComplete: true,
+	})
+	return msg
+}
+
+// formatToolLoopAbortMessage builds a user-facing message explaining that the
+// turn was stopped because a tool kept failing. reason is the last tool error
+// with the internal "[ERROR] " marker stripped and length-capped.
+func formatToolLoopAbortMessage(tool, lastErr string) string {
+	reason := strings.TrimSpace(strings.TrimPrefix(lastErr, "[ERROR]"))
+	if len(reason) > 300 {
+		reason = reason[:300] + "…"
+	}
+	if reason == "" {
+		return fmt.Sprintf("I couldn't complete this request: the %q operation kept failing, so I stopped retrying to avoid looping. Please check the request details or try again shortly.", tool)
+	}
+	return fmt.Sprintf("I couldn't complete this request: the %q operation kept failing (%s). I stopped retrying to avoid looping. Please check the request details or try again shortly.", tool, reason)
 }

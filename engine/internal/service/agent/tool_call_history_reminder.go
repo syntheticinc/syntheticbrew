@@ -18,12 +18,12 @@ type ToolCallRecorder interface {
 // ToolCallHistoryReminder tracks tool calls per session and reminds the agent
 // to avoid redundant calls. Implements ContextReminderProvider.
 type ToolCallHistoryReminder struct {
-	mu                   sync.Mutex
-	callsPerTool         map[string]map[string]int  // sessionID -> toolName -> count
-	consecutiveErrors    map[string]map[string]int  // sessionID -> toolName -> consecutive error count
-	lastToolResult       map[string]map[string]bool // sessionID -> toolName -> was last result an error?
-	lastToolName         map[string]string           // sessionID -> last tool name called
-	consecutiveSameTool  map[string]int              // sessionID -> consecutive same-tool call count
+	mu                  sync.Mutex
+	callsPerTool        map[string]map[string]int  // sessionID -> toolName -> count
+	consecutiveErrors   map[string]map[string]int  // sessionID -> toolName -> consecutive error count
+	lastToolResult      map[string]map[string]bool // sessionID -> toolName -> was last result an error?
+	lastToolName        map[string]string          // sessionID -> last tool name called
+	consecutiveSameTool map[string]int             // sessionID -> consecutive same-tool call count
 }
 
 // NewToolCallHistoryReminder creates a new ToolCallHistoryReminder
@@ -96,6 +96,23 @@ func (r *ToolCallHistoryReminder) RecordToolResult(sessionID, toolName, result s
 
 	// Update last result state
 	r.lastToolResult[sessionID][toolName] = isError
+}
+
+// ConsecutiveErrors returns how many times in a row toolName returned an
+// [ERROR] result for the session. Zero once a call succeeds. Used by the
+// agent loop to hard-stop a tool that is failing identically every call.
+func (r *ToolCallHistoryReminder) ConsecutiveErrors(sessionID, toolName string) int {
+	if sessionID == "" || toolName == "" {
+		return 0
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if m := r.consecutiveErrors[sessionID]; m != nil {
+		return m[toolName]
+	}
+	return 0
 }
 
 // ClearSession removes all tool call history for a session

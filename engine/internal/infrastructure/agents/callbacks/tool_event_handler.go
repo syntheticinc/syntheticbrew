@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -12,6 +13,12 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
+
+// defaultMaxConsecutiveToolErrors is how many times a single tool may return an
+// [ERROR] result in a row before the agent loop is force-stopped. Without this
+// hard cap a model that ignores the advisory loop-warning can call the same
+// failing tool until MaxSteps (thousands), hanging the turn.
+const defaultMaxConsecutiveToolErrors = 4
 
 // HITLAware lets the tool handler flag a HITL turn on the model handler.
 type HITLAware interface {
@@ -25,13 +32,27 @@ type ToolCallRecorder interface {
 	RecordToolResult(sessionID, toolName, result string)
 }
 
+// errorLoopReporter is an optional capability of a ToolCallRecorder: it reports
+// how many times a tool has errored consecutively, so the handler can hard-stop
+// a runaway error loop. Detected via type assertion — recorders that don't
+// implement it simply disable the breaker.
+type errorLoopReporter interface {
+	ConsecutiveErrors(sessionID, toolName string) int
+}
+
 // ToolEventHandler handles tool start/end callbacks.
 type ToolEventHandler struct {
-	emitter   *EventEmitter
-	counter   *StepCounter
-	model     *ModelEventHandler
-	recorder  ToolCallRecorder
-	sessionID string
+	emitter      *EventEmitter
+	counter      *StepCounter
+	model        *ModelEventHandler
+	recorder     ToolCallRecorder
+	sessionID    string
+	errThreshold int
+
+	mu           sync.Mutex
+	aborted      bool
+	abortTool    string
+	abortLastErr string
 }
 
 // NewToolEventHandler creates a new ToolEventHandler.
@@ -43,12 +64,53 @@ func NewToolEventHandler(
 	sessionID string,
 ) *ToolEventHandler {
 	return &ToolEventHandler{
-		emitter:   emitter,
-		counter:   counter,
-		model:     model,
-		recorder:  recorder,
-		sessionID: sessionID,
+		emitter:      emitter,
+		counter:      counter,
+		model:        model,
+		recorder:     recorder,
+		sessionID:    sessionID,
+		errThreshold: defaultMaxConsecutiveToolErrors,
 	}
+}
+
+// tripBreakerIfLooping force-stops the turn when toolName has returned an
+// [ERROR] result errThreshold times in a row. It records the abort reason and
+// cancels the returned context so Eino halts further steps. Returns the
+// (possibly cancelled) context and whether the breaker tripped.
+func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, result string) (context.Context, bool) {
+	if !strings.HasPrefix(result, "[ERROR]") {
+		return ctx, false
+	}
+	reporter, ok := h.recorder.(errorLoopReporter)
+	if !ok {
+		return ctx, false
+	}
+	if reporter.ConsecutiveErrors(h.sessionID, toolName) < h.errThreshold {
+		return ctx, false
+	}
+
+	h.mu.Lock()
+	if !h.aborted {
+		h.aborted = true
+		h.abortTool = toolName
+		h.abortLastErr = result
+	}
+	h.mu.Unlock()
+
+	slog.WarnContext(ctx, "[CALLBACK] tool error loop detected, force-stopping turn",
+		"tool_name", toolName, "threshold", h.errThreshold)
+
+	ctx, cancel := context.WithCancelCause(ctx)
+	cancel(fmt.Errorf("tool %q error loop: %s", toolName, result))
+	return ctx, true
+}
+
+// Aborted reports whether the error-loop breaker tripped, with the tool name and
+// last error so the agent loop can emit a clear final message to the user.
+func (h *ToolEventHandler) Aborted() (tool, lastErr string, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.abortTool, h.abortLastErr, h.aborted
 }
 
 // OnToolStart handles tool execution start.
@@ -186,6 +248,10 @@ func (h *ToolEventHandler) OnToolEnd(ctx context.Context, info *callbacks.RunInf
 	// Record tool result for error loop detection
 	if h.recorder != nil && h.sessionID != "" && info.Name != "" {
 		h.recorder.RecordToolResult(h.sessionID, info.Name, output.Response)
+	}
+
+	if newCtx, tripped := h.tripBreakerIfLooping(ctx, info.Name, output.Response); tripped {
+		return newCtx
 	}
 
 	// Increment step after tool execution completes

@@ -419,6 +419,15 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 		}
 	}
 
+	// If the tool error-loop breaker force-stopped the turn, emit a clear final
+	// answer and return — the loop produced no real content of its own.
+	if abortMsg := cb.EmitToolLoopAbortAnswer(ctx); abortMsg != "" {
+		messages = append(messages, &schema.Message{Role: schema.Assistant, Content: abortMsg})
+		cb.EmitTokenUsage(ctx, a.lastContextTokens())
+		slog.InfoContext(ctx, "[RUN] tool error-loop breaker tripped, returning abort message")
+		return abortMsg, nil
+	}
+
 	// Drop residual content on HITL turns — the widget is the message.
 	if cb.HITLSeen() && result.Content != "" {
 		slog.InfoContext(ctx, "[RUN] suppressing assistant content on HITL turn",
@@ -631,6 +640,12 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		slog.InfoContext(ctx, "[STREAM] suppressing assistant content on HITL turn",
 			"dropped_length", len(finalContent))
 		finalContent = ""
+	}
+
+	// If the tool error-loop breaker force-stopped the turn, emit a clear final
+	// answer to the user (the loop produced no real answer) and record it.
+	if abortMsg := cb.EmitToolLoopAbortAnswer(ctx); abortMsg != "" {
+		finalContent = abortMsg
 	}
 
 	if finalContent != "" {
