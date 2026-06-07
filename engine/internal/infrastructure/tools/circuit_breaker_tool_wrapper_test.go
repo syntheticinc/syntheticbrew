@@ -10,6 +10,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	apperrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // stubInnerTool is a minimal InvokableTool for CB wrapper tests.
@@ -33,9 +35,9 @@ var _ tool.InvokableTool = (*stubInnerTool)(nil)
 
 // stubBreaker lets each test fix the Allow/Record behavior independently.
 type stubBreaker struct {
-	allowErr      error
-	successCalls  int
-	failureCalls  int
+	allowErr     error
+	successCalls int
+	failureCalls int
 }
 
 func (b *stubBreaker) AllowRequest() error { return b.allowErr }
@@ -47,7 +49,9 @@ func TestCircuitBreakerToolWrapper_AllowRequestErr_ReturnsError(t *testing.T) {
 	// session_event_log records has_error=true. Returning nil would make
 	// the Tool Call Log show the failed call as "completed".
 	inner := &stubInnerTool{name: "brave_search"}
-	breaker := &stubBreaker{allowErr: errors.New("circuit open")}
+	// Real AllowRequest returns a typed Unavailable DomainError whose Error()
+	// carries the "[UNAVAILABLE]" prefix; the wrapper forwards it as-is.
+	breaker := &stubBreaker{allowErr: apperrors.Unavailable("service unavailable", errors.New("circuit open"))}
 
 	w := NewCircuitBreakerToolWrapper(inner, breaker)
 	output, err := w.InvokableRun(context.Background(), `{}`)
@@ -56,6 +60,8 @@ func TestCircuitBreakerToolWrapper_AllowRequestErr_ReturnsError(t *testing.T) {
 	assert.Empty(t, output, "output should be empty when CB short-circuits")
 	assert.True(t, strings.Contains(err.Error(), "[UNAVAILABLE]"),
 		"error message must keep the [UNAVAILABLE] prefix for log filtering")
+	assert.Equal(t, apperrors.CodeUnavailable, apperrors.DeepestCode(err),
+		"CB-open error must carry the typed UNAVAILABLE code")
 	assert.Equal(t, 0, inner.calls, "inner tool must not be invoked when CB is open")
 	assert.Equal(t, 0, breaker.successCalls)
 	assert.Equal(t, 0, breaker.failureCalls)

@@ -2,6 +2,7 @@ package errors
 
 import (
 	"errors"
+	stderrors "errors"
 	"testing"
 )
 
@@ -175,5 +176,24 @@ func TestHelperFunctions(t *testing.T) {
 				t.Errorf("Code = %v, want %v", err.Code, tt.wantCode)
 			}
 		})
+	}
+}
+
+func TestDeepestCode(t *testing.T) {
+	if got := DeepestCode(nil); got != CodeInternal {
+		t.Fatalf("nil: want %s, got %s", CodeInternal, got)
+	}
+	// plain error → internal
+	if got := DeepestCode(stderrors.New("boom")); got != CodeInternal {
+		t.Fatalf("plain: want %s, got %s", CodeInternal, got)
+	}
+	// typed unavailable wrapped under a generic internal wrap → recovers UNAVAILABLE
+	inner := Unavailable("svc down", stderrors.New("circuit open"))
+	wrapped := Wrap(inner, CodeInternal, "agent stream failed")
+	if got := DeepestCode(wrapped); got != CodeUnavailable {
+		t.Fatalf("wrapped: want %s, got %s", CodeUnavailable, got)
+	}
+	if got := UserMessage(wrapped); got != "svc down" {
+		t.Fatalf("user message: want 'svc down', got %q", got)
 	}
 }

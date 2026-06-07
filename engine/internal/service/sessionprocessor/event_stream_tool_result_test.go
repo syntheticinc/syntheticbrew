@@ -1,12 +1,14 @@
 package sessionprocessor
 
 import (
+	"fmt"
 	"testing"
 
-	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
-	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	apperrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 type mockPublisher struct {
@@ -149,3 +151,21 @@ func TestSend_ToolResult_PreservesSummary(t *testing.T) {
 	assert.Equal(t, fullResult, evt.Content, "Content should be the full result")
 	assert.Equal(t, summary, evt.ToolResultSummary, "ToolResultSummary should be the summary")
 }
+
+func TestPublishError_CarriesTypedCodeAndCuratedMessage(t *testing.T) {
+	pub := &mockPublisher{}
+	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+
+	inner := apperrors.Unavailable("Service temporarily unavailable — please try again in a few seconds.", errorsNew("circuit breaker open for chirp-platform"))
+	stream.PublishError(apperrors.Wrap(inner, apperrors.CodeInternal, "agent stream failed"))
+
+	require.Len(t, pub.events, 1)
+	evt := pub.events[0]
+	assert.Equal(t, pb.SessionEventType_SESSION_EVENT_ERROR, evt.Type)
+	require.NotNil(t, evt.ErrorDetail)
+	assert.Equal(t, apperrors.CodeUnavailable, evt.ErrorDetail.Code, "deepest typed code must surface, not generic internal")
+	assert.Equal(t, "Service temporarily unavailable — please try again in a few seconds.", evt.Content, "curated user message, not the wrapped technical chain")
+	assert.NotContains(t, evt.Content, "circuit breaker open", "raw technical detail must not leak to the client")
+}
+
+func errorsNew(s string) error { return fmt.Errorf("%s", s) }
