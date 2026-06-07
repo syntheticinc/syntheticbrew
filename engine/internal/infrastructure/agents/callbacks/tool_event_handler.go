@@ -40,6 +40,7 @@ type ToolEventHandler struct {
 	recorder     ToolCallRecorder
 	sessionID    string
 	errThreshold int
+	abortLoop    context.CancelFunc
 
 	mu           sync.Mutex
 	consecErr    map[string]int // per-tool consecutive [ERROR] count, this turn
@@ -48,13 +49,17 @@ type ToolEventHandler struct {
 	abortLastErr string
 }
 
-// NewToolEventHandler creates a new ToolEventHandler.
+// NewToolEventHandler creates a new ToolEventHandler. abortLoop cancels the
+// context the react loop runs under; it is called by the error-loop breaker to
+// halt the loop and may be nil (breaker still records the abort, but cannot
+// force-stop Eino — used in unit tests).
 func NewToolEventHandler(
 	emitter *EventEmitter,
 	counter *StepCounter,
 	model *ModelEventHandler,
 	recorder ToolCallRecorder,
 	sessionID string,
+	abortLoop context.CancelFunc,
 ) *ToolEventHandler {
 	return &ToolEventHandler{
 		emitter:      emitter,
@@ -63,6 +68,7 @@ func NewToolEventHandler(
 		recorder:     recorder,
 		sessionID:    sessionID,
 		errThreshold: defaultMaxConsecutiveToolErrors,
+		abortLoop:    abortLoop,
 		consecErr:    make(map[string]int),
 	}
 }
@@ -71,33 +77,38 @@ func NewToolEventHandler(
 // [ERROR] result errThreshold times in a row. The consecutive-error count is
 // tracked locally (the handler is per-turn) rather than via the recorder, whose
 // concrete type is wrapped by adapters before it reaches this layer. A success
-// resets the tool's streak. Returns the (possibly cancelled) context and whether
+// resets the tool's streak. On trip it cancels the loop context via abortLoop so
+// Eino actually stops (a per-callback child cancel does not). Returns whether
 // the breaker tripped.
-func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, result string) (context.Context, bool) {
+func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, result string) bool {
 	h.mu.Lock()
 	if !strings.HasPrefix(result, "[ERROR]") {
 		h.consecErr[toolName] = 0
 		h.mu.Unlock()
-		return ctx, false
+		return false
 	}
 	h.consecErr[toolName]++
 	if h.consecErr[toolName] < h.errThreshold {
 		h.mu.Unlock()
-		return ctx, false
+		return false
 	}
-	if !h.aborted {
+	firstTrip := !h.aborted
+	if firstTrip {
 		h.aborted = true
 		h.abortTool = toolName
 		h.abortLastErr = result
 	}
 	h.mu.Unlock()
 
+	if !firstTrip {
+		return true
+	}
 	slog.WarnContext(ctx, "[CALLBACK] tool error loop detected, force-stopping turn",
 		"tool_name", toolName, "threshold", h.errThreshold)
-
-	ctx, cancel := context.WithCancelCause(ctx)
-	cancel(fmt.Errorf("tool %q error loop: %s", toolName, result))
-	return ctx, true
+	if h.abortLoop != nil {
+		h.abortLoop()
+	}
+	return true
 }
 
 // Aborted reports whether the error-loop breaker tripped, with the tool name and
@@ -245,8 +256,8 @@ func (h *ToolEventHandler) OnToolEnd(ctx context.Context, info *callbacks.RunInf
 		h.recorder.RecordToolResult(h.sessionID, info.Name, output.Response)
 	}
 
-	if newCtx, tripped := h.tripBreakerIfLooping(ctx, info.Name, output.Response); tripped {
-		return newCtx
+	if h.tripBreakerIfLooping(ctx, info.Name, output.Response) {
+		return ctx
 	}
 
 	// Increment step after tool execution completes

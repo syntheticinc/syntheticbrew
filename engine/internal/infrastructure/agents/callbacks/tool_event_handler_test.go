@@ -44,7 +44,7 @@ func newTestToolEventHandler(collector *eventCollector, recorder *mockToolCallRe
 	if recorder == nil {
 		recorder = &mockToolCallRecorder{}
 	}
-	handler := NewToolEventHandler(emitter, counter, nil, recorder, sessionID)
+	handler := NewToolEventHandler(emitter, counter, nil, recorder, sessionID, nil)
 	return handler, counter
 }
 

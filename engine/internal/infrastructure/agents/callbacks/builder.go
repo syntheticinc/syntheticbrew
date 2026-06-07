@@ -21,6 +21,10 @@ type BuilderConfig struct {
 	SessionID        string
 	AgentID          string // "supervisor" or "code-agent-{uuid}"
 	ToolCallRecorder ToolCallRecorder
+	// AbortLoop cancels the context the Eino react loop runs under. The tool
+	// error-loop breaker calls it to actually halt the loop (cancelling a
+	// per-callback child context does not stop Eino). May be nil in tests.
+	AbortLoop context.CancelFunc
 }
 
 // AgentCallbackBuilder wires together all callback sub-components
@@ -46,7 +50,7 @@ func NewBuilder(cfg BuilderConfig) *AgentCallbackBuilder {
 	tokenAcc := NewTokenAccumulator()
 
 	modelHandler := NewModelEventHandler(emitter, counter, extractor, cfg.Store, cfg.ChunkCallback, tokenAcc)
-	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID)
+	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID, cfg.AbortLoop)
 
 	return &AgentCallbackBuilder{
 		counter:      counter,
@@ -121,6 +125,12 @@ func (b *AgentCallbackBuilder) GetTotalTokens() int {
 // HITLSeen reports whether a HITL tool fired during this run.
 func (b *AgentCallbackBuilder) HITLSeen() bool {
 	return b.modelHandler.HITLSeen()
+}
+
+// ToolLoopAborted reports whether the tool error-loop breaker tripped this run,
+// returning the offending tool and its last error.
+func (b *AgentCallbackBuilder) ToolLoopAborted() (tool, lastErr string, ok bool) {
+	return b.toolHandler.Aborted()
 }
 
 // EmitToolLoopAbortAnswer emits a final assistant answer when the tool
