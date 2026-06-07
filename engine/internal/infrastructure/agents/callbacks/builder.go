@@ -133,10 +133,9 @@ func (b *AgentCallbackBuilder) ToolLoopAborted() (tool, lastErr string, ok bool)
 	return b.toolHandler.Aborted()
 }
 
-// EmitToolLoopAbortAnswer emits a final assistant answer when the tool
-// error-loop breaker force-stopped the turn, and returns the message text (for
-// history). Returns "" when the breaker did not trip. Called post-drain, like
-// FinalizeAccumulatedText.
+// EmitToolLoopAbortAnswer emits a final assistant answer when the error-loop
+// breaker force-stopped the turn and returns its text (for history), or "" when
+// the breaker did not trip.
 func (b *AgentCallbackBuilder) EmitToolLoopAbortAnswer(ctx context.Context) string {
 	tool, lastErr, ok := b.toolHandler.Aborted()
 	if !ok {

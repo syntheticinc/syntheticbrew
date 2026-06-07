@@ -14,10 +14,9 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
-// defaultMaxConsecutiveToolErrors is how many times a single tool may return an
-// [ERROR] result in a row before the agent loop is force-stopped. Without this
-// hard cap a model that ignores the advisory loop-warning can call the same
-// failing tool until MaxSteps (thousands), hanging the turn.
+// defaultMaxConsecutiveToolErrors caps how many [ERROR] results a single tool
+// may return in a row before the loop is force-stopped. Without it a model that
+// ignores the advisory warning loops on the failing tool until MaxSteps.
 const defaultMaxConsecutiveToolErrors = 4
 
 // HITLAware lets the tool handler flag a HITL turn on the model handler.
@@ -50,9 +49,8 @@ type ToolEventHandler struct {
 }
 
 // NewToolEventHandler creates a new ToolEventHandler. abortLoop cancels the
-// context the react loop runs under; it is called by the error-loop breaker to
-// halt the loop and may be nil (breaker still records the abort, but cannot
-// force-stop Eino — used in unit tests).
+// react-loop context for the error-loop breaker; nil disables force-stop (the
+// breaker still records the abort) — used in unit tests.
 func NewToolEventHandler(
 	emitter *EventEmitter,
 	counter *StepCounter,
@@ -73,13 +71,11 @@ func NewToolEventHandler(
 	}
 }
 
-// tripBreakerIfLooping force-stops the turn when toolName has returned an
-// [ERROR] result errThreshold times in a row. The consecutive-error count is
-// tracked locally (the handler is per-turn) rather than via the recorder, whose
-// concrete type is wrapped by adapters before it reaches this layer. A success
-// resets the tool's streak. On trip it cancels the loop context via abortLoop so
-// Eino actually stops (a per-callback child cancel does not). Returns whether
-// the breaker tripped.
+// tripBreakerIfLooping force-stops the turn when toolName returned an [ERROR]
+// result errThreshold times in a row; a success resets the streak. Counts are
+// tracked locally because the recorder is wrapped by adapters before this layer.
+// On trip it cancels the loop context (a per-callback child cancel does not stop
+// Eino). Reports whether the breaker tripped.
 func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, result string) bool {
 	h.mu.Lock()
 	if !strings.HasPrefix(result, "[ERROR]") {
