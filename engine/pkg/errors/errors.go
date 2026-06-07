@@ -136,3 +136,35 @@ func GetCode(err error) string {
 	}
 	return CodeInternal
 }
+
+// DeepestCode returns the deepest non-CodeInternal DomainError code in the
+// chain, recovering the real classification (e.g. UNAVAILABLE) when callers
+// re-wrapped a typed cause as generic CodeInternal. Falls back to CodeInternal.
+func DeepestCode(err error) string {
+	code := CodeInternal
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if de, ok := e.(*DomainError); ok && de.Code != CodeInternal {
+			code = de.Code
+		}
+	}
+	return code
+}
+
+// UserMessage returns the curated, user-facing message for an error: the
+// Message of the deepest non-CodeInternal DomainError when present (without the
+// "[CODE]" prefix or wrapped technical detail), else the raw error string.
+func UserMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	var best *DomainError
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if de, ok := e.(*DomainError); ok && de.Code != CodeInternal {
+			best = de
+		}
+	}
+	if best != nil {
+		return best.Message
+	}
+	return err.Error()
+}

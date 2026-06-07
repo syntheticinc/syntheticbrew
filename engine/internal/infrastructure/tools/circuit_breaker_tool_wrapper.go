@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -43,7 +42,9 @@ func (w *CircuitBreakerToolWrapper) InvokableRun(ctx context.Context, argumentsI
 	// (status=failed). Returning nil would misleadingly mark the call as
 	// completed in the observability view.
 	if err := w.breaker.AllowRequest(); err != nil {
-		return "", fmt.Errorf("[UNAVAILABLE] %s", err.Error())
+		// AllowRequest already returns a typed DomainError whose Error() carries
+		// the "[UNAVAILABLE] …" prefix; return it as-is (no double prefix).
+		return "", err
 	}
 
 	// Execute tool

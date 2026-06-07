@@ -11,6 +11,7 @@ import (
 	pb "github.com/syntheticinc/syntheticbrew/api/proto/gen"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/service/eventformat"
+	apperrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // EventPublisher publishes session events to subscribers (consumer-side interface).
@@ -152,15 +153,17 @@ func (s *EventStream) PublishProcessingStopped() {
 	s.persistAndPublish(evt)
 }
 
-// PublishError sends an ERROR event.
+// PublishError sends an ERROR event carrying the typed DeepestCode (so clients
+// switch on a stable code instead of matching text) and the curated UserMessage.
 func (s *EventStream) PublishError(err error) {
+	msg := SanitizeUTF8(apperrors.UserMessage(err))
 	s.persistAndPublish(&pb.SessionEvent{
 		SessionId: s.sessionID,
 		Type:      pb.SessionEventType_SESSION_EVENT_ERROR,
-		Content:   err.Error(),
+		Content:   msg,
 		ErrorDetail: &pb.Error{
-			Code:    "internal",
-			Message: err.Error(),
+			Code:    apperrors.DeepestCode(err),
+			Message: msg,
 		},
 	})
 }

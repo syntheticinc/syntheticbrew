@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // CircuitState represents the state of a circuit breaker.
@@ -36,14 +38,14 @@ func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 // CircuitBreaker implements per-resource circuit breaker pattern.
 // Used for MCP servers and LLM models (AC-RESIL-09..12).
 type CircuitBreaker struct {
-	mu            sync.RWMutex
-	name          string
-	config        CircuitBreakerConfig
-	state         CircuitState
-	failures      []time.Time // timestamps of consecutive failures within window
-	lastFailure          time.Time
-	openedAt             time.Time
-	failureCountAtOpen   int
+	mu                 sync.RWMutex
+	name               string
+	config             CircuitBreakerConfig
+	state              CircuitState
+	failures           []time.Time // timestamps of consecutive failures within window
+	lastFailure        time.Time
+	openedAt           time.Time
+	failureCountAtOpen int
 }
 
 // NewCircuitBreaker creates a new circuit breaker for the named resource.
@@ -80,7 +82,10 @@ func (cb *CircuitBreaker) AllowRequest() error {
 	case CircuitHalfOpen:
 		return nil // allow one probe request
 	case CircuitOpen:
-		return fmt.Errorf("circuit breaker open for %s: too many failures", cb.name)
+		return errors.Unavailable(
+			"Service temporarily unavailable — please try again in a few seconds.",
+			fmt.Errorf("circuit breaker open for %s: too many failures", cb.name),
+		)
 	}
 	return nil
 }
