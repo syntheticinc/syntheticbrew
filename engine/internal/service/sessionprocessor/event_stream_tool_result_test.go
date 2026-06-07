@@ -124,6 +124,22 @@ func TestSend_Answer_PublishesWhenNotStreamed(t *testing.T) {
 	assert.Equal(t, "Non-streaming answer", pub.events[0].Content)
 }
 
+func TestSend_Answer_SkipsEmptyContent(t *testing.T) {
+	pub := &mockPublisher{}
+	store := &mockStore{}
+	stream := NewEventStream("session-1", pub, store, nil)
+
+	err := stream.Send(&domain.AgentEvent{
+		Type:       domain.EventTypeAnswer,
+		Content:    "",
+		IsComplete: true,
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, pub.events, "Should NOT publish an empty final answer (blank assistant bubble)")
+	assert.Empty(t, store.appends, "Should NOT persist an empty answer")
+}
+
 func TestSend_ToolResult_PreservesSummary(t *testing.T) {
 	pub := &mockPublisher{}
 	stream := NewEventStream("session-1", pub, &mockStore{}, nil)

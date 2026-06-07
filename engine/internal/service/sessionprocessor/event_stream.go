@@ -260,6 +260,11 @@ func (s *EventStream) convertEvent(event *domain.AgentEvent) *pb.SessionEvent {
 		if streamed, _ := event.Metadata["already_streamed"].(bool); streamed {
 			return nil
 		}
+		// Streaming emits a final empty-content answer (completion is signalled
+		// by PROCESSING_STOPPED); publishing it renders a blank bubble.
+		if SanitizeUTF8(event.Content) == "" {
+			return nil
+		}
 		return &pb.SessionEvent{
 			Type:    pb.SessionEventType_SESSION_EVENT_ANSWER,
 			Content: SanitizeUTF8(event.Content),
