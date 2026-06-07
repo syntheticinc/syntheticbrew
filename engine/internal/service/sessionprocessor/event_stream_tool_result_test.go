@@ -156,7 +156,7 @@ func TestPublishError_CarriesTypedCodeAndCuratedMessage(t *testing.T) {
 	pub := &mockPublisher{}
 	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
 
-	inner := apperrors.Unavailable("Service temporarily unavailable — please try again in a few seconds.", errorsNew("circuit breaker open for chirp-platform"))
+	inner := apperrors.Unavailable("Service temporarily unavailable — please try again in a few seconds.", errorsNew("circuit breaker open for external-service"))
 	stream.PublishError(apperrors.Wrap(inner, apperrors.CodeInternal, "agent stream failed"))
 
 	require.Len(t, pub.events, 1)

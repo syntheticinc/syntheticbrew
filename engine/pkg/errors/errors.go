@@ -137,12 +137,9 @@ func GetCode(err error) string {
 	return CodeInternal
 }
 
-// DeepestCode walks the error chain and returns the most specific DomainError
-// code — the deepest non-CodeInternal code present. Callers higher in the stack
-// often re-wrap a typed cause with a generic CodeInternal ("agent stream
-// failed"); this recovers the original classification (e.g. UNAVAILABLE,
-// RATE_LIMITED) so it can surface to clients. Returns CodeInternal when no
-// more-specific code exists.
+// DeepestCode returns the deepest non-CodeInternal DomainError code in the
+// chain, recovering the real classification (e.g. UNAVAILABLE) when callers
+// re-wrapped a typed cause as generic CodeInternal. Falls back to CodeInternal.
 func DeepestCode(err error) string {
 	code := CodeInternal
 	for e := err; e != nil; e = errors.Unwrap(e) {

@@ -153,10 +153,8 @@ func (s *EventStream) PublishProcessingStopped() {
 	s.persistAndPublish(evt)
 }
 
-// PublishError sends an ERROR event. The code is the most specific typed code
-// in the error chain (errors.DeepestCode) — so clients can switch on a stable
-// machine-readable code (e.g. UNAVAILABLE, RATE_LIMITED) instead of matching the
-// message text — and the content is the curated user-facing message.
+// PublishError sends an ERROR event carrying the typed DeepestCode (so clients
+// switch on a stable code instead of matching text) and the curated UserMessage.
 func (s *EventStream) PublishError(err error) {
 	msg := SanitizeUTF8(apperrors.UserMessage(err))
 	s.persistAndPublish(&pb.SessionEvent{
