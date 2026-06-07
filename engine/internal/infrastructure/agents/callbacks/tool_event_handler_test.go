@@ -44,7 +44,7 @@ func newTestToolEventHandler(collector *eventCollector, recorder *mockToolCallRe
 	if recorder == nil {
 		recorder = &mockToolCallRecorder{}
 	}
-	handler := NewToolEventHandler(emitter, counter, nil, recorder, sessionID)
+	handler := NewToolEventHandler(emitter, counter, nil, recorder, sessionID, nil)
 	return handler, counter
 }
 
@@ -117,6 +117,73 @@ func TestOnToolEnd_ErrorPrefixLiftsIntoEventError(t *testing.T) {
 	require.NotNil(t, event.Error, "[ERROR] prefix must lift into event.Error")
 	assert.Equal(t, "tool_error", event.Error.Code)
 	assert.Equal(t, errPayload, event.Error.Message)
+}
+
+func TestOnToolEnd_TripsBreakerAfterConsecutiveErrors(t *testing.T) {
+	collector := newEventCollector()
+	handler, _ := newTestToolEventHandler(collector, nil)
+
+	info := &callbacks.RunInfo{Name: "device_list"}
+	out := &einotool.CallbackOutput{Response: "[ERROR] ERROR: Invalid input."}
+
+	// Below threshold: no abort.
+	for i := 0; i < defaultMaxConsecutiveToolErrors-1; i++ {
+		handler.OnToolEnd(context.Background(), info, out)
+	}
+	if _, _, ok := handler.Aborted(); ok {
+		t.Fatalf("breaker tripped before threshold (%d errors)", defaultMaxConsecutiveToolErrors-1)
+	}
+
+	// The threshold-th consecutive error trips the breaker.
+	handler.OnToolEnd(context.Background(), info, out)
+	tool, lastErr, ok := handler.Aborted()
+	require.True(t, ok, "breaker must trip at threshold")
+	assert.Equal(t, "device_list", tool)
+	assert.Equal(t, "[ERROR] ERROR: Invalid input.", lastErr)
+}
+
+func TestOnToolEnd_BreakerResetsOnSuccess(t *testing.T) {
+	collector := newEventCollector()
+	handler, _ := newTestToolEventHandler(collector, nil)
+
+	info := &callbacks.RunInfo{Name: "device_list"}
+	errOut := &einotool.CallbackOutput{Response: "[ERROR] boom"}
+	okOut := &einotool.CallbackOutput{Response: `{"devices":[]}`}
+
+	for i := 0; i < defaultMaxConsecutiveToolErrors-1; i++ {
+		handler.OnToolEnd(context.Background(), info, errOut)
+	}
+	handler.OnToolEnd(context.Background(), info, okOut) // success resets the streak
+	handler.OnToolEnd(context.Background(), info, errOut)
+
+	if _, _, ok := handler.Aborted(); ok {
+		t.Fatal("breaker must not trip when a success reset the error streak")
+	}
+}
+
+func TestOnToolEnd_BreakerSuccessOnOtherToolDoesNotReset(t *testing.T) {
+	collector := newEventCollector()
+	handler, _ := newTestToolEventHandler(collector, nil)
+
+	errOut := &einotool.CallbackOutput{Response: "[ERROR] boom"}
+	okOut := &einotool.CallbackOutput{Response: `{"ok":true}`}
+	// tool_a keeps failing; an unrelated tool_b success must not reset tool_a's streak.
+	for i := 0; i < defaultMaxConsecutiveToolErrors-1; i++ {
+		handler.OnToolEnd(context.Background(), &callbacks.RunInfo{Name: "tool_a"}, errOut)
+	}
+	handler.OnToolEnd(context.Background(), &callbacks.RunInfo{Name: "tool_b"}, okOut)
+	handler.OnToolEnd(context.Background(), &callbacks.RunInfo{Name: "tool_a"}, errOut)
+
+	if _, _, ok := handler.Aborted(); !ok {
+		t.Fatal("tool_a reached the threshold; tool_b success must not have reset it")
+	}
+}
+
+func TestFormatToolLoopAbortMessage(t *testing.T) {
+	msg := formatToolLoopAbortMessage("device_list", "[ERROR] ERROR: Invalid input.")
+	assert.Contains(t, msg, "device_list")
+	assert.Contains(t, msg, "ERROR: Invalid input.")
+	assert.NotContains(t, msg, "[ERROR]")
 }
 
 func TestOnToolError_IncrementsStep(t *testing.T) {

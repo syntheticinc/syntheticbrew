@@ -345,12 +345,18 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 		a.contextLogger.LogContext(ctx, messages, 0)
 	}
 
+	// loopCtx is cancelled by the tool error-loop breaker (via AbortLoop) to halt
+	// a runaway loop; the outer ctx stays alive for the graceful final answer.
+	loopCtx, loopCancel := context.WithCancel(ctx)
+	defer loopCancel()
+
 	cb := callbacks.NewBuilder(callbacks.BuilderConfig{
 		EventCallback:    eventCallback,
 		Store:            a.stepContentStore,
 		SessionID:        a.sessionID,
 		AgentID:          a.agentID,
 		ToolCallRecorder: a.toolCallRecorder,
+		AbortLoop:        loopCancel,
 	})
 	callbackOpt := cb.BuildCallbackOption()
 	slog.InfoContext(ctx, "[RUN] calling agent.Generate...")
@@ -362,9 +368,17 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 	var rateLimitCount int
 
 	for retryCount := 0; retryCount <= maxErrorRetries; retryCount++ {
-		result, err = a.agent.Generate(ctx, messages, callbackOpt)
+		result, err = a.agent.Generate(loopCtx, messages, callbackOpt)
 		if err == nil {
 			break
+		}
+
+		// Breaker-initiated stop is not a failure: emit a clear final answer.
+		if _, _, aborted := cb.ToolLoopAborted(); aborted {
+			abortMsg := cb.EmitToolLoopAbortAnswer(ctx)
+			cb.EmitTokenUsage(ctx, a.lastContextTokens())
+			slog.InfoContext(ctx, "[RUN] tool error-loop breaker stopped the turn")
+			return abortMsg, nil
 		}
 
 		switch classifyRecovery(err) {
@@ -414,9 +428,19 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 				SessionID:        a.sessionID,
 				AgentID:          a.agentID,
 				ToolCallRecorder: a.toolCallRecorder,
+				AbortLoop:        loopCancel,
 			})
 			callbackOpt = cb.BuildCallbackOption()
 		}
+	}
+
+	// If the tool error-loop breaker force-stopped the turn, emit a clear final
+	// answer and return — the loop produced no real content of its own.
+	if abortMsg := cb.EmitToolLoopAbortAnswer(ctx); abortMsg != "" {
+		messages = append(messages, &schema.Message{Role: schema.Assistant, Content: abortMsg})
+		cb.EmitTokenUsage(ctx, a.lastContextTokens())
+		slog.InfoContext(ctx, "[RUN] tool error-loop breaker tripped, returning abort message")
+		return abortMsg, nil
 	}
 
 	// Drop residual content on HITL turns — the widget is the message.
@@ -479,6 +503,12 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		return nil
 	}
 
+	// loopCtx is the context the Eino react loop runs under. The tool error-loop
+	// breaker cancels it (via AbortLoop) to actually halt a runaway loop; the
+	// outer ctx stays alive so the graceful final answer can still be emitted.
+	loopCtx, loopCancel := context.WithCancel(ctx)
+	defer loopCancel()
+
 	cb := callbacks.NewBuilder(callbacks.BuilderConfig{
 		EventCallback:    eventCallback,
 		ChunkCallback:    wrappedCallback,
@@ -486,6 +516,7 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		SessionID:        a.sessionID,
 		AgentID:          a.agentID,
 		ToolCallRecorder: a.toolCallRecorder,
+		AbortLoop:        loopCancel,
 	})
 	callbackOpt := cb.BuildCallbackOption()
 	slog.InfoContext(ctx, "[STREAM] Created callback handler, calling agent.Stream...")
@@ -509,7 +540,7 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		// instead of blocking the SSE connection indefinitely.
 		var streamCtx context.Context
 		var streamCancel context.CancelFunc
-		streamCtx, streamCancel = context.WithTimeout(ctx, streamTimeout)
+		streamCtx, streamCancel = context.WithTimeout(loopCtx, streamTimeout)
 		reader, err = a.agent.Stream(streamCtx, messages, callbackOpt)
 		if err == nil {
 			// Keep context alive for drain loop; cancel deferred at function exit
@@ -517,6 +548,17 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 			break
 		}
 		streamCancel() // cancel failed attempt immediately
+
+		// The error-loop breaker cancelled loopCtx to stop a runaway tool loop.
+		// That surfaces here as a context error, but it is not a failure: emit a
+		// clear final answer (on the still-alive outer ctx) and finish the turn.
+		if _, _, aborted := cb.ToolLoopAborted(); aborted {
+			cb.WaitStreamDone()
+			cb.EmitToolLoopAbortAnswer(ctx)
+			cb.EmitTokenUsage(ctx, a.lastContextTokens())
+			slog.InfoContext(ctx, "[STREAM] tool error-loop breaker stopped the turn")
+			return nil
+		}
 
 		switch classifyRecovery(err) {
 		case recoveryBackoff:
@@ -574,6 +616,7 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 				SessionID:        a.sessionID,
 				AgentID:          a.agentID,
 				ToolCallRecorder: a.toolCallRecorder,
+				AbortLoop:        loopCancel,
 			})
 			callbackOpt = cb.BuildCallbackOption()
 		}
@@ -631,6 +674,12 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		slog.InfoContext(ctx, "[STREAM] suppressing assistant content on HITL turn",
 			"dropped_length", len(finalContent))
 		finalContent = ""
+	}
+
+	// If the tool error-loop breaker force-stopped the turn, emit a clear final
+	// answer to the user (the loop produced no real answer) and record it.
+	if abortMsg := cb.EmitToolLoopAbortAnswer(ctx); abortMsg != "" {
+		finalContent = abortMsg
 	}
 
 	if finalContent != "" {

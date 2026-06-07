@@ -73,7 +73,7 @@ func TestPartnerRepro_EndToEnd_PermissionDeniedDoesNotAbortTurn(t *testing.T) {
 	counter := enginecallbacks.NewStepCounter()
 	stepBefore := counter.GetStep()
 
-	handler := enginecallbacks.NewToolEventHandler(emitter, counter, nil, &nullRecorder{}, "partner-session")
+	handler := enginecallbacks.NewToolEventHandler(emitter, counter, nil, &nullRecorder{}, "partner-session", nil)
 	handler.OnToolEnd(
 		context.Background(),
 		&callbacks.RunInfo{Name: "rule_create"},

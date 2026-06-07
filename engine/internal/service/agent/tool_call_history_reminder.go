@@ -18,12 +18,12 @@ type ToolCallRecorder interface {
 // ToolCallHistoryReminder tracks tool calls per session and reminds the agent
 // to avoid redundant calls. Implements ContextReminderProvider.
 type ToolCallHistoryReminder struct {
-	mu                   sync.Mutex
-	callsPerTool         map[string]map[string]int  // sessionID -> toolName -> count
-	consecutiveErrors    map[string]map[string]int  // sessionID -> toolName -> consecutive error count
-	lastToolResult       map[string]map[string]bool // sessionID -> toolName -> was last result an error?
-	lastToolName         map[string]string           // sessionID -> last tool name called
-	consecutiveSameTool  map[string]int              // sessionID -> consecutive same-tool call count
+	mu                  sync.Mutex
+	callsPerTool        map[string]map[string]int  // sessionID -> toolName -> count
+	consecutiveErrors   map[string]map[string]int  // sessionID -> toolName -> consecutive error count
+	lastToolResult      map[string]map[string]bool // sessionID -> toolName -> was last result an error?
+	lastToolName        map[string]string          // sessionID -> last tool name called
+	consecutiveSameTool map[string]int             // sessionID -> consecutive same-tool call count
 }
 
 // NewToolCallHistoryReminder creates a new ToolCallHistoryReminder

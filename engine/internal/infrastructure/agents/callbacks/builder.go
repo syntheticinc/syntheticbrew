@@ -2,6 +2,8 @@ package callbacks
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent"
@@ -19,6 +21,10 @@ type BuilderConfig struct {
 	SessionID        string
 	AgentID          string // "supervisor" or "code-agent-{uuid}"
 	ToolCallRecorder ToolCallRecorder
+	// AbortLoop cancels the context the Eino react loop runs under. The tool
+	// error-loop breaker calls it to actually halt the loop (cancelling a
+	// per-callback child context does not stop Eino). May be nil in tests.
+	AbortLoop context.CancelFunc
 }
 
 // AgentCallbackBuilder wires together all callback sub-components
@@ -44,7 +50,7 @@ func NewBuilder(cfg BuilderConfig) *AgentCallbackBuilder {
 	tokenAcc := NewTokenAccumulator()
 
 	modelHandler := NewModelEventHandler(emitter, counter, extractor, cfg.Store, cfg.ChunkCallback, tokenAcc)
-	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID)
+	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID, cfg.AbortLoop)
 
 	return &AgentCallbackBuilder{
 		counter:      counter,
@@ -119,4 +125,41 @@ func (b *AgentCallbackBuilder) GetTotalTokens() int {
 // HITLSeen reports whether a HITL tool fired during this run.
 func (b *AgentCallbackBuilder) HITLSeen() bool {
 	return b.modelHandler.HITLSeen()
+}
+
+// ToolLoopAborted reports whether the tool error-loop breaker tripped this run,
+// returning the offending tool and its last error.
+func (b *AgentCallbackBuilder) ToolLoopAborted() (tool, lastErr string, ok bool) {
+	return b.toolHandler.Aborted()
+}
+
+// EmitToolLoopAbortAnswer emits a final assistant answer when the error-loop
+// breaker force-stopped the turn and returns its text (for history), or "" when
+// the breaker did not trip.
+func (b *AgentCallbackBuilder) EmitToolLoopAbortAnswer(ctx context.Context) string {
+	tool, lastErr, ok := b.toolHandler.Aborted()
+	if !ok {
+		return ""
+	}
+	msg := formatToolLoopAbortMessage(tool, lastErr)
+	b.emitter.Emit(ctx, &domain.AgentEvent{
+		Type:       domain.EventTypeAnswer,
+		Content:    msg,
+		IsComplete: true,
+	})
+	return msg
+}
+
+// formatToolLoopAbortMessage builds a user-facing message explaining that the
+// turn was stopped because a tool kept failing. reason is the last tool error
+// with the internal "[ERROR] " marker stripped and length-capped.
+func formatToolLoopAbortMessage(tool, lastErr string) string {
+	reason := strings.TrimSpace(strings.TrimPrefix(lastErr, "[ERROR]"))
+	if len(reason) > 300 {
+		reason = reason[:300] + "…"
+	}
+	if reason == "" {
+		return fmt.Sprintf("I couldn't complete this request: the %q operation kept failing, so I stopped retrying to avoid looping. Please check the request details or try again shortly.", tool)
+	}
+	return fmt.Sprintf("I couldn't complete this request: the %q operation kept failing (%s). I stopped retrying to avoid looping. Please check the request details or try again shortly.", tool, reason)
 }
