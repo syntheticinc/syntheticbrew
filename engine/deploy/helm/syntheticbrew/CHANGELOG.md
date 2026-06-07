@@ -7,6 +7,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-06-07
+
+### Changed
+- Bumps `appVersion` to **1.5.0**. Engine 1.5.0 adds typed error codes on SSE
+  error events, hard-stops runaway tool-error loops with a graceful final
+  answer, and suppresses the empty final-answer blank bubble. No chart template
+  changes; pulling 0.9.2 picks up the engine changes.
+
 ## [0.9.1] - 2026-05-29
 
 ### Changed

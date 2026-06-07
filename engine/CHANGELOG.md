@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.5.0] — 2026-06-07
+
+### Added
+
+- **Typed error codes on SSE error events** — `ERROR` events now carry the most
+  specific machine-readable code from the error chain (`errors.DeepestCode`)
+  instead of a hardcoded `internal`, and the content is the curated user-facing
+  message (`errors.UserMessage`) rather than the raw technical chain. Circuit
+  breaker rejections surface as a typed `UNAVAILABLE`. Clients can switch on a
+  stable code (`INTERNAL_ERROR`, `UNAVAILABLE`, `RATE_LIMITED`, …) instead of
+  string-matching the message. **Contract change:** the `code` field on SSE
+  error events changes from the literal `internal` to the typed codes; consumers
+  that matched `code == "internal"` should switch to the typed values.
+
+### Fixed
+
+- **Runaway tool-error loops are now hard-stopped with a graceful answer** — when
+  a single tool returns an `[ERROR]` result four times in a row within one turn,
+  the agent loop is force-stopped (deterministically, without relying on the
+  model heeding the advisory warning) and a clear final assistant message naming
+  the failing tool is emitted, instead of looping until `MaxSteps` / client
+  timeout. Works in both the streaming and non-streaming paths.
+- **Empty final answer no longer renders a blank assistant bubble** — streaming
+  turns emitted a trailing empty-content `ANSWER` event (turn completion is
+  signalled separately by `PROCESSING_STOPPED`); it is now suppressed at the
+  projection layer, removing the blank-bubble flash on clients (notably on HITL
+  turns where accumulated prose is intentionally suppressed).
+
 ## [1.4.1] — 2026-05-29
 
 ### Fixed
