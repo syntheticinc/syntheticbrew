@@ -260,9 +260,8 @@ func (s *EventStream) convertEvent(event *domain.AgentEvent) *pb.SessionEvent {
 		if streamed, _ := event.Metadata["already_streamed"].(bool); streamed {
 			return nil
 		}
-		// Streaming turns always emit a final IsComplete answer with empty content
-		// (completion is signalled separately by PROCESSING_STOPPED); publishing it
-		// renders a blank assistant bubble. Suppress empty answers.
+		// Streaming emits a final empty-content answer (completion is signalled
+		// by PROCESSING_STOPPED); publishing it renders a blank bubble.
 		if SanitizeUTF8(event.Content) == "" {
 			return nil
 		}
