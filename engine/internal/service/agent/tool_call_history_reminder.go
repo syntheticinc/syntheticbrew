@@ -98,23 +98,6 @@ func (r *ToolCallHistoryReminder) RecordToolResult(sessionID, toolName, result s
 	r.lastToolResult[sessionID][toolName] = isError
 }
 
-// ConsecutiveErrors returns how many times in a row toolName returned an
-// [ERROR] result for the session. Zero once a call succeeds. Used by the
-// agent loop to hard-stop a tool that is failing identically every call.
-func (r *ToolCallHistoryReminder) ConsecutiveErrors(sessionID, toolName string) int {
-	if sessionID == "" || toolName == "" {
-		return 0
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if m := r.consecutiveErrors[sessionID]; m != nil {
-		return m[toolName]
-	}
-	return 0
-}
-
 // ClearSession removes all tool call history for a session
 func (r *ToolCallHistoryReminder) ClearSession(sessionID string) {
 	if sessionID == "" {

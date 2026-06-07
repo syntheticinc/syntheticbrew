@@ -472,29 +472,3 @@ func TestRecordToolResult_EmptyParams(t *testing.T) {
 		t.Errorf("expected no reminder after empty params: %s", content)
 	}
 }
-
-func TestConsecutiveErrors(t *testing.T) {
-	r := NewToolCallHistoryReminder()
-
-	if got := r.ConsecutiveErrors("s1", "device_list"); got != 0 {
-		t.Fatalf("empty: want 0, got %d", got)
-	}
-
-	r.RecordToolResult("s1", "device_list", "[ERROR] boom")
-	r.RecordToolResult("s1", "device_list", "[ERROR] boom")
-	if got := r.ConsecutiveErrors("s1", "device_list"); got != 2 {
-		t.Fatalf("two errors: want 2, got %d", got)
-	}
-
-	// A success resets the streak.
-	r.RecordToolResult("s1", "device_list", `{"devices":[]}`)
-	if got := r.ConsecutiveErrors("s1", "device_list"); got != 0 {
-		t.Fatalf("after success: want 0, got %d", got)
-	}
-
-	// Per-tool isolation.
-	r.RecordToolResult("s1", "rule_create", "[ERROR] nope")
-	if got := r.ConsecutiveErrors("s1", "device_list"); got != 0 {
-		t.Fatalf("other tool error must not affect device_list, got %d", got)
-	}
-}

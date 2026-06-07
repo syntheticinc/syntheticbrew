@@ -32,14 +32,6 @@ type ToolCallRecorder interface {
 	RecordToolResult(sessionID, toolName, result string)
 }
 
-// errorLoopReporter is an optional capability of a ToolCallRecorder: it reports
-// how many times a tool has errored consecutively, so the handler can hard-stop
-// a runaway error loop. Detected via type assertion — recorders that don't
-// implement it simply disable the breaker.
-type errorLoopReporter interface {
-	ConsecutiveErrors(sessionID, toolName string) int
-}
-
 // ToolEventHandler handles tool start/end callbacks.
 type ToolEventHandler struct {
 	emitter      *EventEmitter
@@ -50,6 +42,7 @@ type ToolEventHandler struct {
 	errThreshold int
 
 	mu           sync.Mutex
+	consecErr    map[string]int // per-tool consecutive [ERROR] count, this turn
 	aborted      bool
 	abortTool    string
 	abortLastErr string
@@ -70,26 +63,28 @@ func NewToolEventHandler(
 		recorder:     recorder,
 		sessionID:    sessionID,
 		errThreshold: defaultMaxConsecutiveToolErrors,
+		consecErr:    make(map[string]int),
 	}
 }
 
 // tripBreakerIfLooping force-stops the turn when toolName has returned an
-// [ERROR] result errThreshold times in a row. It records the abort reason and
-// cancels the returned context so Eino halts further steps. Returns the
-// (possibly cancelled) context and whether the breaker tripped.
+// [ERROR] result errThreshold times in a row. The consecutive-error count is
+// tracked locally (the handler is per-turn) rather than via the recorder, whose
+// concrete type is wrapped by adapters before it reaches this layer. A success
+// resets the tool's streak. Returns the (possibly cancelled) context and whether
+// the breaker tripped.
 func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, result string) (context.Context, bool) {
-	if !strings.HasPrefix(result, "[ERROR]") {
-		return ctx, false
-	}
-	reporter, ok := h.recorder.(errorLoopReporter)
-	if !ok {
-		return ctx, false
-	}
-	if reporter.ConsecutiveErrors(h.sessionID, toolName) < h.errThreshold {
-		return ctx, false
-	}
-
 	h.mu.Lock()
+	if !strings.HasPrefix(result, "[ERROR]") {
+		h.consecErr[toolName] = 0
+		h.mu.Unlock()
+		return ctx, false
+	}
+	h.consecErr[toolName]++
+	if h.consecErr[toolName] < h.errThreshold {
+		h.mu.Unlock()
+		return ctx, false
+	}
 	if !h.aborted {
 		h.aborted = true
 		h.abortTool = toolName

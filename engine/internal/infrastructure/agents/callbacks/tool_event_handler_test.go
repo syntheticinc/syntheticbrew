@@ -3,7 +3,6 @@ package callbacks
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -12,29 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
-
-// loopRecorder implements ToolCallRecorder + errorLoopReporter so the
-// error-loop breaker is active in tests.
-type loopRecorder struct {
-	consecutive map[string]int
-}
-
-func (r *loopRecorder) RecordToolCall(string, string) {}
-
-func (r *loopRecorder) RecordToolResult(_, toolName, result string) {
-	if r.consecutive == nil {
-		r.consecutive = map[string]int{}
-	}
-	if strings.HasPrefix(result, "[ERROR]") {
-		r.consecutive[toolName]++
-		return
-	}
-	r.consecutive[toolName] = 0
-}
-
-func (r *loopRecorder) ConsecutiveErrors(_, toolName string) int {
-	return r.consecutive[toolName]
-}
 
 // mockToolCallRecorder records tool calls and results for assertions.
 type mockToolCallRecorder struct {
@@ -145,10 +121,7 @@ func TestOnToolEnd_ErrorPrefixLiftsIntoEventError(t *testing.T) {
 
 func TestOnToolEnd_TripsBreakerAfterConsecutiveErrors(t *testing.T) {
 	collector := newEventCollector()
-	emitter := NewEventEmitter(collector.Callback, "test-agent")
-	counter := NewStepCounter()
-	rec := &loopRecorder{}
-	handler := NewToolEventHandler(emitter, counter, nil, rec, "test-session")
+	handler, _ := newTestToolEventHandler(collector, nil)
 
 	info := &callbacks.RunInfo{Name: "device_list"}
 	out := &einotool.CallbackOutput{Response: "[ERROR] ERROR: Invalid input."}
@@ -171,9 +144,7 @@ func TestOnToolEnd_TripsBreakerAfterConsecutiveErrors(t *testing.T) {
 
 func TestOnToolEnd_BreakerResetsOnSuccess(t *testing.T) {
 	collector := newEventCollector()
-	emitter := NewEventEmitter(collector.Callback, "test-agent")
-	rec := &loopRecorder{}
-	handler := NewToolEventHandler(emitter, NewStepCounter(), nil, rec, "test-session")
+	handler, _ := newTestToolEventHandler(collector, nil)
 
 	info := &callbacks.RunInfo{Name: "device_list"}
 	errOut := &einotool.CallbackOutput{Response: "[ERROR] boom"}
@@ -187,6 +158,24 @@ func TestOnToolEnd_BreakerResetsOnSuccess(t *testing.T) {
 
 	if _, _, ok := handler.Aborted(); ok {
 		t.Fatal("breaker must not trip when a success reset the error streak")
+	}
+}
+
+func TestOnToolEnd_BreakerSuccessOnOtherToolDoesNotReset(t *testing.T) {
+	collector := newEventCollector()
+	handler, _ := newTestToolEventHandler(collector, nil)
+
+	errOut := &einotool.CallbackOutput{Response: "[ERROR] boom"}
+	okOut := &einotool.CallbackOutput{Response: `{"ok":true}`}
+	// tool_a keeps failing; an unrelated tool_b success must not reset tool_a's streak.
+	for i := 0; i < defaultMaxConsecutiveToolErrors-1; i++ {
+		handler.OnToolEnd(context.Background(), &callbacks.RunInfo{Name: "tool_a"}, errOut)
+	}
+	handler.OnToolEnd(context.Background(), &callbacks.RunInfo{Name: "tool_b"}, okOut)
+	handler.OnToolEnd(context.Background(), &callbacks.RunInfo{Name: "tool_a"}, errOut)
+
+	if _, _, ok := handler.Aborted(); !ok {
+		t.Fatal("tool_a reached the threshold; tool_b success must not have reset it")
 	}
 }
 
