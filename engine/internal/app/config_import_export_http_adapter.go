@@ -514,6 +514,9 @@ func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentY
 	agentIDs := make(map[string]string, len(items))
 	for _, ag := range items {
 		applyAgentImportDefaults(&ag)
+		if err := validateMaxStepDuration(ag.MaxStepDuration); err != nil {
+			return fmt.Errorf("agent %q: %w", ag.Name, err)
+		}
 		var modelID *string
 		if ag.ModelName != "" {
 			var llm models.LLMProviderModel
