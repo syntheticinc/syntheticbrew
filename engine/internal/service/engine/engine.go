@@ -277,6 +277,7 @@ func (e *Engine) buildEffectiveAgentConfig(cfg ExecutionConfig) *config.AgentCon
 			},
 			MaxContextSize:                cfg.Flow.MaxContextSize,
 			MaxTurnDuration:               cfg.Flow.MaxTurnDuration,
+			MaxStepDuration:               cfg.Flow.MaxStepDuration,
 			EnableEnhancedToolCallChecker: true,
 		}
 	}
@@ -292,6 +293,9 @@ func (e *Engine) buildEffectiveAgentConfig(cfg ExecutionConfig) *config.AgentCon
 	if cfg.Flow.MaxTurnDuration > 0 {
 		result.MaxTurnDuration = cfg.Flow.MaxTurnDuration
 	}
+	// MaxStepDuration is per-agent and 0 = disabled is meaningful, so the Flow
+	// value is passed through verbatim (no >0 gate) — an explicit 0 disables it.
+	result.MaxStepDuration = cfg.Flow.MaxStepDuration
 
 	// Overlay Flow's system prompt when AgentConfig doesn't provide one
 	hasFlowPrompt := cfg.Flow.SystemPrompt != ""

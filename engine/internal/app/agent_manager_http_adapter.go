@@ -135,6 +135,7 @@ func (a *agentManagerHTTPAdapter) GetAgent(ctx context.Context, name string) (*d
 		MaxSteps:        rec.MaxSteps,
 		MaxContextSize:  rec.MaxContextSize,
 		MaxTurnDuration: rec.MaxTurnDuration,
+		MaxStepDuration: rec.MaxStepDuration,
 		Temperature:     rec.Temperature,
 		TopP:            rec.TopP,
 		MaxTokens:       rec.MaxTokens,
@@ -215,7 +216,20 @@ func (a *agentManagerHTTPAdapter) resolveAgentModel(ctx context.Context, req *de
 	return nil
 }
 
+// validateMaxStepDuration enforces the same bound as the DB CHECK
+// (chk_agent_step_duration) at the API layer, so an out-of-range value returns
+// 400 InvalidInput instead of surfacing as a 500-class constraint violation.
+func validateMaxStepDuration(v int) error {
+	if v == 0 || (v >= 10 && v <= 3600) {
+		return nil
+	}
+	return pkgerrors.InvalidInput("max_step_duration must be 0 (disabled) or between 10 and 3600 seconds")
+}
+
 func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
+	if err := validateMaxStepDuration(req.MaxStepDuration); err != nil {
+		return nil, err
+	}
 	if err := a.resolveAgentModel(ctx, &req); err != nil {
 		return nil, err
 	}
@@ -251,6 +265,9 @@ func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryh
 }
 
 func (a *agentManagerHTTPAdapter) UpdateAgent(ctx context.Context, name string, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
+	if err := validateMaxStepDuration(req.MaxStepDuration); err != nil {
+		return nil, err
+	}
 	name, err := a.resolveAgentName(ctx, name)
 	if err != nil {
 		return nil, err
@@ -373,6 +390,12 @@ func (a *agentManagerHTTPAdapter) PatchAgent(ctx context.Context, name string, r
 	if req.MaxTurnDuration != nil {
 		existing.MaxTurnDuration = *req.MaxTurnDuration
 	}
+	if req.MaxStepDuration != nil {
+		if err := validateMaxStepDuration(*req.MaxStepDuration); err != nil {
+			return nil, err
+		}
+		existing.MaxStepDuration = *req.MaxStepDuration
+	}
 	if req.Temperature != nil {
 		existing.Temperature = req.Temperature
 	}
@@ -477,6 +500,7 @@ func (a *agentManagerHTTPAdapter) toAgentRecord(req deliveryhttp.CreateAgentRequ
 		MaxSteps:        req.MaxSteps,
 		MaxContextSize:  req.MaxContextSize,
 		MaxTurnDuration: req.MaxTurnDuration,
+		MaxStepDuration: req.MaxStepDuration,
 		Temperature:     req.Temperature,
 		TopP:            req.TopP,
 		MaxTokens:       req.MaxTokens,

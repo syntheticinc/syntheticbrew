@@ -40,6 +40,7 @@ type Agent struct {
 	messageModifier  *MessageModifier
 	toolCallRecorder ToolCallRecorder
 	maxTurnDuration  int           // seconds, max time for a single LLM stream turn (0 = default 120s)
+	maxStepDuration  int           // seconds, per-step watchdog timeout (0 = disabled)
 	contextTokens    *atomic.Int64 // last context size reported by ContextRewriter (agent-scoped, survives across turns)
 }
 
@@ -194,7 +195,8 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 			modifier = NewMessageModifier(MessageModifierConfig{
 				SystemPrompt:      systemPrompt,
 				UrgencyWarning:    urgencyWarning,
-				MaxSteps:          maxSteps,
+				MaxSteps:          config.MaxSteps,
+				MaxTurnDuration:   config.AgentConfig.MaxTurnDuration,
 				StepContentStore:  stepContentStore,
 				ContextLogger:     contextLogger,
 				ReminderProviders: reminderProviders,
@@ -245,10 +247,13 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 		agentID = "supervisor"
 	}
 
-	// Extract maxTurnDuration from config (0 = use default 120s)
+	// Extract per-turn timing budgets from config.
+	// maxTurnDuration: 0 = use default 120s. maxStepDuration: 0 = watchdog disabled.
 	maxTurnDuration := 0
+	maxStepDuration := 0
 	if config.AgentConfig != nil {
 		maxTurnDuration = config.AgentConfig.MaxTurnDuration
+		maxStepDuration = config.AgentConfig.MaxStepDuration
 	}
 
 	return &Agent{
@@ -263,6 +268,7 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 		messageModifier:  modifier,
 		toolCallRecorder: config.ToolCallRecorder,
 		maxTurnDuration:  maxTurnDuration,
+		maxStepDuration:  maxStepDuration,
 		contextTokens:    contextTokensCounter,
 	}, nil
 }
@@ -359,6 +365,9 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 		AbortLoop:        loopCancel,
 	})
 	callbackOpt := cb.BuildCallbackOption()
+	if a.messageModifier != nil {
+		a.messageModifier.StartTurn()
+	}
 	slog.InfoContext(ctx, "[RUN] calling agent.Generate...")
 
 	const maxErrorRetries = 2
@@ -368,17 +377,26 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 	var rateLimitCount int
 
 	for retryCount := 0; retryCount <= maxErrorRetries; retryCount++ {
+		stopWatchdog := cb.StartStepWatchdog(loopCtx, a.stepWatchdogDuration())
 		result, err = a.agent.Generate(loopCtx, messages, callbackOpt)
+		stopWatchdog()
 		if err == nil {
 			break
 		}
 
-		// Breaker-initiated stop is not a failure: emit a clear final answer.
-		if _, _, aborted := cb.ToolLoopAborted(); aborted {
-			abortMsg := cb.EmitToolLoopAbortAnswer(ctx)
-			cb.EmitTokenUsage(ctx, a.lastContextTokens())
-			slog.InfoContext(ctx, "[RUN] tool error-loop breaker stopped the turn")
-			return abortMsg, nil
+		// A tripped terminal condition (loop-breaker or step watchdog) is not a
+		// failure: emit the graceful final answer and finish.
+		if _, _, _, ok := cb.TerminalTripped(); ok {
+			msg := a.finishTerminal(ctx, cb)
+			slog.InfoContext(ctx, "[RUN] turn terminated gracefully")
+			return msg, nil
+		}
+		// Eino step-budget exhausted or our turn-time deadline — also graceful.
+		if reason, ok := terminalReasonForError(err, ctx.Err()); ok {
+			cb.TripTerminal(reason, "")
+			msg := a.finishTerminal(ctx, cb)
+			slog.InfoContext(ctx, "[RUN] turn ended on budget", "reason", reason.String())
+			return msg, nil
 		}
 
 		switch classifyRecovery(err) {
@@ -434,13 +452,13 @@ func (a *Agent) RunWithCallbacks(ctx context.Context, input string, eventCallbac
 		}
 	}
 
-	// If the tool error-loop breaker force-stopped the turn, emit a clear final
-	// answer and return — the loop produced no real content of its own.
-	if abortMsg := cb.EmitToolLoopAbortAnswer(ctx); abortMsg != "" {
-		messages = append(messages, &schema.Message{Role: schema.Assistant, Content: abortMsg})
-		cb.EmitTokenUsage(ctx, a.lastContextTokens())
-		slog.InfoContext(ctx, "[RUN] tool error-loop breaker tripped, returning abort message")
-		return abortMsg, nil
+	// If a terminal condition tripped during the successful Generate, emit the
+	// graceful final answer instead of the model's residual content. The answer
+	// reaches history via the emitted event, so the turn ends here.
+	if _, _, _, ok := cb.TerminalTripped(); ok {
+		msg := a.finishTerminal(ctx, cb)
+		slog.InfoContext(ctx, "[RUN] turn terminated gracefully (post-generate)")
+		return msg, nil
 	}
 
 	// Drop residual content on HITL turns — the widget is the message.
@@ -519,6 +537,9 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		AbortLoop:        loopCancel,
 	})
 	callbackOpt := cb.BuildCallbackOption()
+	if a.messageModifier != nil {
+		a.messageModifier.StartTurn()
+	}
 	slog.InfoContext(ctx, "[STREAM] Created callback handler, calling agent.Stream...")
 
 	// Retry on recoverable errors
@@ -549,14 +570,19 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		}
 		streamCancel() // cancel failed attempt immediately
 
-		// The error-loop breaker cancelled loopCtx to stop a runaway tool loop.
-		// That surfaces here as a context error, but it is not a failure: emit a
-		// clear final answer (on the still-alive outer ctx) and finish the turn.
-		if _, _, aborted := cb.ToolLoopAborted(); aborted {
-			cb.WaitStreamDone()
-			cb.EmitToolLoopAbortAnswer(ctx)
-			cb.EmitTokenUsage(ctx, a.lastContextTokens())
-			slog.InfoContext(ctx, "[STREAM] tool error-loop breaker stopped the turn")
+		// A tripped terminal condition (loop-breaker / step watchdog) cancelled
+		// loopCtx; that surfaces here as a context error but is not a failure.
+		// Emit the graceful final answer (on the still-alive outer ctx) and finish.
+		if _, _, _, ok := cb.TerminalTripped(); ok {
+			a.finishTerminal(ctx, cb)
+			slog.InfoContext(ctx, "[STREAM] turn terminated gracefully")
+			return nil
+		}
+		// Eino step-budget exhausted or our turn-time deadline — also graceful.
+		if reason, ok := terminalReasonForError(err, ctx.Err()); ok {
+			cb.TripTerminal(reason, "")
+			a.finishTerminal(ctx, cb)
+			slog.InfoContext(ctx, "[STREAM] turn ended on budget", "reason", reason.String())
 			return nil
 		}
 
@@ -626,6 +652,10 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 	}
 	slog.InfoContext(ctx, "[STREAM] agent.Stream returned reader, starting drain loop...")
 
+	// The step watchdog covers the drain loop, where a hung model call or tool
+	// would otherwise block reader.Recv indefinitely.
+	stopWatchdog := cb.StartStepWatchdog(loopCtx, a.stepWatchdogDuration())
+
 	// Drain the main stream — all events are handled by callbacks
 	recvCount := 0
 	for {
@@ -647,11 +677,25 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 				slog.InfoContext(ctx, "[STREAM] context cancelled during recv", "recv_count", recvCount)
 				break
 			}
+			// A terminal condition tripped (loop-breaker / step watchdog); the
+			// graceful answer is emitted after the loop.
+			if _, _, _, ok := cb.TerminalTripped(); ok {
+				slog.InfoContext(ctx, "[STREAM] terminal condition during recv", "recv_count", recvCount)
+				break
+			}
+			// Eino step-budget exhausted or our turn-time deadline — graceful.
+			if reason, ok := terminalReasonForError(err, ctx.Err()); ok {
+				cb.TripTerminal(reason, "")
+				slog.InfoContext(ctx, "[STREAM] budget exhausted during recv", "reason", reason.String(), "recv_count", recvCount)
+				break
+			}
+			stopWatchdog()
 			slog.ErrorContext(ctx, "[STREAM] reader.Recv failed", "error", err, "recv_count", recvCount)
 			return errors.Wrap(err, errors.CodeInternal, "stream read failed")
 		}
 		slog.DebugContext(ctx, "[STREAM] reader.Recv successful", "recv_count", recvCount)
 	}
+	stopWatchdog()
 
 	slog.InfoContext(ctx, "[STREAM] Drain loop completed", "total_recv", recvCount)
 
@@ -661,6 +705,16 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 	// ProcessingStopped fires before all chunks reach the SSE client.
 	cb.WaitStreamDone()
 	slog.InfoContext(ctx, "[STREAM] Callback goroutine completed")
+
+	// If a terminal condition tripped (loop-breaker / watchdog / budget), emit the
+	// single graceful answer and finish. Partial streamed content is suppressed —
+	// the graceful message stands alone, mirroring the model-authored soft-landing.
+	if reason, _, _, ok := cb.TerminalTripped(); ok {
+		cb.EmitTerminalAnswer(ctx)
+		cb.EmitTokenUsage(ctx, a.lastContextTokens())
+		slog.InfoContext(ctx, "[STREAM] turn terminated gracefully (post-drain)", "reason", reason.String())
+		return nil
+	}
 
 	// Finalize any accumulated text that wasn't flushed by onToolStart
 	cb.FinalizeAccumulatedText(ctx)
@@ -674,12 +728,6 @@ func (a *Agent) Stream(ctx context.Context, input string, callback func(chunk st
 		slog.InfoContext(ctx, "[STREAM] suppressing assistant content on HITL turn",
 			"dropped_length", len(finalContent))
 		finalContent = ""
-	}
-
-	// If the tool error-loop breaker force-stopped the turn, emit a clear final
-	// answer to the user (the loop produced no real answer) and record it.
-	if abortMsg := cb.EmitToolLoopAbortAnswer(ctx); abortMsg != "" {
-		finalContent = abortMsg
 	}
 
 	if finalContent != "" {
@@ -773,6 +821,39 @@ func classifyRecovery(err error) recoveryAction {
 // Formula: 2^attempt * 2 seconds (2s, 4s, 8s, 16s, 32s)
 func rateLimitBackoff(attempt int) time.Duration {
 	return time.Duration(1<<uint(attempt)) * 2 * time.Second
+}
+
+// terminalReasonForError maps an error out of the Eino react agent to a graceful
+// terminal reason when the turn ended because a budget was exhausted rather than
+// a genuine fault. outerCtxErr distinguishes a real client cancel (outer ctx
+// done) from our own child-scoped turn-time deadline (outer ctx still alive).
+func terminalReasonForError(err error, outerCtxErr error) (callbacks.TerminalReason, bool) {
+	if stdErrors.Is(err, compose.ErrExceedMaxSteps) || errors.Is(err, errors.CodeAgentBudgetExhausted) {
+		return callbacks.TerminalStepBudget, true
+	}
+	if outerCtxErr == nil && stdErrors.Is(err, context.DeadlineExceeded) {
+		return callbacks.TerminalTimeBudget, true
+	}
+	return callbacks.TerminalNone, false
+}
+
+// finishTerminal emits the graceful final answer for a tripped terminal
+// condition and flushes token usage, returning the answer text. The caller then
+// returns nil so the client receives answer + done — never a bare error.
+func (a *Agent) finishTerminal(ctx context.Context, cb *callbacks.AgentCallbackBuilder) string {
+	cb.WaitStreamDone()
+	msg := cb.EmitTerminalAnswer(ctx)
+	cb.EmitTokenUsage(ctx, a.lastContextTokens())
+	return msg
+}
+
+// stepWatchdogDuration converts the configured per-step timeout (seconds) into a
+// duration; non-positive disables the watchdog.
+func (a *Agent) stepWatchdogDuration() time.Duration {
+	if a.maxStepDuration <= 0 {
+		return 0
+	}
+	return time.Duration(a.maxStepDuration) * time.Second
 }
 
 // formatAgentErrorFeedback creates a user-friendly error message for the agent

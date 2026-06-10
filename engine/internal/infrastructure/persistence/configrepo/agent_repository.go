@@ -23,6 +23,7 @@ type AgentRecord struct {
 	MaxSteps        int
 	MaxContextSize  int
 	MaxTurnDuration int
+	MaxStepDuration int
 	Temperature     *float64
 	TopP            *float64
 	MaxTokens       *int
@@ -199,6 +200,7 @@ func (r *GORMAgentRepository) Update(ctx context.Context, name string, record *A
 			"max_steps":         agent.MaxSteps,
 			"max_context_size":  agent.MaxContextSize,
 			"max_turn_duration": agent.MaxTurnDuration,
+			"max_step_duration": agent.MaxStepDuration,
 			"temperature":       agent.Temperature,
 			"top_p":             agent.TopP,
 			"max_tokens":        agent.MaxTokens,
@@ -275,6 +277,7 @@ func toAgentRecord(a models.AgentModel) (AgentRecord, error) {
 		MaxSteps:        a.MaxSteps,
 		MaxContextSize:  a.MaxContextSize,
 		MaxTurnDuration: a.MaxTurnDuration,
+		MaxStepDuration: a.MaxStepDuration,
 		Temperature:     a.Temperature,
 		TopP:            a.TopP,
 		MaxTokens:       a.MaxTokens,
@@ -342,6 +345,7 @@ func (r *GORMAgentRepository) toAgentModelWithDB(db *gorm.DB, rec *AgentRecord) 
 		MaxSteps:        rec.MaxSteps,
 		MaxContextSize:  rec.MaxContextSize,
 		MaxTurnDuration: rec.MaxTurnDuration,
+		MaxStepDuration: rec.MaxStepDuration,
 		Temperature:     rec.Temperature,
 		TopP:            rec.TopP,
 		MaxTokens:       rec.MaxTokens,

@@ -84,6 +84,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 			max_steps INTEGER NOT NULL DEFAULT 0,
 			max_context_size INTEGER NOT NULL DEFAULT 16000,
 			max_turn_duration INTEGER NOT NULL DEFAULT 120,
+			max_step_duration INTEGER NOT NULL DEFAULT 0,
 			temperature REAL,
 			top_p REAL,
 			max_tokens INTEGER,
@@ -161,9 +162,10 @@ func seedTestData(t *testing.T, db *gorm.DB) {
 		SystemPrompt:   "You are a sales assistant.",
 		Lifecycle:      "persistent",
 		ToolExecution:  "sequential",
-		MaxSteps:       30,
-		MaxContextSize: 16000,
-		ConfirmBefore:  &confirmBefore,
+		MaxSteps:        30,
+		MaxContextSize:  16000,
+		MaxStepDuration: 45,
+		ConfirmBefore:   &confirmBefore,
 	}
 	require.NoError(t, db.Create(&agent).Error)
 
@@ -425,7 +427,14 @@ func TestExportImportRoundTrip(t *testing.T) {
 		require.NotNil(t, a2, "agent %q missing after round-trip", a1.Name)
 		assert.Equal(t, a1.SystemPrompt, a2.SystemPrompt)
 		assert.Equal(t, a1.Lifecycle, a2.Lifecycle)
+		assert.Equal(t, a1.MaxStepDuration, a2.MaxStepDuration, "max_step_duration must survive export→import for agent %q", a1.Name)
 	}
+
+	// The seeded "sales" agent carries a non-zero max_step_duration; assert the
+	// concrete value (45) survives the full export→import→re-export round-trip.
+	sales := findAgentYAML(cfg2.Agents.Items, "sales")
+	require.NotNil(t, sales, "sales agent missing after round-trip")
+	assert.Equal(t, 45, sales.MaxStepDuration, "max_step_duration value must round-trip verbatim")
 }
 
 func TestExportYAML_EmptyDB(t *testing.T) {

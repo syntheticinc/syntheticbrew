@@ -285,6 +285,7 @@ func toFlow(rec configrepo.AgentRecord) *domain.Flow {
 		MaxSteps:        rec.MaxSteps,
 		MaxContextSize:  rec.MaxContextSize,
 		MaxTurnDuration: rec.MaxTurnDuration,
+		MaxStepDuration: rec.MaxStepDuration,
 		ToolExecution:   rec.ToolExecution,
 		Lifecycle:       lifecycle,
 		Spawn:           spawn,

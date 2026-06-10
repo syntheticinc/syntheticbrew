@@ -7,9 +7,23 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
+)
+
+// finalizeDirective is injected before a model call once the turn is about to
+// exhaust its time or step budget. It forces the model to stop calling tools and
+// produce its final answer from what it already has — a graceful soft-landing
+// inside the budget rather than running into the hard wall with no answer.
+const finalizeDirective = "\n\n**BUDGET REACHED — FINAL ANSWER REQUIRED NOW.** You are out of time/steps for this turn. Do NOT call any more tools. Using only the information you have already gathered, write your best, complete final answer to the user right now. If you could not fully finish, briefly state what you found and what still remains so the user can follow up."
+
+// softLandingTimeNumerator/Denominator express the fraction of max_turn_duration
+// at which the finalize directive begins firing (9/10 = 90%).
+const (
+	softLandingTimeNumerator   = 9
+	softLandingTimeDenominator = 10
 )
 
 // MessageModifier modifies messages before sending to the model
@@ -18,13 +32,15 @@ import (
 type MessageModifier struct {
 	systemPrompt      string
 	urgencyWarning    string
-	maxSteps          int
+	maxSteps          int // configured per-turn step budget; 0 = unlimited
+	maxTurnDuration   int // configured per-turn time budget in seconds; 0 = none
 	stepContentStore  StepContentStoreInterface
 	contextLogger     ContextLoggerInterface
 	reminderProviders []ContextReminderProvider
 	sessionID         string
 	toolNames         []string // Available tool names for dynamic injection
 	stepCounter       int
+	turnStart         time.Time // stamped by StartTurn; drives time soft-landing
 	mu                sync.Mutex
 }
 
@@ -32,7 +48,8 @@ type MessageModifier struct {
 type MessageModifierConfig struct {
 	SystemPrompt      string
 	UrgencyWarning    string
-	MaxSteps          int
+	MaxSteps          int // configured per-turn step budget; 0 = unlimited
+	MaxTurnDuration   int // configured per-turn time budget in seconds; 0 = none
 	StepContentStore  StepContentStoreInterface
 	ContextLogger     ContextLoggerInterface
 	ReminderProviders []ContextReminderProvider
@@ -46,6 +63,7 @@ func NewMessageModifier(cfg MessageModifierConfig) *MessageModifier {
 		systemPrompt:      cfg.SystemPrompt,
 		urgencyWarning:    cfg.UrgencyWarning,
 		maxSteps:          cfg.MaxSteps,
+		maxTurnDuration:   cfg.MaxTurnDuration,
 		stepContentStore:  cfg.StepContentStore,
 		contextLogger:     cfg.ContextLogger,
 		reminderProviders: cfg.ReminderProviders,
@@ -60,6 +78,7 @@ func NewMessageModifier(cfg MessageModifierConfig) *MessageModifier {
 func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) []*schema.Message {
 	m.mu.Lock()
 	currentStep := m.stepCounter
+	turnStart := m.turnStart
 	m.mu.Unlock()
 
 	// Build system prompt with urgency warning if approaching max steps
@@ -86,6 +105,14 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 			urgencyMsg := fmt.Sprintf(m.urgencyWarning, remainingSteps)
 			currentSystemPrompt = currentSystemPrompt + urgencyMsg
 		}
+	}
+
+	// Soft-landing: once the turn is about to exhaust its time or step budget,
+	// force the model to finalize NOW (inside the budget) instead of running into
+	// the hard wall with no answer. Best-effort — the agent loop's terminal
+	// fallback still guarantees a graceful answer if the model ignores this.
+	if m.shouldFinalize(currentStep, turnStart) {
+		currentSystemPrompt += finalizeDirective
 	}
 
 	// Find and extract LATEST user question for task reminder
@@ -201,6 +228,41 @@ func (m *MessageModifier) ResetStep() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stepCounter = 0
+}
+
+// StartTurn stamps the turn start time (for time soft-landing) and resets the
+// per-turn model-call counter. Called by the agent at the start of each turn.
+func (m *MessageModifier) StartTurn() {
+	m.mu.Lock()
+	m.turnStart = time.Now()
+	m.stepCounter = 0
+	m.mu.Unlock()
+}
+
+// shouldFinalize reports whether the turn is close enough to its time or step
+// budget that the model should be forced to produce its final answer now.
+//
+// Step soft-landing: currentStep counts model calls (one per Modify). Eino spends
+// up to 2 graph steps per model call (the model node + the tools node), so the
+// max_steps wall can be reached after as few as maxSteps/2 model calls; firing one
+// model call before that bound reserves a final answer-only turn inside the budget.
+func (m *MessageModifier) shouldFinalize(currentStep int, turnStart time.Time) bool {
+	if m.maxTurnDuration > 0 && !turnStart.IsZero() {
+		softDeadline := time.Duration(m.maxTurnDuration) * time.Second * softLandingTimeNumerator / softLandingTimeDenominator
+		if time.Since(turnStart) >= softDeadline {
+			return true
+		}
+	}
+	if m.maxSteps > 0 {
+		softModelCallBudget := m.maxSteps / 2
+		if softModelCallBudget < 1 {
+			softModelCallBudget = 1
+		}
+		if currentStep >= softModelCallBudget-1 {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildModifierFunc returns a function suitable for use as AgentConfig.MessageModifier

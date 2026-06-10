@@ -188,6 +188,7 @@ type AgentConfig struct {
 	MaxSteps                      int                 `mapstructure:"max_steps"`
 	MaxContextSize                int                 `mapstructure:"max_context_size"`  // Maximum context size in TOKENS (not characters). 1 token ≈ 4 chars.
 	MaxTurnDuration               int                 `mapstructure:"max_turn_duration"` // Max seconds for a single LLM stream turn. 0 = default (120s).
+	MaxStepDuration               int                 `mapstructure:"max_step_duration"` // Max seconds for a single ReAct step. 0 = disabled (opt-in watchdog).
 	ContextLogPath                string              `mapstructure:"context_log_path"`
 	ToolReturnDirectly            map[string]struct{} `mapstructure:"tool_return_directly"`
 	EnableEnhancedToolCallChecker bool                `mapstructure:"enable_enhanced_tool_call_checker"`
@@ -308,6 +309,12 @@ func (c *Config) Validate() error {
 
 	if c.Agent.MaxContextSize <= 0 {
 		c.Agent.MaxContextSize = 16000
+	}
+
+	// MaxStepDuration: 0 = disabled (opt-in watchdog), so it is NOT coerced to a
+	// non-zero default. Only clamp nonsensical negative values back to disabled.
+	if c.Agent.MaxStepDuration < 0 {
+		c.Agent.MaxStepDuration = 0
 	}
 
 	if c.Agent.ToolReturnDirectly == nil {

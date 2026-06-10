@@ -13,6 +13,7 @@ type AgentModel struct {
 	MaxSteps       int       `gorm:"not null;default:0"`
 	MaxContextSize  int       `gorm:"not null;default:16000"`
 	MaxTurnDuration int       `gorm:"not null;default:120"` // seconds, max time for a single LLM stream turn
+	MaxStepDuration int       `gorm:"not null;default:0"`   // seconds, per-step watchdog timeout (0 = disabled)
 	Temperature    *float64  `gorm:"type:double precision"`
 	TopP           *float64  `gorm:"type:double precision"`
 	MaxTokens      *int      `gorm:""`

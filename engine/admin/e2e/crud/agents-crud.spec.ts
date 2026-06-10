@@ -62,6 +62,28 @@ test.describe('Agents CRUD', () => {
     await apiFetch(request, `/agents/${name}`, { method: 'DELETE', token: adminToken });
   });
 
+  test('update agent max_step_duration round-trips via API', async ({ request, adminToken }) => {
+    const name = `step-agent-${Date.now()}`;
+    await apiFetch(request, '/agents', {
+      method: 'POST',
+      token: adminToken,
+      body: { name, system_prompt: 'Test', public: false },
+    });
+
+    const updRes = await apiFetch(request, `/agents/${name}`, {
+      method: 'PUT',
+      token: adminToken,
+      body: { name, system_prompt: 'Test', max_step_duration: 90, public: false },
+    });
+    expect([200, 204]).toContain(updRes.status());
+
+    const getRes = await apiFetch(request, `/agents/${name}`, { token: adminToken });
+    const body = await getRes.json();
+    expect(body.max_step_duration).toBe(90);
+
+    await apiFetch(request, `/agents/${name}`, { method: 'DELETE', token: adminToken });
+  });
+
   test('delete agent removes it from list', async ({ request, adminToken }) => {
     const name = `del-agent-${Date.now()}`;
     await apiFetch(request, '/agents', {

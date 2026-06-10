@@ -36,6 +36,7 @@ type AgentDetail struct {
 	MaxSteps        int              `json:"max_steps"`
 	MaxContextSize  int              `json:"max_context_size"`
 	MaxTurnDuration int              `json:"max_turn_duration"`
+	MaxStepDuration int              `json:"max_step_duration"`
 	Temperature     *float64         `json:"temperature,omitempty"`
 	TopP            *float64         `json:"top_p,omitempty"`
 	MaxTokens       *int             `json:"max_tokens,omitempty"`
@@ -56,6 +57,7 @@ type CreateAgentRequest struct {
 	MaxSteps        int              `json:"max_steps,omitempty"`
 	MaxContextSize  int              `json:"max_context_size,omitempty"`
 	MaxTurnDuration int              `json:"max_turn_duration,omitempty"`
+	MaxStepDuration int              `json:"max_step_duration,omitempty"`
 	Temperature     *float64         `json:"temperature,omitempty"`
 	TopP            *float64         `json:"top_p,omitempty"`
 	MaxTokens       *int             `json:"max_tokens,omitempty"`
@@ -109,6 +111,7 @@ type UpdateAgentRequest struct {
 	MaxSteps        *int      `json:"max_steps,omitempty"`
 	MaxContextSize  *int      `json:"max_context_size,omitempty"`
 	MaxTurnDuration *int      `json:"max_turn_duration,omitempty"`
+	MaxStepDuration *int      `json:"max_step_duration,omitempty"`
 	Temperature     *float64  `json:"temperature,omitempty"`
 	TopP            *float64  `json:"top_p,omitempty"`
 	MaxTokens       *int      `json:"max_tokens,omitempty"`

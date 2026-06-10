@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.6.0] — 2026-06-10
+
+### Added
+
+- **`max_step_duration` agent field (per-step watchdog)** — a new per-agent
+  setting (seconds; `0` = disabled, the default) that force-stops a turn with a
+  graceful answer when a single step (a model call or a tool) produces no
+  activity for longer than the limit. Catches a hung step faster than the
+  whole-turn budget, and surfaces it as an agent answer rather than a dropped
+  stream. Configurable via the API, the Admin dashboard, and GitOps
+  (config import/export + brewctl).
+
+### Fixed
+
+- **Budget-exhausted turns now end with a graceful answer instead of a bare
+  error** — previously a turn that hit `max_turn_duration` or `max_steps` (Eino
+  `ErrExceedMaxSteps`) terminated the SSE stream with a raw error and no `done`
+  event, leaving the client on a stuck spinner. Both budgets now emit a clear
+  final assistant message and finish the turn cleanly (`answer` + `done`),
+  matching the tool-error-loop breaker. A turn-time deadline on the internal
+  stream context is distinguished from a genuine client cancellation, so the
+  graceful answer fires only for the former.
+- **Soft-landing before the budget wall** — as a turn approaches ~90% of
+  `max_turn_duration` or its step budget, the model is instructed to stop calling
+  tools and produce its best final answer from what it already gathered, so a
+  well-behaved model finishes inside the budget with its own summary. The
+  hardcoded graceful message remains the backstop when the model ignores the
+  directive.
+- **Identical-argument tool loops are hard-stopped** — when a model repeats a
+  byte-identical tool call (same name + arguments) three times in a row, the turn
+  is force-stopped with a graceful answer, regardless of result content. This
+  catches the degenerate loop where a tool returns successful-but-empty results,
+  which the error-loop breaker (which only counts `[ERROR]` results) never saw. A
+  call with different arguments (e.g. pagination) resets the streak, so
+  legitimate iteration is unaffected.
+
 ## [1.5.0] — 2026-06-07
 
 ### Added

@@ -7,6 +7,15 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-06-10
+
+### Changed
+- Bumps `appVersion` to **1.6.0**. Engine 1.6.0 ends budget-exhausted turns
+  (`max_turn_duration` / `max_steps`) with a graceful answer instead of a dropped
+  stream, adds an identical-argument tool-loop breaker, and adds the per-agent
+  `max_step_duration` watchdog field (DB migration 012). No chart template
+  changes; pulling 0.9.3 picks up the engine changes.
+
 ## [0.9.2] - 2026-06-07
 
 ### Changed

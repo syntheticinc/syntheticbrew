@@ -19,6 +19,13 @@ import (
 // ignores the advisory warning loops on the failing tool until MaxSteps.
 const defaultMaxConsecutiveToolErrors = 4
 
+// defaultMaxIdenticalToolCalls caps how many byte-identical tool calls (same
+// name + arguments) may run in a row before the loop is force-stopped. Catches
+// the degenerate loop where a model repeats the exact same call — including ones
+// that return successful-but-empty results, which the error-loop breaker (which
+// only counts [ERROR] results) never sees. Trips on the Nth identical call.
+const defaultMaxIdenticalToolCalls = 3
+
 // HITLAware lets the tool handler flag a HITL turn on the model handler.
 type HITLAware interface {
 	MarkHITLSeen()
@@ -33,49 +40,53 @@ type ToolCallRecorder interface {
 
 // ToolEventHandler handles tool start/end callbacks.
 type ToolEventHandler struct {
-	emitter      *EventEmitter
-	counter      *StepCounter
-	model        *ModelEventHandler
-	recorder     ToolCallRecorder
-	sessionID    string
-	errThreshold int
-	abortLoop    context.CancelFunc
+	emitter           *EventEmitter
+	counter           *StepCounter
+	model             *ModelEventHandler
+	recorder          ToolCallRecorder
+	sessionID         string
+	errThreshold      int
+	sameArgsThreshold int
+	terminal          *TerminalState
+	activity          *ActivityClock
 
-	mu           sync.Mutex
-	consecErr    map[string]int // per-tool consecutive [ERROR] count, this turn
-	aborted      bool
-	abortTool    string
-	abortLastErr string
+	mu            sync.Mutex
+	consecErr     map[string]int // per-tool consecutive [ERROR] count, this turn
+	lastArgsKey   string         // last (tool, args) call key, this turn
+	sameArgsCount int            // consecutive byte-identical (tool, args) calls
 }
 
-// NewToolEventHandler creates a new ToolEventHandler. abortLoop cancels the
-// react-loop context for the error-loop breaker; nil disables force-stop (the
-// breaker still records the abort) — used in unit tests.
+// NewToolEventHandler creates a new ToolEventHandler. terminal records terminal
+// conditions and cancels the react loop; activity is touched on every tool event
+// so the step watchdog can detect a hung step. Both must be non-nil.
 func NewToolEventHandler(
 	emitter *EventEmitter,
 	counter *StepCounter,
 	model *ModelEventHandler,
 	recorder ToolCallRecorder,
 	sessionID string,
-	abortLoop context.CancelFunc,
+	terminal *TerminalState,
+	activity *ActivityClock,
 ) *ToolEventHandler {
 	return &ToolEventHandler{
-		emitter:      emitter,
-		counter:      counter,
-		model:        model,
-		recorder:     recorder,
-		sessionID:    sessionID,
-		errThreshold: defaultMaxConsecutiveToolErrors,
-		abortLoop:    abortLoop,
-		consecErr:    make(map[string]int),
+		emitter:           emitter,
+		counter:           counter,
+		model:             model,
+		recorder:          recorder,
+		sessionID:         sessionID,
+		errThreshold:      defaultMaxConsecutiveToolErrors,
+		sameArgsThreshold: defaultMaxIdenticalToolCalls,
+		terminal:          terminal,
+		activity:          activity,
+		consecErr:         make(map[string]int),
 	}
 }
 
 // tripBreakerIfLooping force-stops the turn when toolName returned an [ERROR]
 // result errThreshold times in a row; a success resets the streak. Counts are
 // tracked locally because the recorder is wrapped by adapters before this layer.
-// On trip it cancels the loop context (a per-callback child cancel does not stop
-// Eino). Reports whether the breaker tripped.
+// On trip it records the terminal condition and cancels the loop (a per-callback
+// child cancel does not stop Eino). Reports whether the breaker tripped.
 func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, result string) bool {
 	h.mu.Lock()
 	if !strings.HasPrefix(result, "[ERROR]") {
@@ -84,41 +95,63 @@ func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, r
 		return false
 	}
 	h.consecErr[toolName]++
-	if h.consecErr[toolName] < h.errThreshold {
-		h.mu.Unlock()
-		return false
-	}
-	firstTrip := !h.aborted
-	if firstTrip {
-		h.aborted = true
-		h.abortTool = toolName
-		h.abortLastErr = result
-	}
+	count := h.consecErr[toolName]
 	h.mu.Unlock()
 
-	if !firstTrip {
-		return true
+	if count < h.errThreshold {
+		return false
 	}
-	slog.WarnContext(ctx, "[CALLBACK] tool error loop detected, force-stopping turn",
-		"tool_name", toolName, "threshold", h.errThreshold)
-	if h.abortLoop != nil {
-		h.abortLoop()
+	if h.terminal.Trip(TerminalToolErrorLoop, toolName, result) {
+		slog.WarnContext(ctx, "[CALLBACK] tool error loop detected, force-stopping turn",
+			"tool_name", toolName, "threshold", h.errThreshold)
 	}
 	return true
 }
 
-// Aborted reports whether the error-loop breaker tripped, with the tool name and
-// last error so the agent loop can emit a clear final message to the user.
-func (h *ToolEventHandler) Aborted() (tool, lastErr string, ok bool) {
+// tripIdenticalArgsIfLooping force-stops the turn when the model issues the same
+// tool call (byte-identical name + arguments) sameArgsThreshold times in a row,
+// regardless of result content. This catches the degenerate loop that the
+// error-loop breaker misses: a tool repeatedly returning successful-but-empty
+// results. A call with different arguments (e.g. pagination) resets the streak,
+// so legitimate iteration is never affected. Reports whether the breaker tripped.
+func (h *ToolEventHandler) tripIdenticalArgsIfLooping(ctx context.Context, toolName, argsJSON string) bool {
+	if argsJSON == "" {
+		return false // no arguments to compare — cannot identify a repeat
+	}
+	key := toolName + "\x00" + argsJSON
+
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.abortTool, h.abortLastErr, h.aborted
+	if key == h.lastArgsKey {
+		h.sameArgsCount++
+	} else {
+		h.lastArgsKey = key
+		h.sameArgsCount = 1
+	}
+	count := h.sameArgsCount
+	h.mu.Unlock()
+
+	if count < h.sameArgsThreshold {
+		return false
+	}
+	if h.terminal.Trip(TerminalIdenticalArgsLoop, toolName, "") {
+		slog.WarnContext(ctx, "[CALLBACK] identical-args tool loop detected, force-stopping turn",
+			"tool_name", toolName, "identical_calls", count, "threshold", h.sameArgsThreshold)
+	}
+	return true
 }
 
 // OnToolStart handles tool execution start.
 func (h *ToolEventHandler) OnToolStart(ctx context.Context, info *callbacks.RunInfo, input *einotool.CallbackInput) context.Context {
+	h.activity.Touch()
 	currentStep := h.counter.GetStep()
 	slog.InfoContext(ctx, "[CALLBACK] onToolStart called", "tool_name", info.Name, "step", currentStep)
+
+	// Force-stop a model that repeats the exact same call without progress.
+	argsJSON := ""
+	if input != nil {
+		argsJSON = input.ArgumentsInJSON
+	}
+	h.tripIdenticalArgsIfLooping(ctx, info.Name, argsJSON)
 
 	// Record tool call for efficiency reminders
 	if h.recorder != nil && h.sessionID != "" && info.Name != "" {
@@ -196,6 +229,7 @@ func (h *ToolEventHandler) OnToolStart(ctx context.Context, info *callbacks.RunI
 
 // OnToolEnd handles tool execution result.
 func (h *ToolEventHandler) OnToolEnd(ctx context.Context, info *callbacks.RunInfo, output *einotool.CallbackOutput) context.Context {
+	h.activity.Touch()
 	currentStep := h.counter.GetStep()
 	slog.InfoContext(ctx, "[CALLBACK] onToolEnd called", "tool_name", info.Name, "step", currentStep)
 
@@ -278,6 +312,7 @@ func (h *ToolEventHandler) OnToolEnd(ctx context.Context, info *callbacks.RunInf
 // any other native tool whose InvokableRun signals a real platform
 // problem rather than an application outcome.
 func (h *ToolEventHandler) OnToolError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
+	h.activity.Touch()
 	currentStep := h.counter.GetStep()
 	slog.WarnContext(ctx, "[CALLBACK] onToolError called", "tool_name", info.Name, "step", currentStep, "error", err)
 

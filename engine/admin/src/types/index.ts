@@ -21,6 +21,7 @@ export interface AgentDetail extends AgentInfo {
   max_steps: number;
   max_context_size: number;
   max_turn_duration: number;
+  max_step_duration: number;
   temperature?: number;
   top_p?: number;
   max_tokens?: number;
@@ -38,6 +39,7 @@ export interface CreateAgentRequest {
   max_steps?: number;
   max_context_size?: number;
   max_turn_duration?: number;
+  max_step_duration?: number;
   temperature?: number;
   top_p?: number;
   max_tokens?: number;
