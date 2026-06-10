@@ -6,7 +6,7 @@ replicaCount: 1
 
 image:
   repository: syntheticinc/syntheticbrew
-  tag: "1.2.1"
+  tag: "1.6.0"
   pullPolicy: IfNotPresent
 
 postgresql:
@@ -35,7 +35,7 @@ migrations:
   enabled: true
   image:
     repository: syntheticinc/syntheticbrew-migrations
-    tag: "1.2.1"
+    tag: "1.6.0"
 
 bootstrapAdminToken:
   enabled: true
@@ -49,14 +49,9 @@ bootstrapAdminToken:
 # apiKeysSecret needed because models[].api_key references ${OPENROUTER_API_KEY}.
 configApply:
   enabled: true
-  # Pin to the last published brewctl compatible with engine 1.1.1 fixture
-  # above. Chart 0.6.3 default is 0.2.3 (paired with engine 1.1.3 for the
-  # CreateSchema entry_agent_id name resolution), but the published 1.1.3
-  # binaries only land after this PR merges. Follow-up PR bumps both fixtures
-  # together (engine 1.1.3 + brewctl 0.2.3) and re-enables the smoke.sh
-  # entry_agent_name assertion that was deferred along with this pin.
+  # Pinned to the current published pair: engine 1.6.0 + brewctl 0.5.0.
   image:
-    tag: "0.2.5"
+    tag: "0.5.0"
   tokenSecret: postgres-credentials
   apiKeysSecret: postgres-credentials
   config: |

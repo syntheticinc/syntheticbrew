@@ -18,7 +18,7 @@ replicaCount: 1
 image:
   repository: syntheticinc/syntheticbrew
   # Engine 1.3.0 — first version with Knowledge Graphs support.
-  tag: "1.3.0"
+  tag: "1.6.0"
   pullPolicy: IfNotPresent
 
 postgresql:
@@ -44,7 +44,7 @@ migrations:
   enabled: true
   image:
     repository: syntheticinc/syntheticbrew-migrations
-    tag: "1.3.0"
+    tag: "1.6.0"
 
 bootstrapAdminToken:
   enabled: true
@@ -53,10 +53,10 @@ bootstrapAdminToken:
 
 configApply:
   enabled: true
-  # brewctl 0.3.0 — first version with `kg apply / diff / pull` subcommands
-  # AND extended /config/import payload understanding `knowledge_graphs:` key.
+  # brewctl 0.5.0 (current) — includes the `kg apply / diff / pull` subcommands
+  # and `/config/import` understanding of the `knowledge_graphs:` key (since 0.3.0).
   image:
-    tag: "0.3.0"
+    tag: "0.5.0"
   tokenSecret: postgres-credentials
   config: |
     knowledge_graphs:
