@@ -119,6 +119,7 @@ type agentYAML struct {
 	MaxSteps        int             `yaml:"max_steps"`
 	MaxContextSize  int             `yaml:"max_context_size"`
 	MaxTurnDuration int             `yaml:"max_turn_duration"`
+	MaxStepDuration int             `yaml:"max_step_duration"`
 	Temperature     *float64        `yaml:"temperature,omitempty"`
 	TopP            *float64        `yaml:"top_p,omitempty"`
 	MaxTokens       *int            `yaml:"max_tokens,omitempty"`

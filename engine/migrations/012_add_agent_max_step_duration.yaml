@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012_add_agent_max_step_duration
+      author: syntheticbrew
+      comment: |
+        Adds optional per-agent per-step watchdog timeout. 0 = disabled
+        (default, opt-in), 10..3600 seconds enforced via CHECK when non-zero.
+        UNLIKE max_steps (0 coerces to 50), 0 here is a meaningful value
+        (watchdog off) and is passed through verbatim — no coercion. Additive
+        upgrade: NOT NULL DEFAULT 0 backfills existing rows with the disabled
+        sentinel, so no preflight HALT is needed. Rollback is a clean DROP of
+        the constraint then the column.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE agents
+                ADD COLUMN max_step_duration INTEGER NOT NULL DEFAULT 0;
+              ALTER TABLE agents
+                ADD CONSTRAINT chk_agent_step_duration
+                CHECK (max_step_duration = 0
+                       OR max_step_duration BETWEEN 10 AND 3600);
+        - rollback:
+            sql: |
+              ALTER TABLE agents DROP CONSTRAINT IF EXISTS chk_agent_step_duration;
+              ALTER TABLE agents DROP COLUMN IF EXISTS max_step_duration;

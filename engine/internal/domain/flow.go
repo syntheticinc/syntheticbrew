@@ -23,6 +23,7 @@ type Flow struct {
 	MaxSteps       int
 	MaxContextSize  int
 	MaxTurnDuration int // max seconds for a single LLM stream turn (0 = use default 120s)
+	MaxStepDuration int // max seconds for a single ReAct step (0 = disabled, opt-in)
 	ToolExecution   string // "sequential" or "parallel"
 	Lifecycle      LifecyclePolicy
 	Spawn          SpawnPolicy

@@ -174,6 +174,7 @@ function AgentDrillInInner() {
         max_steps: agent.max_steps,
         max_context_size: agent.max_context_size,
         max_turn_duration: agent.max_turn_duration,
+        max_step_duration: agent.max_step_duration,
         temperature: agent.temperature,
         top_p: agent.top_p,
         max_tokens: agent.max_tokens,
@@ -439,6 +440,16 @@ function AgentDrillInInner() {
               max={600}
               step={10}
               hint="Maximum time in seconds for a single LLM stream turn"
+            />
+            <FormField
+              label="Max Step Duration (seconds)"
+              type="number"
+              value={agent?.max_step_duration ?? 0}
+              onChange={(v) => updateAgentField('max_step_duration', Number(v))}
+              min={0}
+              max={3600}
+              step={10}
+              hint="Per-step watchdog: max seconds for a single step (model call or tool) before the turn ends with a graceful answer. 0 = disabled."
             />
             <FormField
               label="Execution"

@@ -135,6 +135,7 @@ func (a *agentManagerHTTPAdapter) GetAgent(ctx context.Context, name string) (*d
 		MaxSteps:        rec.MaxSteps,
 		MaxContextSize:  rec.MaxContextSize,
 		MaxTurnDuration: rec.MaxTurnDuration,
+		MaxStepDuration: rec.MaxStepDuration,
 		Temperature:     rec.Temperature,
 		TopP:            rec.TopP,
 		MaxTokens:       rec.MaxTokens,
@@ -373,6 +374,9 @@ func (a *agentManagerHTTPAdapter) PatchAgent(ctx context.Context, name string, r
 	if req.MaxTurnDuration != nil {
 		existing.MaxTurnDuration = *req.MaxTurnDuration
 	}
+	if req.MaxStepDuration != nil {
+		existing.MaxStepDuration = *req.MaxStepDuration
+	}
 	if req.Temperature != nil {
 		existing.Temperature = req.Temperature
 	}
@@ -477,6 +481,7 @@ func (a *agentManagerHTTPAdapter) toAgentRecord(req deliveryhttp.CreateAgentRequ
 		MaxSteps:        req.MaxSteps,
 		MaxContextSize:  req.MaxContextSize,
 		MaxTurnDuration: req.MaxTurnDuration,
+		MaxStepDuration: req.MaxStepDuration,
 		Temperature:     req.Temperature,
 		TopP:            req.TopP,
 		MaxTokens:       req.MaxTokens,

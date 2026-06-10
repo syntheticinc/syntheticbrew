@@ -3,7 +3,9 @@ package callbacks
 import (
 	"context"
 	"fmt"
-	"strings"
+	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent"
@@ -12,6 +14,9 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
 )
+
+// stepWatchdogTick is how often the step watchdog checks for a hung step.
+const stepWatchdogTick = 2 * time.Second
 
 // BuilderConfig holds configuration for constructing the callback builder.
 type BuilderConfig struct {
@@ -35,6 +40,8 @@ type AgentCallbackBuilder struct {
 	modelHandler *ModelEventHandler
 	toolHandler  *ToolEventHandler
 	tokenAcc     *TokenAccumulator
+	terminal     *TerminalState
+	activity     *ActivityClock
 }
 
 // NewBuilder creates and wires all callback components.
@@ -48,9 +55,11 @@ func NewBuilder(cfg BuilderConfig) *AgentCallbackBuilder {
 	emitter := NewEventEmitter(cfg.EventCallback, agentID)
 	extractor := agents.NewReasoningExtractor()
 	tokenAcc := NewTokenAccumulator()
+	terminal := NewTerminalState(cfg.AbortLoop)
+	activity := NewActivityClock()
 
-	modelHandler := NewModelEventHandler(emitter, counter, extractor, cfg.Store, cfg.ChunkCallback, tokenAcc)
-	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID, cfg.AbortLoop)
+	modelHandler := NewModelEventHandler(emitter, counter, extractor, cfg.Store, cfg.ChunkCallback, tokenAcc, activity)
+	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID, terminal, activity)
 
 	return &AgentCallbackBuilder{
 		counter:      counter,
@@ -58,6 +67,8 @@ func NewBuilder(cfg BuilderConfig) *AgentCallbackBuilder {
 		modelHandler: modelHandler,
 		toolHandler:  toolHandler,
 		tokenAcc:     tokenAcc,
+		terminal:     terminal,
+		activity:     activity,
 	}
 }
 
@@ -127,21 +138,41 @@ func (b *AgentCallbackBuilder) HITLSeen() bool {
 	return b.modelHandler.HITLSeen()
 }
 
-// ToolLoopAborted reports whether the tool error-loop breaker tripped this run,
-// returning the offending tool and its last error.
-func (b *AgentCallbackBuilder) ToolLoopAborted() (tool, lastErr string, ok bool) {
-	return b.toolHandler.Aborted()
+// TripTerminal records a terminal condition detected by the agent loop itself
+// (a budget exhausted by Eino) and cancels the react loop. Loop-breakers and the
+// step watchdog trip the same state from inside the callbacks.
+func (b *AgentCallbackBuilder) TripTerminal(reason TerminalReason, detail string) {
+	b.terminal.Trip(reason, "", detail)
 }
 
-// EmitToolLoopAbortAnswer emits a final assistant answer when the error-loop
-// breaker force-stopped the turn and returns its text (for history), or "" when
-// the breaker did not trip.
-func (b *AgentCallbackBuilder) EmitToolLoopAbortAnswer(ctx context.Context) string {
-	tool, lastErr, ok := b.toolHandler.Aborted()
+// TerminalTripped reports whether the turn was force-terminated this run, with
+// the reason, offending tool (if any), and detail.
+func (b *AgentCallbackBuilder) TerminalTripped() (reason TerminalReason, tool, detail string, ok bool) {
+	return b.terminal.Tripped()
+}
+
+// EmitTerminalAnswer emits the graceful final assistant answer for a tripped
+// terminal condition and returns its text (for history), or "" when the turn was
+// not force-terminated. The model produced no usable answer in these cases, so a
+// hardcoded, self-contained message stands in.
+func (b *AgentCallbackBuilder) EmitTerminalAnswer(ctx context.Context) string {
+	reason, tool, detail, ok := b.terminal.Tripped()
 	if !ok {
 		return ""
 	}
-	msg := formatToolLoopAbortMessage(tool, lastErr)
+	msg := formatTerminalMessage(reason, tool, detail)
+	if msg == "" {
+		return ""
+	}
+	// If partial prose was streamed live before the turn was force-stopped,
+	// scrub it first — the graceful answer replaces it (mirrors the HITL scrub),
+	// keeping the live stream consistent with persisted history.
+	if b.modelHandler.AnyChunkStreamed() {
+		b.emitter.Emit(ctx, &domain.AgentEvent{
+			Type:      domain.EventTypeRetractAssistant,
+			Timestamp: time.Now(),
+		})
+	}
 	b.emitter.Emit(ctx, &domain.AgentEvent{
 		Type:       domain.EventTypeAnswer,
 		Content:    msg,
@@ -150,16 +181,44 @@ func (b *AgentCallbackBuilder) EmitToolLoopAbortAnswer(ctx context.Context) stri
 	return msg
 }
 
-// formatToolLoopAbortMessage builds a user-facing message explaining that the
-// turn was stopped because a tool kept failing. reason is the last tool error
-// with the internal "[ERROR] " marker stripped and length-capped.
-func formatToolLoopAbortMessage(tool, lastErr string) string {
-	reason := strings.TrimSpace(strings.TrimPrefix(lastErr, "[ERROR]"))
-	if len(reason) > 300 {
-		reason = reason[:300] + "…"
+// StartStepWatchdog launches a watchdog that trips TerminalStepTimeout when a
+// single step produces no activity for longer than maxStepDuration (a hung model
+// call or tool). Returns a stop function the caller must defer. A non-positive
+// maxStepDuration disables the watchdog.
+func (b *AgentCallbackBuilder) StartStepWatchdog(ctx context.Context, maxStepDuration time.Duration) func() {
+	if maxStepDuration <= 0 {
+		return func() {}
 	}
-	if reason == "" {
-		return fmt.Sprintf("I couldn't complete this request: the %q operation kept failing, so I stopped retrying to avoid looping. Please check the request details or try again shortly.", tool)
+	b.activity.Touch()
+
+	tick := stepWatchdogTick
+	if maxStepDuration < tick {
+		tick = maxStepDuration
 	}
-	return fmt.Sprintf("I couldn't complete this request: the %q operation kept failing (%s). I stopped retrying to avoid looping. Please check the request details or try again shortly.", tool, reason)
+
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(tick)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if b.activity.Idle() <= maxStepDuration {
+					continue
+				}
+				if b.terminal.Trip(TerminalStepTimeout, "", fmt.Sprintf("%ds", int(maxStepDuration.Seconds()))) {
+					slog.WarnContext(ctx, "[CALLBACK] step watchdog fired, force-stopping turn",
+						"max_step_duration", maxStepDuration)
+				}
+				return
+			}
+		}
+	}()
+
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
 }

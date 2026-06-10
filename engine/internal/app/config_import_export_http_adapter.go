@@ -205,6 +205,7 @@ func (a *configImportExportHTTPAdapter) exportAgents(_ context.Context) ([]agent
 			MaxSteps:        ag.MaxSteps,
 			MaxContextSize:  ag.MaxContextSize,
 			MaxTurnDuration: ag.MaxTurnDuration,
+			MaxStepDuration: ag.MaxStepDuration,
 			Temperature:     ag.Temperature,
 			TopP:            ag.TopP,
 			MaxTokens:       ag.MaxTokens,
@@ -532,6 +533,7 @@ func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentY
 			existing.MaxSteps = ag.MaxSteps
 			existing.MaxContextSize = ag.MaxContextSize
 			existing.MaxTurnDuration = ag.MaxTurnDuration
+			existing.MaxStepDuration = ag.MaxStepDuration
 			existing.Temperature = ag.Temperature
 			existing.TopP = ag.TopP
 			existing.MaxTokens = ag.MaxTokens
@@ -567,6 +569,7 @@ func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentY
 			MaxSteps:        ag.MaxSteps,
 			MaxContextSize:  ag.MaxContextSize,
 			MaxTurnDuration: ag.MaxTurnDuration,
+			MaxStepDuration: ag.MaxStepDuration,
 			Temperature:     ag.Temperature,
 			TopP:            ag.TopP,
 			MaxTokens:       ag.MaxTokens,

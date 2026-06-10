@@ -23,6 +23,7 @@ type ModelEventHandler struct {
 	store     *agents.StepContentStore
 	chunkCb   func(chunk string) error
 	tokenAcc  *TokenAccumulator
+	activity  *ActivityClock
 
 	// Text accumulation state for streaming
 	accumulatedReasoning string
@@ -31,6 +32,7 @@ type ModelEventHandler struct {
 	accumulatedChunks    string
 	accumulatedMu        sync.Mutex
 	chunksStreamed       bool // true if chunks were sent via chunkCb (avoid duplicate EventTypeAnswer)
+	anyChunkStreamed     bool // sticky for the whole turn: any chunk reached the client live (drives terminal retract)
 
 	// hitlSeen — true once a HITL tool_call fires; suppresses accumulated text.
 	hitlSeen bool
@@ -56,6 +58,15 @@ func (h *ModelEventHandler) HITLSeen() bool {
 	return h.hitlSeen
 }
 
+// AnyChunkStreamed reports whether any answer chunk reached the client live this
+// turn. Used to scrub orphaned partial prose when a terminal condition replaces
+// it with a graceful answer.
+func (h *ModelEventHandler) AnyChunkStreamed() bool {
+	h.accumulatedMu.Lock()
+	defer h.accumulatedMu.Unlock()
+	return h.anyChunkStreamed
+}
+
 // NewModelEventHandler creates a new ModelEventHandler.
 func NewModelEventHandler(
 	emitter *EventEmitter,
@@ -64,6 +75,7 @@ func NewModelEventHandler(
 	store *agents.StepContentStore,
 	chunkCb func(chunk string) error,
 	tokenAcc *TokenAccumulator,
+	activity *ActivityClock,
 ) *ModelEventHandler {
 	return &ModelEventHandler{
 		emitter:  emitter,
@@ -72,12 +84,14 @@ func NewModelEventHandler(
 		store:    store,
 		chunkCb:  chunkCb,
 		tokenAcc: tokenAcc,
+		activity: activity,
 	}
 }
 
 // OnModelEnd handles non-streaming model output.
 // In non-streaming mode, reasoning and content arrive as complete values (not chunks).
 func (h *ModelEventHandler) OnModelEnd(ctx context.Context, info *callbacks.RunInfo, output *model.CallbackOutput) context.Context {
+	h.activity.Touch()
 	if output == nil || output.Message == nil {
 		return ctx
 	}
@@ -176,6 +190,10 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 				break
 			}
 
+			// A received frame is live activity — keep the step watchdog at bay
+			// so a legitimately long stream is never mistaken for a hung step.
+			h.activity.Touch()
+
 			if frame == nil || frame.Message == nil {
 				slog.DebugContext(ctx, "[CALLBACK] received nil frame or message, skipping", "frame_count", frameCount)
 				continue
@@ -245,6 +263,7 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 					h.accumulatedMu.Lock()
 					h.accumulatedChunks += msg.Content
 					h.chunksStreamed = true
+					h.anyChunkStreamed = true
 					h.accumulatedMu.Unlock()
 
 					if err := h.chunkCb(msg.Content); err != nil {

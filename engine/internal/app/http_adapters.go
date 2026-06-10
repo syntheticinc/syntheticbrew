@@ -93,6 +93,7 @@ func (a *agentListerHTTPAdapter) GetAgent(_ context.Context, name string) (*deli
 		MaxSteps:        rec.MaxSteps,
 		MaxContextSize:  rec.MaxContextSize,
 		MaxTurnDuration: rec.MaxTurnDuration,
+		MaxStepDuration: rec.MaxStepDuration,
 		Temperature:     rec.Temperature,
 		TopP:            rec.TopP,
 		MaxTokens:       rec.MaxTokens,
