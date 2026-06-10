@@ -7,6 +7,16 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-06-11
+
+### Changed
+- Bumps `appVersion` to **1.7.0**. Engine 1.7.0 owns the ReAct execution loop and,
+  at a budget wall (`max_turn_duration` / `max_steps`), makes a tool-less final
+  model call so the turn ends with a real summary of the gathered context instead
+  of a canned apology; a live partial answer is no longer retracted. It also bounds
+  `max_turn_duration` at the database layer (CHECK via migration 013) on top of the
+  existing API validation and runtime clamp. No chart template change.
+
 ## [0.9.4] - 2026-06-10
 
 ### Changed
