@@ -1,0 +1,32 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013_add_agent_max_turn_duration_check
+      author: syntheticbrew
+      comment: |
+        Adds the DB-level CHECK on agents.max_turn_duration that the column has
+        lacked since 001 (where it was created as int NOT NULL DEFAULT 120 with
+        no bound). Mirrors chk_agent_step_duration (012): 0 = engine default
+        (120s) is a meaningful pass-through value, otherwise 1..86400 seconds.
+        Defense-in-depth behind the API validation (create/update/patch/import)
+        and the NewAgent runtime clamp — guarantees no out-of-range value can be
+        written straight to the table (manual SQL, dump restore, future code) and
+        overflow time.Duration into a negative/infinite turn deadline.
+        Existing rows are backfilled to the default before the constraint is
+        added, so a stale/tampered out-of-range row cannot HALT the migration
+        (Postgres validates existing rows on ADD CONSTRAINT). Backfill is
+        idempotent — re-running touches nothing once rows are in range. Rollback
+        is a clean DROP of the constraint; the backfill is not reverted (the
+        values were already invalid).
+      changes:
+        - sql:
+            sql: |
+              UPDATE agents
+                SET max_turn_duration = 120
+                WHERE max_turn_duration < 1 OR max_turn_duration > 86400;
+              ALTER TABLE agents
+                ADD CONSTRAINT chk_agent_turn_duration
+                CHECK (max_turn_duration = 0
+                       OR max_turn_duration BETWEEN 1 AND 86400);
+        - rollback:
+            sql: |
+              ALTER TABLE agents DROP CONSTRAINT IF EXISTS chk_agent_turn_duration;

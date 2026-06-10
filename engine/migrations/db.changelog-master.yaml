@@ -35,3 +35,6 @@ databaseChangeLog:
   - include:
       file: 012_add_agent_max_step_duration.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 013_add_agent_max_turn_duration_check.yaml
+      relativeToChangelogFile: true

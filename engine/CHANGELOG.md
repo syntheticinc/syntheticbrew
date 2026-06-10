@@ -32,6 +32,22 @@
   a deliberately paced repeat (for example polling a status on a timer, with a
   wait between checks) does not count as a loop.
 
+### Security
+
+- **`max_turn_duration` is now bounded at every layer.** The value is validated on
+  every write path (create / update / patch / config import), clamped to the
+  engine default at agent construction if a persisted row is out of range, and —
+  new in this release — enforced by a database `CHECK` (migration 013), mirroring
+  the existing `max_step_duration` constraint. This closes a path where an
+  out-of-range value written straight to the table could overflow into a negative
+  or effectively-infinite turn deadline.
+- **A tool name can no longer smuggle instructions into a model prompt.** Tool
+  names interpolated into a loop-correction message are matched against an
+  allowlist (the function-name charset plus the dotted/colon MCP convention) and
+  replaced with a neutral placeholder otherwise, so a tenant- or MCP-controlled
+  name carrying control characters or inline text cannot reach the model as
+  high-authority guidance.
+
 ### Removed
 
 - Internal workarounds that existed only to compensate for the prebuilt loop —
