@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.7.0] — 2026-06-10
+
+### Changed
+
+- **The ReAct execution loop is now owned by the engine** instead of delegating to
+  a prebuilt agent black box. The turn runs on a hand-built graph with explicit
+  `chat` / `tools` / `finalize` nodes and budget-, loop-, and HITL-aware routing.
+  This is what makes the fix below possible; existing turn behaviour (event
+  stream, tool handling, HITL, context compression, the step watchdog) is
+  preserved.
+
+### Fixed
+
+- **A budget-exhausted turn now produces a real summary instead of a canned
+  apology.** When a turn reaches its `max_turn_duration` or `max_steps` wall, the
+  engine makes one final model call with the tools removed, fed the full context
+  the turn already gathered, so the model writes its best answer from what it
+  found. The hardcoded graceful message remains only as a fallback for when that
+  final call yields nothing. Previously the turn ended with a fixed apology and
+  discarded the gathered context.
+- **A live partial answer is no longer retracted at the budget wall.** The earlier
+  behaviour scrubbed an in-progress streamed answer when a budget tripped; the
+  owned loop streams the final summary as a normal answer and never retracts a
+  substantive partial.
+- **Non-productive tool loops are corrected before they are terminated.** A model
+  that repeats a failing tool, or repeats a byte-identical call without progress,
+  first receives a single corrective instruction and is allowed to continue;
+  only if it keeps looping past a small correction budget is the turn finalised
+  with a summary. Identical-call detection is guarded against false positives:
+  a deliberately paced repeat (for example polling a status on a timer, with a
+  wait between checks) does not count as a loop.
+
+### Removed
+
+- Internal workarounds that existed only to compensate for the prebuilt loop —
+  streaming content recovery and the shadow-state termination path — are gone;
+  the owned loop holds this state directly.
+
 ## [1.6.0] — 2026-06-10
 
 ### Added

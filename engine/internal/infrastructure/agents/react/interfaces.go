@@ -15,21 +15,6 @@ type ContextLoggerInterface interface {
 	LogContextSummary(ctx context.Context, messages []*schema.Message)
 }
 
-// StepContentStoreInterface defines the interface for storing step content
-type StepContentStoreInterface interface {
-	// Append adds content to a specific step
-	Append(step int, content string)
-
-	// Get returns content for a specific step
-	Get(step int) string
-
-	// GetAll returns a copy of all step content
-	GetAll() map[int]string
-
-	// ClearBefore removes all content for steps before the given step
-	ClearBefore(step int)
-}
-
 // ContextReminderProvider is implemented by components that need to inject
 // reminders into the LLM context (e.g., plan status, pending actions)
 // Returns (content, priority, hasReminder) - priority determines order (higher = later in context)

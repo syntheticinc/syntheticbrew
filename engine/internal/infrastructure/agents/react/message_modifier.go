@@ -28,13 +28,12 @@ const (
 
 // MessageModifier modifies messages before sending to the model
 // It handles system prompt injection, urgency warnings, task reminders,
-// content recovery for streaming mode, and context reminders from providers
+// and context reminders from providers
 type MessageModifier struct {
 	systemPrompt      string
 	urgencyWarning    string
 	maxSteps          int // configured per-turn step budget; 0 = unlimited
 	maxTurnDuration   int // configured per-turn time budget in seconds; 0 = none
-	stepContentStore  StepContentStoreInterface
 	contextLogger     ContextLoggerInterface
 	reminderProviders []ContextReminderProvider
 	sessionID         string
@@ -50,7 +49,6 @@ type MessageModifierConfig struct {
 	UrgencyWarning    string
 	MaxSteps          int // configured per-turn step budget; 0 = unlimited
 	MaxTurnDuration   int // configured per-turn time budget in seconds; 0 = none
-	StepContentStore  StepContentStoreInterface
 	ContextLogger     ContextLoggerInterface
 	ReminderProviders []ContextReminderProvider
 	SessionID         string
@@ -64,7 +62,6 @@ func NewMessageModifier(cfg MessageModifierConfig) *MessageModifier {
 		urgencyWarning:    cfg.UrgencyWarning,
 		maxSteps:          cfg.MaxSteps,
 		maxTurnDuration:   cfg.MaxTurnDuration,
-		stepContentStore:  cfg.StepContentStore,
 		contextLogger:     cfg.ContextLogger,
 		reminderProviders: cfg.ReminderProviders,
 		sessionID:         cfg.SessionID,
@@ -131,46 +128,12 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 		currentSystemPrompt += fmt.Sprintf("\n\n**CURRENT TASK (Step %d):** Answer the user's question: \"%s\"\nDo NOT get distracted - answer THIS question!", currentStep, sanitizeForSystemPrompt(userQuestion, 500))
 	}
 
-	// Add system prompt at the beginning
+	// Add system prompt at the beginning, then the conversation. The owned graph
+	// preserves assistant content alongside tool_calls in state, so no content
+	// recovery is needed here.
 	result := make([]*schema.Message, 0, len(input)+1)
 	result = append(result, schema.SystemMessage(currentSystemPrompt))
-
-	// CRITICAL FIX: Inject accumulated content into empty assistant messages
-	// Eino's ReAct agent doesn't preserve content when there are tool_calls in streaming mode
-	// We recover the content from our shared store
-	var stepContent map[int]string
-	if m.stepContentStore != nil {
-		stepContent = m.stepContentStore.GetAll()
-	}
-
-	// Track which step each assistant message corresponds to
-	assistantStepIdx := 0
-	for _, msg := range input {
-		if msg.Role == schema.Assistant {
-			// If assistant message has tool_calls but empty content, try to fill it
-			if msg.Content == "" && len(msg.ToolCalls) > 0 && stepContent != nil {
-				if content, ok := stepContent[assistantStepIdx]; ok && content != "" {
-					// Create a copy with filled content
-					filledMsg := &schema.Message{
-						Role:      msg.Role,
-						Content:   content,
-						ToolCalls: msg.ToolCalls,
-						Name:      msg.Name,
-					}
-					result = append(result, filledMsg)
-					slog.DebugContext(ctx, "filled empty assistant message with accumulated content",
-						"step", assistantStepIdx, "content_length", len(content))
-				} else {
-					result = append(result, msg)
-				}
-			} else {
-				result = append(result, msg)
-			}
-			assistantStepIdx++
-		} else {
-			result = append(result, msg)
-		}
-	}
+	result = append(result, input...)
 
 	// Collect and inject context reminders from all providers
 	// This allows tools/components to add their own reminders without coupling

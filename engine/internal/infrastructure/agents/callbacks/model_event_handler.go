@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
 )
 
 // ModelEventHandler handles model callbacks (OnEnd, OnEndWithStreamOutput).
@@ -20,7 +20,6 @@ type ModelEventHandler struct {
 	emitter   *EventEmitter
 	counter   *StepCounter
 	extractor *agents.ReasoningExtractor
-	store     *agents.StepContentStore
 	chunkCb   func(chunk string) error
 	tokenAcc  *TokenAccumulator
 	activity  *ActivityClock
@@ -32,7 +31,6 @@ type ModelEventHandler struct {
 	accumulatedChunks    string
 	accumulatedMu        sync.Mutex
 	chunksStreamed       bool // true if chunks were sent via chunkCb (avoid duplicate EventTypeAnswer)
-	anyChunkStreamed     bool // sticky for the whole turn: any chunk reached the client live (drives terminal retract)
 
 	// hitlSeen — true once a HITL tool_call fires; suppresses accumulated text.
 	hitlSeen bool
@@ -58,33 +56,22 @@ func (h *ModelEventHandler) HITLSeen() bool {
 	return h.hitlSeen
 }
 
-// AnyChunkStreamed reports whether any answer chunk reached the client live this
-// turn. Used to scrub orphaned partial prose when a terminal condition replaces
-// it with a graceful answer.
-func (h *ModelEventHandler) AnyChunkStreamed() bool {
-	h.accumulatedMu.Lock()
-	defer h.accumulatedMu.Unlock()
-	return h.anyChunkStreamed
-}
-
 // NewModelEventHandler creates a new ModelEventHandler.
 func NewModelEventHandler(
 	emitter *EventEmitter,
 	counter *StepCounter,
 	extractor *agents.ReasoningExtractor,
-	store *agents.StepContentStore,
 	chunkCb func(chunk string) error,
 	tokenAcc *TokenAccumulator,
 	activity *ActivityClock,
 ) *ModelEventHandler {
 	return &ModelEventHandler{
-		emitter:  emitter,
-		counter:  counter,
+		emitter:   emitter,
+		counter:   counter,
 		extractor: extractor,
-		store:    store,
-		chunkCb:  chunkCb,
-		tokenAcc: tokenAcc,
-		activity: activity,
+		chunkCb:   chunkCb,
+		tokenAcc:  tokenAcc,
+		activity:  activity,
 	}
 }
 
@@ -116,19 +103,7 @@ func (h *ModelEventHandler) OnModelEnd(ctx context.Context, info *callbacks.RunI
 		h.emitter.Emit(ctx, event)
 	}
 
-	// Store content in stepContentStore so message_modifier can recover it.
-	// Use modelCallCount (not step) as key because message_modifier iterates
-	// assistant messages sequentially, and modelCallCount matches that order.
-	// step increments per tool execution, which causes key mismatch when
-	// model makes multiple tool calls per REACT step.
-	if msg.Content != "" && len(msg.ToolCalls) > 0 && h.store != nil {
-		modelCallIdx := h.counter.GetModelCallCount()
-		h.store.Append(modelCallIdx, msg.Content)
-		slog.DebugContext(ctx, "[CALLBACK] stored assistant content for step recovery",
-			"model_call_idx", modelCallIdx, "content_length", len(msg.Content))
-	}
-
-	// Increment model call count (must be after storing content)
+	// Increment model call count
 	h.counter.IncrementModelCallCount()
 
 	// Store assistant content for the first upcoming tool call (onToolStart will attach it).
@@ -230,14 +205,6 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 			// NOTE: In streaming mode, we only send chunks via chunkCallback, not EventTypeAnswer events
 			// EventTypeAnswer is used only in non-streaming mode for complete responses
 			if msg.Content != "" {
-				// CRITICAL: Accumulate content for this model call so it can be injected into message history
-				// Eino's ReAct agent doesn't preserve content when there are tool_calls.
-				// Use modelCallIdx (not step) to match message_modifier's assistantStepIdx.
-				if h.store != nil {
-					h.store.Append(modelCallIdx, msg.Content)
-					slog.DebugContext(ctx, "[CALLBACK] accumulated content for model call", "model_call_idx", modelCallIdx, "chunk_length", len(msg.Content))
-				}
-
 				if h.chunkCb != nil {
 					// If this is the first answer chunk and we have accumulated reasoning,
 					// finalize reasoning first so client knows reasoning is complete
@@ -263,7 +230,6 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 					h.accumulatedMu.Lock()
 					h.accumulatedChunks += msg.Content
 					h.chunksStreamed = true
-					h.anyChunkStreamed = true
 					h.accumulatedMu.Unlock()
 
 					if err := h.chunkCb(msg.Content); err != nil {

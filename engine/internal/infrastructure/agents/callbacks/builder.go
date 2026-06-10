@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	einocallbacks "github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent"
 	ucb "github.com/cloudwego/eino/utils/callbacks"
@@ -22,14 +23,17 @@ const stepWatchdogTick = 2 * time.Second
 type BuilderConfig struct {
 	EventCallback    func(event *domain.AgentEvent) error
 	ChunkCallback    func(chunk string) error
-	Store            *agents.StepContentStore
 	SessionID        string
 	AgentID          string // "supervisor" or "code-agent-{uuid}"
 	ToolCallRecorder ToolCallRecorder
-	// AbortLoop cancels the context the Eino react loop runs under. The tool
-	// error-loop breaker calls it to actually halt the loop (cancelling a
-	// per-callback child context does not stop Eino). May be nil in tests.
+	// AbortLoop cancels the context the loop runs under. On the eino path the
+	// error-loop breaker calls it to halt a runaway loop; on the owned path the
+	// step watchdog calls it to abort a hung step. May be nil in tests.
 	AbortLoop context.CancelFunc
+	// DisableLoopBreakers stands the callbacks-layer loop breakers down. The owned
+	// graph owns loop policy (detection + correction + escalation) in its routing,
+	// so the callbacks breakers must not also fire. The step watchdog stays active.
+	DisableLoopBreakers bool
 }
 
 // AgentCallbackBuilder wires together all callback sub-components
@@ -58,8 +62,8 @@ func NewBuilder(cfg BuilderConfig) *AgentCallbackBuilder {
 	terminal := NewTerminalState(cfg.AbortLoop)
 	activity := NewActivityClock()
 
-	modelHandler := NewModelEventHandler(emitter, counter, extractor, cfg.Store, cfg.ChunkCallback, tokenAcc, activity)
-	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID, terminal, activity)
+	modelHandler := NewModelEventHandler(emitter, counter, extractor, cfg.ChunkCallback, tokenAcc, activity)
+	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID, terminal, activity, cfg.DisableLoopBreakers)
 
 	return &AgentCallbackBuilder{
 		counter:      counter,
@@ -72,8 +76,9 @@ func NewBuilder(cfg BuilderConfig) *AgentCallbackBuilder {
 	}
 }
 
-// BuildCallbackOption creates an Eino agent option with the callback handler.
-func (b *AgentCallbackBuilder) BuildCallbackOption() agent.AgentOption {
+// buildHandler assembles the model + tool callback handler shared by the eino
+// agent path and the owned-graph path.
+func (b *AgentCallbackBuilder) buildHandler() einocallbacks.Handler {
 	modelHandler := &ucb.ModelCallbackHandler{
 		OnEnd:                 b.modelHandler.OnModelEnd,
 		OnEndWithStreamOutput: b.modelHandler.OnModelEndWithStreamOutput,
@@ -83,11 +88,22 @@ func (b *AgentCallbackBuilder) BuildCallbackOption() agent.AgentOption {
 		OnEnd:   b.toolHandler.OnToolEnd,
 		OnError: b.toolHandler.OnToolError,
 	}
-	handler := ucb.NewHandlerHelper().
+	return ucb.NewHandlerHelper().
 		ChatModel(modelHandler).
 		Tool(toolHandler).
 		Handler()
-	return agent.WithComposeOptions(compose.WithCallbacks(handler))
+}
+
+// BuildCallbackOption creates an Eino agent option with the callback handler.
+func (b *AgentCallbackBuilder) BuildCallbackOption() agent.AgentOption {
+	return agent.WithComposeOptions(compose.WithCallbacks(b.buildHandler()))
+}
+
+// BuildComposeCallbacksOption creates a raw compose option with the callback
+// handler, for invoking a hand-built graph runnable directly (the owned loop)
+// rather than the prebuilt eino agent.
+func (b *AgentCallbackBuilder) BuildComposeCallbacksOption() compose.Option {
+	return compose.WithCallbacks(b.buildHandler())
 }
 
 // GetStep returns the current step (thread-safe, public method).
@@ -138,40 +154,21 @@ func (b *AgentCallbackBuilder) HITLSeen() bool {
 	return b.modelHandler.HITLSeen()
 }
 
-// TripTerminal records a terminal condition detected by the agent loop itself
-// (a budget exhausted by Eino) and cancels the react loop. Loop-breakers and the
-// step watchdog trip the same state from inside the callbacks.
-func (b *AgentCallbackBuilder) TripTerminal(reason TerminalReason, detail string) {
-	b.terminal.Trip(reason, "", detail)
-}
-
 // TerminalTripped reports whether the turn was force-terminated this run, with
-// the reason, offending tool (if any), and detail.
+// the reason, offending tool (if any), and detail. The owned loop reads it to
+// surface the step-watchdog reason (a hung step) for its graceful fallback.
 func (b *AgentCallbackBuilder) TerminalTripped() (reason TerminalReason, tool, detail string, ok bool) {
 	return b.terminal.Tripped()
 }
 
-// EmitTerminalAnswer emits the graceful final assistant answer for a tripped
-// terminal condition and returns its text (for history), or "" when the turn was
-// not force-terminated. The model produced no usable answer in these cases, so a
-// hardcoded, self-contained message stands in.
-func (b *AgentCallbackBuilder) EmitTerminalAnswer(ctx context.Context) string {
-	reason, tool, detail, ok := b.terminal.Tripped()
-	if !ok {
-		return ""
-	}
+// EmitGracefulFallback emits the hardcoded graceful answer for an explicit
+// terminal reason. The owned loop calls this only when its finalize model
+// produced no content, so there is nothing streamed to retract. Returns the
+// message, or "" when the reason has no message.
+func (b *AgentCallbackBuilder) EmitGracefulFallback(ctx context.Context, reason TerminalReason, tool, detail string) string {
 	msg := formatTerminalMessage(reason, tool, detail)
 	if msg == "" {
 		return ""
-	}
-	// If partial prose was streamed live before the turn was force-stopped,
-	// scrub it first — the graceful answer replaces it (mirrors the HITL scrub),
-	// keeping the live stream consistent with persisted history.
-	if b.modelHandler.AnyChunkStreamed() {
-		b.emitter.Emit(ctx, &domain.AgentEvent{
-			Type:      domain.EventTypeRetractAssistant,
-			Timestamp: time.Now(),
-		})
 	}
 	b.emitter.Emit(ctx, &domain.AgentEvent{
 		Type:       domain.EventTypeAnswer,

@@ -47,8 +47,8 @@ func newTestToolEventHandler(collector *eventCollector, recorder *mockToolCallRe
 	}
 	terminal := NewTerminalState(nil)
 	activity := NewActivityClock()
-	model := NewModelEventHandler(emitter, counter, agents.NewReasoningExtractor(), nil, nil, NewTokenAccumulator(), activity)
-	handler := NewToolEventHandler(emitter, counter, model, recorder, sessionID, terminal, activity)
+	model := NewModelEventHandler(emitter, counter, agents.NewReasoningExtractor(), nil, NewTokenAccumulator(), activity)
+	handler := NewToolEventHandler(emitter, counter, model, recorder, sessionID, terminal, activity, false)
 	return handler, counter, terminal
 }
 
