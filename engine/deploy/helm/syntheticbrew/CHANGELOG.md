@@ -7,6 +7,15 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-06-10
+
+### Changed
+- Version hygiene (no engine behaviour change; `appVersion` stays **1.6.0**).
+  Bumps the default `configApply.image.tag` to **0.5.0** (the brewctl release
+  that adds `max_step_duration` GitOps pass-through) and refreshes the
+  `tests/values/*` chart-test fixtures to the current published pair
+  (engine 1.6.0 + brewctl 0.5.0), clearing long-stale 1.2.x/0.2.x pins.
+
 ## [0.9.3] - 2026-06-10
 
 ### Changed

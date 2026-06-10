@@ -264,8 +264,11 @@ configApply:
     # so periodic tools/list refresh is GitOps-driven. Removing the YAML line
     # is intentionally a no-op (preserve-by-absent); clear via curl PATCH null
     # or Admin SPA.
+    # 0.3.0–0.5.0: kg apply/diff/pull subcommands (0.3.0), entities_path split
+    # authoring (0.4.0), knowledge_graphs capability type (0.4.1), and
+    # agents[].max_step_duration pass-through (0.5.0, paired with engine 1.6.0).
     repository: ghcr.io/syntheticinc/brewctl
-    tag: "0.2.5"
+    tag: "0.5.0"
     pullPolicy: IfNotPresent
 
   # Inline syntheticbrew.yaml content. Format: bundle YAML with top-level
