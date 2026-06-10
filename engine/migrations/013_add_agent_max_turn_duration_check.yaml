@@ -22,7 +22,7 @@ databaseChangeLog:
             sql: |
               UPDATE agents
                 SET max_turn_duration = 120
-                WHERE max_turn_duration < 1 OR max_turn_duration > 86400;
+                WHERE max_turn_duration < 0 OR max_turn_duration > 86400;
               ALTER TABLE agents
                 ADD CONSTRAINT chk_agent_turn_duration
                 CHECK (max_turn_duration = 0

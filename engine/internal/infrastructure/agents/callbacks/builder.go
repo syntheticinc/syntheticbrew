@@ -119,8 +119,9 @@ func (b *AgentCallbackBuilder) WaitStreamDone() {
 // WaitStreamDoneBounded waits for the streaming goroutines but gives up after
 // timeout, so a pathological stream that never closes cannot wedge the request
 // handler forever. Returns true if all goroutines finished, false on timeout.
-// The owned loop pairs this with the goroutine's ctx-watcher (which closes the
-// stream on cancel); this is the last-resort backstop.
+// The owned loop pairs this with the per-frame ctx check in the stream goroutine
+// (which stops consuming on cancel); this is the last-resort backstop that lets
+// the caller disarm a still-running goroutine when it overruns.
 func (b *AgentCallbackBuilder) WaitStreamDoneBounded(timeout time.Duration) bool {
 	done := make(chan struct{})
 	go func() {
