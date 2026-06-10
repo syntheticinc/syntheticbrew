@@ -23,6 +23,11 @@ import (
 // openAIToolNamePattern is the regex OpenAI applies to function tool names.
 const openAIToolNamePattern = `^[a-zA-Z0-9_-]+$`
 
+// maxTurnDurationCeiling is the runtime upper bound (seconds) for a turn's
+// wall-clock budget — mirrors the API-layer validation (validateMaxTurnDuration)
+// and keeps the value far below time.Duration int64-nanosecond overflow.
+const maxTurnDurationCeiling = 86400
+
 var openAIToolNameRegex = regexp.MustCompile(openAIToolNamePattern)
 
 // Agent runs one ReAct turn through our owned compose.Graph (built in NewAgent).
@@ -158,6 +163,27 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 	// ContextRewriter closure, stored in our Agent struct. Survives across turns and retries.
 	var contextTokensCounter *atomic.Int64
 
+	// Extract per-turn timing budgets from config and clamp BEFORE anything consumes
+	// them (the MessageModifier soft-landing reads maxTurnDuration too).
+	// maxTurnDuration: 0 = use default 120s. maxStepDuration: 0 = watchdog disabled.
+	maxTurnDuration := 0
+	maxStepDuration := 0
+	if config.AgentConfig != nil {
+		maxTurnDuration = config.AgentConfig.MaxTurnDuration
+		maxStepDuration = config.AgentConfig.MaxStepDuration
+	}
+	// Defense-in-depth runtime clamp: max_turn_duration has API-layer validation
+	// but (unlike max_step_duration) no DB CHECK, so a stale or non-API-written
+	// row could carry an out-of-range value that, multiplied into a time.Duration,
+	// overflows int64-ns to a negative (already-expired) or effectively-infinite
+	// deadline — or trips the modifier's soft-landing from t≈0. Reset anything
+	// outside [0, 86400] to 0 (engine default) rather than trust the persisted value.
+	if maxTurnDuration < 0 || maxTurnDuration > maxTurnDurationCeiling {
+		slog.WarnContext(ctx, "max_turn_duration out of range; using engine default",
+			"value", maxTurnDuration, "ceiling", maxTurnDurationCeiling)
+		maxTurnDuration = 0
+	}
+
 	// Add AgentConfig if provided
 	if config.AgentConfig != nil {
 		promptLen := 0
@@ -190,7 +216,7 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 				SystemPrompt:      systemPrompt,
 				UrgencyWarning:    urgencyWarning,
 				MaxSteps:          config.MaxSteps,
-				MaxTurnDuration:   config.AgentConfig.MaxTurnDuration,
+				MaxTurnDuration:   maxTurnDuration,
 				ContextLogger:     contextLogger,
 				ReminderProviders: reminderProviders,
 				SessionID:         config.SessionID,
@@ -228,15 +254,6 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 	agentID := config.AgentID
 	if agentID == "" {
 		agentID = "supervisor"
-	}
-
-	// Extract per-turn timing budgets from config.
-	// maxTurnDuration: 0 = use default 120s. maxStepDuration: 0 = watchdog disabled.
-	maxTurnDuration := 0
-	maxStepDuration := 0
-	if config.AgentConfig != nil {
-		maxTurnDuration = config.AgentConfig.MaxTurnDuration
-		maxStepDuration = config.AgentConfig.MaxStepDuration
 	}
 
 	// Build the owned ReAct graph: our hand-built loop with budget/loop routing

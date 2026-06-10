@@ -3,6 +3,7 @@ package react
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -128,11 +129,31 @@ func toolCallNamesByID(messages []*schema.Message) map[string]string {
 	return map[string]string{}
 }
 
+// safeToolNamePattern is the allowlist a tool name must match to be quoted
+// verbatim into a model-facing message: the OpenAI function-name charset plus the
+// dotted/colon MCP conventions, length 1..128.
+var safeToolNamePattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// sanitizeToolNameForPrompt neutralises a tool name before it is interpolated
+// into a System-role correction message. Tool names are tenant/MCP-controlled and
+// are NOT charset-validated on non-OpenAI routes, so a hostile name could smuggle
+// instructions (with or without newlines) into a high-authority System turn. An
+// allowlist is used, not a denylist: a conforming name — including the dotted MCP
+// convention (`device.list`) — passes verbatim; anything else is replaced with a
+// neutral placeholder so no attacker-controlled text reaches the System turn.
+func sanitizeToolNameForPrompt(name string) string {
+	if safeToolNamePattern.MatchString(name) {
+		return name
+	}
+	return "the tool"
+}
+
 // loopCorrectionMessage builds the nudge for a detected loop. Identical-args is a
 // gentle, polling-aware steer that does NOT forbid the tool (legitimate polling
 // must keep working); tool-error tells the model to stop calling a tool that
 // keeps failing and work with what it has.
 func loopCorrectionMessage(reason callbacks.TerminalReason, tool string) string {
+	tool = sanitizeToolNameForPrompt(tool)
 	switch reason {
 	case callbacks.TerminalIdenticalArgsLoop:
 		return fmt.Sprintf("You have called `%s` with identical arguments several times in quick succession without new information. If you are intentionally polling for a change, wait between checks instead of calling back-to-back. Otherwise stop repeating this exact call — try a materially different approach, or give your best final answer now from what you already have.", tool)

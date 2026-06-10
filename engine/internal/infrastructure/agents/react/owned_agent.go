@@ -21,6 +21,11 @@ import (
 // time-wall routing; max_turn_duration overrides it.
 const defaultTurnTimeout = 120 * time.Second
 
+// streamDrainGrace caps how long we wait for the chunk-streaming goroutine to
+// finish after the run context is resolved, so a pathological provider stream
+// cannot wedge the request handler. var (not const) only so tests can shorten it.
+var streamDrainGrace = 30 * time.Second
+
 // terminalHolder carries the graph's chosen terminal reason out of a run, so the
 // orchestration can emit the hardcoded fallback if the finalize model yields
 // nothing. Threaded through the run context (the graph is built once but runs
@@ -73,8 +78,24 @@ func (a *Agent) streamOwned(ctx context.Context, input string, callback func(chu
 		a.contextLogger.LogContext(ctx, messages, 0)
 	}
 
-	var finalContent string
+	// finalContent accumulates the streamed answer. The chunk callback runs on the
+	// model handler's streaming goroutine, so the accumulation and the downstream
+	// chunk forwarding are guarded by finalMu. `closed` disarms a goroutine that
+	// outlives a bounded WaitStreamDone timeout: once set, no further chunk may
+	// mutate finalContent OR reach the (possibly already-returned) response
+	// writer. The chunk callback is invoked under the lock so the disarm is atomic
+	// with the forwarding decision — chunks are delivered sequentially anyway.
+	var (
+		finalContent string
+		closed       bool
+		finalMu      sync.Mutex
+	)
 	wrappedCallback := func(chunk string) error {
+		finalMu.Lock()
+		defer finalMu.Unlock()
+		if closed {
+			return nil
+		}
 		finalContent += chunk
 		if callback != nil {
 			return callback(chunk)
@@ -156,21 +177,34 @@ func (a *Agent) streamOwned(ctx context.Context, input string, callback func(chu
 	stopWatchdog()
 	reader.Close()
 
-	cb.WaitStreamDone()
+	// Bounded wait: if the stream goroutine outlives the grace period (a hung
+	// provider), disarm it under the lock so it can no longer mutate finalContent
+	// or push into the response writer after this handler returns, then snapshot
+	// the answer and work off the snapshot. When it finishes in time, the wait
+	// establishes happens-before and the snapshot is simply the final value.
+	streamDone := cb.WaitStreamDoneBounded(streamDrainGrace)
+	finalMu.Lock()
+	if !streamDone {
+		closed = true
+		slog.WarnContext(ctx, "[OWNED] stream goroutine did not finish within grace; disarming and proceeding", "grace", streamDrainGrace)
+	}
+	answer := finalContent
+	finalMu.Unlock()
+
 	cb.FinalizeAccumulatedText(ctx)
 
 	// HITL turns: the widget is the message — drop any prose so history and the
 	// final-answer event stay consistent with the suppressed live stream.
-	if cb.HITLSeen() && finalContent != "" {
-		slog.InfoContext(ctx, "[OWNED] suppressing assistant content on HITL turn", "dropped_length", len(finalContent))
-		finalContent = ""
+	if cb.HITLSeen() && answer != "" {
+		slog.InfoContext(ctx, "[OWNED] suppressing assistant content on HITL turn", "dropped_length", len(answer))
+		answer = ""
 	}
 
 	// Fallback: a terminal turn whose finalize model produced nothing still owes
 	// the client a graceful answer. The reason comes from the graph (budget/loop)
 	// via the holder, or from the step watchdog (a hung step — the carve-out that
 	// keeps the hardcoded message). Emit only when nothing was streamed.
-	if !cb.HITLSeen() && finalContent == "" {
+	if !cb.HITLSeen() && answer == "" {
 		if reason, tool, detail := gracefulTerminalReason(holder, cb); reason != callbacks.TerminalNone {
 			cb.EmitGracefulFallback(ctx, reason, tool, detail)
 			slog.InfoContext(ctx, "[OWNED] finalize produced no content, emitted hardcoded fallback", "reason", reason.String())
@@ -179,14 +213,14 @@ func (a *Agent) streamOwned(ctx context.Context, input string, callback func(chu
 
 	cb.EmitTokenUsage(ctx, a.lastContextTokens())
 
-	if finalContent != "" {
-		messages = append(messages, &schema.Message{Role: schema.Assistant, Content: finalContent})
+	if answer != "" {
+		messages = append(messages, &schema.Message{Role: schema.Assistant, Content: answer})
 	}
 	if a.contextLogger != nil {
 		a.contextLogger.LogContextSummary(ctx, messages)
 	}
 
-	slog.InfoContext(ctx, "[OWNED] streamOwned completed", "recv_count", recvCount, "answer_length", len(finalContent))
+	slog.InfoContext(ctx, "[OWNED] streamOwned completed", "recv_count", recvCount, "answer_length", len(answer))
 	return nil
 }
 

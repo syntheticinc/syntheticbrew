@@ -152,6 +152,16 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 		hasToolCalls := false // Track if tool calls were detected
 
 		for {
+			// Stop promptly once the run context is cancelled (budget/watchdog/
+			// client). eino's stream is not safe to Close from another goroutine,
+			// so we cannot interrupt a blocked Recv directly — a hung Recv is
+			// bounded instead by the turn deadline (transport honours ctx) and by
+			// the caller's bounded WaitStreamDone, which keeps the request handler
+			// from wedging even if this goroutine is parked.
+			if ctx.Err() != nil {
+				slog.InfoContext(ctx, "[CALLBACK] context cancelled, stopping stream goroutine", "frame_count", frameCount)
+				break
+			}
 			slog.DebugContext(ctx, "[CALLBACK] waiting for frame.Recv...", "frame_count", frameCount)
 			frame, err := output.Recv()
 			frameCount++

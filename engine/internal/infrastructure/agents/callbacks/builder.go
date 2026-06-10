@@ -116,6 +116,25 @@ func (b *AgentCallbackBuilder) WaitStreamDone() {
 	b.modelHandler.streamWg.Wait()
 }
 
+// WaitStreamDoneBounded waits for the streaming goroutines but gives up after
+// timeout, so a pathological stream that never closes cannot wedge the request
+// handler forever. Returns true if all goroutines finished, false on timeout.
+// The owned loop pairs this with the goroutine's ctx-watcher (which closes the
+// stream on cancel); this is the last-resort backstop.
+func (b *AgentCallbackBuilder) WaitStreamDoneBounded(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		b.modelHandler.streamWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
 // FinalizeAccumulatedText emits EventTypeAnswer for any accumulated streamed text.
 func (b *AgentCallbackBuilder) FinalizeAccumulatedText(ctx context.Context) {
 	b.modelHandler.FinalizeAccumulatedText(ctx)
