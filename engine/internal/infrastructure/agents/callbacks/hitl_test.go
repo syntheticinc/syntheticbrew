@@ -8,7 +8,6 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
 )
 
 // HITL chain integration test: covers the wire-through from
@@ -40,7 +39,6 @@ func newTestBuilder(captured *capturedEvents) *AgentCallbackBuilder {
 	return NewBuilder(BuilderConfig{
 		EventCallback: captured.emit,
 		ChunkCallback: func(chunk string) error { return nil },
-		Store:         agents.NewStepContentStore(),
 		SessionID:     "test-session",
 		AgentID:       "test-agent",
 	})

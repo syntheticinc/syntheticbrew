@@ -5,10 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 func TestNewBuilder_DefaultAgentID(t *testing.T) {
@@ -76,27 +75,6 @@ func TestNewBuilder_FinalizeAccumulatedText(t *testing.T) {
 	// No accumulated text - should not emit
 	b.FinalizeAccumulatedText(context.Background())
 	assert.Empty(t, collector.GetEvents())
-}
-
-func TestNewBuilder_StepContentStoreIntegration(t *testing.T) {
-	store := agents.NewStepContentStore()
-	collector := newEventCollector()
-	chunks := newChunkCollector()
-
-	b := NewBuilder(BuilderConfig{
-		EventCallback: collector.Callback,
-		ChunkCallback: chunks.Callback,
-		Store:         store,
-	})
-
-	// Simulate content accumulation during streaming
-	currentStep := b.GetStep()
-	store.Append(currentStep, "Hello ")
-	store.Append(currentStep, "World")
-
-	// Verify content was stored
-	content := store.Get(currentStep)
-	assert.Equal(t, "Hello World", content)
 }
 
 func TestNewBuilder_EventCallback_ReceivesEvents(t *testing.T) {

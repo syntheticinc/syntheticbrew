@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // eventCollector collects events for testing
@@ -47,33 +47,6 @@ func (c *eventCollector) GetEventsByType(eventType domain.AgentEventType) []*dom
 			result = append(result, e)
 		}
 	}
-	return result
-}
-
-// chunkCollector collects chunks for testing
-type chunkCollector struct {
-	mu     sync.Mutex
-	chunks []string
-}
-
-func newChunkCollector() *chunkCollector {
-	return &chunkCollector{
-		chunks: make([]string, 0),
-	}
-}
-
-func (c *chunkCollector) Callback(chunk string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.chunks = append(c.chunks, chunk)
-	return nil
-}
-
-func (c *chunkCollector) GetChunks() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	result := make([]string, len(c.chunks))
-	copy(result, c.chunks)
 	return result
 }
 

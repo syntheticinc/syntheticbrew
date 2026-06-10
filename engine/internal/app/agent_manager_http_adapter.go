@@ -68,10 +68,10 @@ func (a *agentManagerHTTPAdapter) ListAgents(ctx context.Context) ([]deliveryhtt
 	result := make([]deliveryhttp.AgentInfo, 0, len(records))
 	for _, rec := range records {
 		info := deliveryhttp.AgentInfo{
-			ID:           rec.ID,
-			Name:         rec.Name,
-			ToolsCount:   len(rec.BuiltinTools) + len(rec.CustomTools),
-			IsSystem:     rec.IsSystem,
+			ID:         rec.ID,
+			Name:       rec.Name,
+			ToolsCount: len(rec.BuiltinTools) + len(rec.CustomTools),
+			IsSystem:   rec.IsSystem,
 		}
 		if a.schemaRepo != nil {
 			schemaNames, _ := a.schemaRepo.ListSchemasForAgent(ctx, rec.Name)
@@ -122,10 +122,10 @@ func (a *agentManagerHTTPAdapter) GetAgent(ctx context.Context, name string) (*d
 
 	detail := &deliveryhttp.AgentDetail{
 		AgentInfo: deliveryhttp.AgentInfo{
-			ID:           rec.ID,
-			Name:         rec.Name,
-			ToolsCount:   len(tools),
-			IsSystem:     rec.IsSystem,
+			ID:         rec.ID,
+			Name:       rec.Name,
+			ToolsCount: len(tools),
+			IsSystem:   rec.IsSystem,
 		},
 		SystemPrompt:    rec.SystemPrompt,
 		Tools:           tools,
@@ -226,8 +226,23 @@ func validateMaxStepDuration(v int) error {
 	return pkgerrors.InvalidInput("max_step_duration must be 0 (disabled) or between 10 and 3600 seconds")
 }
 
+// validateMaxTurnDuration bounds the per-turn wall-clock timeout. 0 = engine
+// default (120s). The upper bound keeps a single turn's timeout sane and well
+// below the int64-nanosecond overflow point of time.Duration arithmetic, so a
+// hostile/typo value cannot create an effectively-infinite (or negative,
+// already-expired) turn deadline.
+func validateMaxTurnDuration(v int) error {
+	if v == 0 || (v >= 1 && v <= 86400) {
+		return nil
+	}
+	return pkgerrors.InvalidInput("max_turn_duration must be 0 (default) or between 1 and 86400 seconds")
+}
+
 func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
 	if err := validateMaxStepDuration(req.MaxStepDuration); err != nil {
+		return nil, err
+	}
+	if err := validateMaxTurnDuration(req.MaxTurnDuration); err != nil {
 		return nil, err
 	}
 	if err := a.resolveAgentModel(ctx, &req); err != nil {
@@ -266,6 +281,9 @@ func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryh
 
 func (a *agentManagerHTTPAdapter) UpdateAgent(ctx context.Context, name string, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
 	if err := validateMaxStepDuration(req.MaxStepDuration); err != nil {
+		return nil, err
+	}
+	if err := validateMaxTurnDuration(req.MaxTurnDuration); err != nil {
 		return nil, err
 	}
 	name, err := a.resolveAgentName(ctx, name)
@@ -388,6 +406,9 @@ func (a *agentManagerHTTPAdapter) PatchAgent(ctx context.Context, name string, r
 		existing.MaxContextSize = *req.MaxContextSize
 	}
 	if req.MaxTurnDuration != nil {
+		if err := validateMaxTurnDuration(*req.MaxTurnDuration); err != nil {
+			return nil, err
+		}
 		existing.MaxTurnDuration = *req.MaxTurnDuration
 	}
 	if req.MaxStepDuration != nil {

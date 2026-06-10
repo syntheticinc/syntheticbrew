@@ -49,6 +49,7 @@ type ToolEventHandler struct {
 	sameArgsThreshold int
 	terminal          *TerminalState
 	activity          *ActivityClock
+	disableBreakers   bool // owned-loop path: the graph owns loop policy, so the callbacks breakers stand down
 
 	mu            sync.Mutex
 	consecErr     map[string]int // per-tool consecutive [ERROR] count, this turn
@@ -67,6 +68,7 @@ func NewToolEventHandler(
 	sessionID string,
 	terminal *TerminalState,
 	activity *ActivityClock,
+	disableBreakers bool,
 ) *ToolEventHandler {
 	return &ToolEventHandler{
 		emitter:           emitter,
@@ -78,6 +80,7 @@ func NewToolEventHandler(
 		sameArgsThreshold: defaultMaxIdenticalToolCalls,
 		terminal:          terminal,
 		activity:          activity,
+		disableBreakers:   disableBreakers,
 		consecErr:         make(map[string]int),
 	}
 }
@@ -88,6 +91,9 @@ func NewToolEventHandler(
 // On trip it records the terminal condition and cancels the loop (a per-callback
 // child cancel does not stop Eino). Reports whether the breaker tripped.
 func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, result string) bool {
+	if h.disableBreakers {
+		return false // graph owns loop policy on the owned path
+	}
 	h.mu.Lock()
 	if !strings.HasPrefix(result, "[ERROR]") {
 		h.consecErr[toolName] = 0
@@ -115,6 +121,9 @@ func (h *ToolEventHandler) tripBreakerIfLooping(ctx context.Context, toolName, r
 // results. A call with different arguments (e.g. pagination) resets the streak,
 // so legitimate iteration is never affected. Reports whether the breaker tripped.
 func (h *ToolEventHandler) tripIdenticalArgsIfLooping(ctx context.Context, toolName, argsJSON string) bool {
+	if h.disableBreakers {
+		return false // graph owns loop policy on the owned path
+	}
 	if argsJSON == "" {
 		return false // no arguments to compare — cannot identify a repeat
 	}

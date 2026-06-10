@@ -11,56 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockStepContentStore implements StepContentStoreInterface for testing
-type mockStepContentStore struct {
-	mu      sync.RWMutex
-	content map[int]string
-}
-
-func newMockStepContentStore() *mockStepContentStore {
-	return &mockStepContentStore{
-		content: make(map[int]string),
-	}
-}
-
-func (m *mockStepContentStore) Append(step int, content string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.content[step] += content
-}
-
-func (m *mockStepContentStore) Get(step int) string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.content[step]
-}
-
-func (m *mockStepContentStore) GetAll() map[int]string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	result := make(map[int]string, len(m.content))
-	for k, v := range m.content {
-		result[k] = v
-	}
-	return result
-}
-
-func (m *mockStepContentStore) ClearBefore(step int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for k := range m.content {
-		if k < step-1 {
-			delete(m.content, k)
-		}
-	}
-}
-
 // mockContextLogger implements ContextLoggerInterface for testing
 type mockContextLogger struct {
-	mu                     sync.Mutex
-	logContextCalled       int
-	loggedMessages         [][]*schema.Message
-	loggedSteps            []int
+	mu               sync.Mutex
+	logContextCalled int
+	loggedMessages   [][]*schema.Message
+	loggedSteps      []int
 }
 
 func newMockContextLogger() *mockContextLogger {
@@ -83,15 +39,13 @@ func (m *mockContextLogger) LogContextSummary(ctx context.Context, messages []*s
 }
 
 func TestNewMessageModifier(t *testing.T) {
-	store := newMockStepContentStore()
 	logger := newMockContextLogger()
 
 	cfg := MessageModifierConfig{
-		SystemPrompt:     "Test system prompt",
-		UrgencyWarning:   "Warning: %d steps left",
-		MaxSteps:         10,
-		StepContentStore: store,
-		ContextLogger:    logger,
+		SystemPrompt:   "Test system prompt",
+		UrgencyWarning: "Warning: %d steps left",
+		MaxSteps:       10,
+		ContextLogger:  logger,
 	}
 
 	modifier := NewMessageModifier(cfg)
@@ -110,12 +64,10 @@ func TestNewMessageModifier(t *testing.T) {
 }
 
 func TestMessageModifier_SystemPromptInjection(t *testing.T) {
-	store := newMockStepContentStore()
 
 	modifier := NewMessageModifier(MessageModifierConfig{
-		SystemPrompt:     "You are a helpful assistant.",
-		MaxSteps:         10,
-		StepContentStore: store,
+		SystemPrompt: "You are a helpful assistant.",
+		MaxSteps:     10,
 	})
 
 	input := []*schema.Message{
@@ -138,15 +90,13 @@ func TestMessageModifier_SystemPromptInjection(t *testing.T) {
 }
 
 func TestMessageModifier_UrgencyWarning(t *testing.T) {
-	store := newMockStepContentStore()
 	logger := newMockContextLogger()
 
 	modifier := NewMessageModifier(MessageModifierConfig{
-		SystemPrompt:     "System",
-		UrgencyWarning:   "\n\nWARNING: Only %d steps remaining!",
-		MaxSteps:         10,
-		StepContentStore: store,
-		ContextLogger:    logger,
+		SystemPrompt:   "System",
+		UrgencyWarning: "\n\nWARNING: Only %d steps remaining!",
+		MaxSteps:       10,
+		ContextLogger:  logger,
 	})
 
 	input := []*schema.Message{
@@ -166,14 +116,12 @@ func TestMessageModifier_UrgencyWarning(t *testing.T) {
 }
 
 func TestMessageModifier_TaskReminder(t *testing.T) {
-	store := newMockStepContentStore()
 	logger := newMockContextLogger()
 
 	modifier := NewMessageModifier(MessageModifierConfig{
-		SystemPrompt:     "System",
-		MaxSteps:         10,
-		StepContentStore: store,
-		ContextLogger:    logger,
+		SystemPrompt:  "System",
+		MaxSteps:      10,
+		ContextLogger: logger,
 	})
 
 	input := []*schema.Message{
@@ -198,56 +146,13 @@ func TestMessageModifier_TaskReminder(t *testing.T) {
 	}
 }
 
-func TestMessageModifier_ContentRecovery(t *testing.T) {
-	store := newMockStepContentStore()
-	store.Append(0, "Recovered content")
-
-	modifier := NewMessageModifier(MessageModifierConfig{
-		SystemPrompt:     "System",
-		MaxSteps:         10,
-		StepContentStore: store,
-	})
-
-	input := []*schema.Message{
-		{Role: schema.User, Content: "Question"},
-		{
-			Role:    schema.Assistant,
-			Content: "", // Empty content
-			ToolCalls: []schema.ToolCall{
-				{ID: "call-1", Function: schema.FunctionCall{Name: "search_code"}},
-			},
-		},
-	}
-
-	result := modifier.Modify(context.Background(), input)
-
-	// Find assistant message
-	var assistantMsg *schema.Message
-	for _, msg := range result {
-		if msg.Role == schema.Assistant {
-			assistantMsg = msg
-			break
-		}
-	}
-
-	if assistantMsg == nil {
-		t.Fatal("assistant message not found")
-	}
-
-	if assistantMsg.Content != "Recovered content" {
-		t.Errorf("content recovery: got %q, want %q", assistantMsg.Content, "Recovered content")
-	}
-}
-
 func TestMessageModifier_GetStep(t *testing.T) {
-	store := newMockStepContentStore()
 	logger := newMockContextLogger()
 
 	modifier := NewMessageModifier(MessageModifierConfig{
-		SystemPrompt:     "System",
-		MaxSteps:         10,
-		StepContentStore: store,
-		ContextLogger:    logger,
+		SystemPrompt:  "System",
+		MaxSteps:      10,
+		ContextLogger: logger,
 	})
 
 	if modifier.GetStep() != 0 {
@@ -263,14 +168,12 @@ func TestMessageModifier_GetStep(t *testing.T) {
 }
 
 func TestMessageModifier_ResetStep(t *testing.T) {
-	store := newMockStepContentStore()
 	logger := newMockContextLogger()
 
 	modifier := NewMessageModifier(MessageModifierConfig{
-		SystemPrompt:     "System",
-		MaxSteps:         10,
-		StepContentStore: store,
-		ContextLogger:    logger,
+		SystemPrompt:  "System",
+		MaxSteps:      10,
+		ContextLogger: logger,
 	})
 
 	input := []*schema.Message{{Role: schema.User, Content: "Hello"}}
@@ -285,12 +188,10 @@ func TestMessageModifier_ResetStep(t *testing.T) {
 }
 
 func TestMessageModifier_BuildModifierFunc(t *testing.T) {
-	store := newMockStepContentStore()
 
 	modifier := NewMessageModifier(MessageModifierConfig{
-		SystemPrompt:     "System",
-		MaxSteps:         10,
-		StepContentStore: store,
+		SystemPrompt: "System",
+		MaxSteps:     10,
 	})
 
 	fn := modifier.BuildModifierFunc()

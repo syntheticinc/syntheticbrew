@@ -57,8 +57,8 @@ it has been validated. Pick what your environment supports and treat
 
 ```bash
 helm install syntheticbrew-engine oci://ghcr.io/syntheticinc/charts/syntheticbrew-engine \
-  --version 0.4.2 \
-  --set image.tag=1.0.2 \
+  --version 0.9.5 \
+  --set image.tag=1.7.0 \
   --set postgresql.external.host=my-postgres \
   --set postgresql.external.password=secret
 ```

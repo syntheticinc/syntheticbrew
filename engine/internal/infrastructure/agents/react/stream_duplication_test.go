@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
 )
 
 // streamingMockChatModel mimics the eino-ext openai client shape:
