@@ -7,6 +7,16 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-06-11
+
+### Changed
+- Bumps `appVersion` to **1.7.1**. Engine 1.7.1 enforces `max_context_size` in real
+  tokens (the previous chars/4 estimate undercounted tool-/JSON-heavy traffic by
+  ~46% and skipped compression), counts the system prompt and tool schemas toward
+  the budget, and makes the budget a hard ceiling. Also bounds `max_context_size` at
+  the API layer and keeps parallel tool calls well-formed under compression. No
+  chart template change.
+
 ## [0.9.5] - 2026-06-11
 
 ### Changed
