@@ -537,6 +537,177 @@ func TestContextRewriter_ToolCallIDMatching(t *testing.T) {
 	}
 }
 
+// TestContextRewriter_RealTokenBudgetTripsCompression is the regression guard for
+// the max_context_size under-count: a transcript sized in the window where the old
+// chars/4 estimate would pass (<= 4*limit chars) but the real token budget
+// (~2.5 chars/token, minus headroom) is exceeded MUST compress. Before the fix the
+// guard read chars/4 and shipped the context untouched; now it trips.
+func TestContextRewriter_RealTokenBudgetTripsCompression(t *testing.T) {
+	ctx := context.Background()
+
+	a1 := strings.Repeat("a", 140)
+	a2 := strings.Repeat("b", 140)
+	input := []*schema.Message{
+		{Role: schema.System, Content: "S"},
+		{Role: schema.User, Content: "Q1"},
+		{Role: schema.Assistant, Content: a1},
+		{Role: schema.User, Content: "Q2"},
+		{Role: schema.Assistant, Content: a2},
+		{Role: schema.User, Content: "Q3"},
+	}
+	// total msgChars = 1 + 2 + 140 + 2 + 140 + 2 = 287.
+	// old chars/4 budget at limit 100 = 400 chars -> 287 <= 400 -> NO compression (the bug).
+	// new budget = 100 * (1-0.10) * 2.5 = 225 chars -> 287 > 225 -> compression.
+	rewriter := NewContextRewriter(100)
+	result := rewriter(ctx, input)
+
+	if len(result) >= len(input) {
+		t.Fatalf("expected compression in the real-token window, got %d messages (input %d)",
+			len(result), len(input))
+	}
+	// All user turns survive; the most recent assistant survives; the oldest is dropped.
+	if countByRole(result, schema.User) != 3 {
+		t.Errorf("all 3 user turns must be preserved, got %d", countByRole(result, schema.User))
+	}
+	if !hasContent(result, a2) {
+		t.Error("most recent assistant message should be kept")
+	}
+	if hasContent(result, a1) {
+		t.Error("oldest assistant message should have been dropped to fit the real-token budget")
+	}
+}
+
+// TestContextRewriter_HardCeilingDropsOldestUserTurns verifies the hard ceiling:
+// when the user messages alone exceed the budget, the oldest user turns are evicted
+// (not warn-and-proceed-over-limit) while the most recent ones are kept in order.
+func TestContextRewriter_HardCeilingDropsOldestUserTurns(t *testing.T) {
+	ctx := context.Background()
+
+	pad := strings.Repeat("x", 100)
+	input := []*schema.Message{
+		{Role: schema.User, Content: "U1-" + pad},
+		{Role: schema.User, Content: "U2-" + pad},
+		{Role: schema.User, Content: "U3-" + pad},
+		{Role: schema.User, Content: "U4-" + pad},
+	}
+	// each user ~103 chars; budget = 100*(0.90)*2.5 = 225 chars -> only the two
+	// newest (~206) fit; U1 and U2 evicted.
+	rewriter := NewContextRewriter(100)
+	result := rewriter(ctx, input)
+
+	if hasContent(result, "U1-") || hasContent(result, "U2-") {
+		t.Error("oldest user turns U1/U2 should have been evicted by the hard ceiling")
+	}
+	if !hasContent(result, "U3-") || !hasContent(result, "U4-") {
+		t.Error("most recent user turns U3/U4 should be kept")
+	}
+	total := estimateMessagesChars(result)
+	if total > 225 {
+		t.Errorf("kept context %d chars exceeds the hard ceiling of 225", total)
+	}
+}
+
+// TestContextRewriter_HardCeilingKeepsLiveTurn verifies the floor: the most recent
+// user message (the live turn) is never dropped, even if it alone exceeds the
+// budget — we send it over-limit rather than emptying the request.
+func TestContextRewriter_HardCeilingKeepsLiveTurn(t *testing.T) {
+	ctx := context.Background()
+
+	huge := strings.Repeat("z", 500)
+	input := []*schema.Message{
+		{Role: schema.User, Content: "old-" + strings.Repeat("y", 200)},
+		{Role: schema.User, Content: "live-" + huge},
+	}
+	rewriter := NewContextRewriter(10) // tiny budget: 10*0.9*2.5 = 22 chars
+	result := rewriter(ctx, input)
+
+	if !hasContent(result, "live-") {
+		t.Error("the live (most recent) user turn must always be kept")
+	}
+	if hasContent(result, "old-") {
+		t.Error("the older oversized user turn should be evicted")
+	}
+}
+
+// TestContextRewriter_CalibratorTightensBudget verifies the rewriter consults the
+// calibrator: a context that fits under the default ratio must compress once a real
+// low-ratio sample (more tokens per char) is recorded.
+func TestContextRewriter_CalibratorTightensBudget(t *testing.T) {
+	ctx := context.Background()
+
+	body := strings.Repeat("c", 200)
+	input := []*schema.Message{
+		{Role: schema.System, Content: "S"},
+		{Role: schema.User, Content: "Q1"},
+		{Role: schema.Assistant, Content: body},
+		{Role: schema.User, Content: "Q2"},
+	}
+	// msgChars = 1 + 2 + 200 + 2 = 205.
+	// default ratio 2.5: budget = 100*0.9*2.5 = 225 -> 205 <= 225 -> no compression.
+	cal := NewTokenCalibrator()
+	cfg := ContextRewriterConfig{MaxContextTokens: 100, Calibrator: cal}
+	rewriter := NewContextRewriterFromConfig(cfg)
+
+	if got := rewriter(ctx, input); len(got) != len(input) {
+		t.Fatalf("with default ratio context should fit; got %d of %d", len(got), len(input))
+	}
+	// Record a real sample: this request was ~206 chars but the provider counted
+	// 150 prompt_tokens -> ratio ~1.37, clamped to 1.5. budget = 100*0.9*1.5 = 135.
+	cal.RecordRequestChars(206)
+	cal.RecordPromptTokens(150)
+	got := rewriter(ctx, input)
+	if len(got) >= len(input) {
+		t.Errorf("calibrated low ratio should tighten the budget and force compression, got %d of %d",
+			len(got), len(input))
+	}
+}
+
+// TestContextRewriter_ParallelToolCallsAtomic guards against a malformed transcript
+// under compression: an assistant that issued several tool calls in one step must be
+// kept together with ALL of its tool results, or dropped entirely. Keeping the
+// assistant while evicting one of its tool results leaves a tool_call with no
+// matching result — which OpenAI-strict providers reject with a 400.
+func TestContextRewriter_ParallelToolCallsAtomic(t *testing.T) {
+	ctx := context.Background()
+
+	big := strings.Repeat("r", 50)
+	input := []*schema.Message{
+		{Role: schema.System, Content: "S"},
+		{Role: schema.User, Content: "Q"},
+		{
+			Role:    schema.Assistant,
+			Content: "calling two tools",
+			ToolCalls: []schema.ToolCall{
+				{ID: "c1", Type: "function", Function: schema.FunctionCall{Name: "t1", Arguments: "{}"}},
+				{ID: "c2", Type: "function", Function: schema.FunctionCall{Name: "t2", Arguments: "{}"}},
+			},
+		},
+		{Role: schema.Tool, Content: big, Name: "t1", ToolCallID: "c1"},
+		{Role: schema.Tool, Content: big, Name: "t2", ToolCallID: "c2"},
+		{Role: schema.Assistant, Content: "final answer"},
+	}
+	// Budget tuned so assistant+ONE tool result fits but assistant+BOTH does not —
+	// the exact window where one-at-a-time pairing would orphan a tool_call.
+	rewriter := NewContextRewriter(60) // maxChars = 60 * 0.9 * 2.5 = 135
+	result := rewriter(ctx, input)
+
+	keptToolIDs := map[string]bool{}
+	for _, m := range result {
+		if m.Role == schema.Tool {
+			keptToolIDs[m.ToolCallID] = true
+		}
+	}
+	for _, m := range result {
+		if m.Role == schema.Assistant {
+			for _, tc := range m.ToolCalls {
+				if !keptToolIDs[tc.ID] {
+					t.Errorf("kept assistant has tool_call %q with no matching tool result (malformed transcript)", tc.ID)
+				}
+			}
+		}
+	}
+}
+
 // Helper function to count messages by role
 func countByRole(messages []*schema.Message, role schema.RoleType) int {
 	count := 0

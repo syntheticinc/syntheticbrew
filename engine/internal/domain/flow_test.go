@@ -137,6 +137,25 @@ func TestFlow_Validate_NegativeMaxContextSize(t *testing.T) {
 	}
 }
 
+func TestFlow_Validate_MaxContextSizeAboveCeiling(t *testing.T) {
+	flow := &Flow{
+		Type:           "coder",
+		Name:           "test",
+		SystemPrompt:   "test",
+		MaxSteps:       10,
+		MaxContextSize: MaxContextSizeCeiling + 1,
+	}
+
+	if err := flow.Validate(); err == nil {
+		t.Error("expected error for max_context_size above the ceiling, got nil")
+	}
+
+	atCeiling := &Flow{Type: "coder", Name: "test", SystemPrompt: "test", MaxSteps: 10, MaxContextSize: MaxContextSizeCeiling}
+	if err := atCeiling.Validate(); err != nil {
+		t.Errorf("expected no error at the ceiling, got: %v", err)
+	}
+}
+
 func TestFlow_CanSpawn(t *testing.T) {
 	flow := &Flow{
 		Type:           "supervisor",

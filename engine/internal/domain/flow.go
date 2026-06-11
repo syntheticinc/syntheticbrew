@@ -2,6 +2,12 @@ package domain
 
 import "fmt"
 
+// MaxContextSizeCeiling bounds max_context_size (in tokens) far above any real
+// model context window. It exists only to reject absurd values that would overflow
+// the character-budget arithmetic in the context rewriter (token count × ratio),
+// turning a garbage input into a clear 400 rather than silent degenerate behaviour.
+const MaxContextSizeCeiling = 100_000_000
+
 // LifecyclePolicy defines when a flow should suspend and where to report
 type LifecyclePolicy struct {
 	SuspendOn []string // events that cause suspension, e.g. "final_answer"
@@ -51,6 +57,9 @@ func (f *Flow) Validate() error {
 	}
 	if f.MaxContextSize < 0 {
 		return fmt.Errorf("max_context_size must be non-negative (0 = unlimited)")
+	}
+	if f.MaxContextSize > MaxContextSizeCeiling {
+		return fmt.Errorf("max_context_size must not exceed %d tokens", MaxContextSizeCeiling)
 	}
 	return nil
 }
