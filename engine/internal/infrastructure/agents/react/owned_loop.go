@@ -259,6 +259,12 @@ func buildOwnedGraph(ctx context.Context, cfg ownedGraphConfig) (compose.Runnabl
 		// chat→finalize path, input is empty (the unexecuted tool-call message is
 		// deliberately dropped). Then feed the transcript + finalize directive.
 		state.Messages = append(state.Messages, input...)
+		// Keep the forced summary within the context budget too: a turn that hit the
+		// wall can carry an over-limit transcript, and finalize is still a real model
+		// call. Compress before appending the directive (idempotent if already small).
+		if cfg.messageRewriter != nil {
+			state.Messages = cfg.messageRewriter(ctx, state.Messages)
+		}
 		msgs := make([]*schema.Message, len(state.Messages))
 		copy(msgs, state.Messages)
 		return appendFinalizeDirective(msgs), nil

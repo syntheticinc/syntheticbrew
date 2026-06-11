@@ -238,11 +238,31 @@ func validateMaxTurnDuration(v int) error {
 	return pkgerrors.InvalidInput("max_turn_duration must be 0 (default) or between 1 and 86400 seconds")
 }
 
-func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
+// validateMaxContextSize bounds max_context_size (in tokens). 0 = unlimited. The
+// upper bound rejects absurd values that would overflow the context rewriter's
+// char-budget arithmetic, returning 400 InvalidInput instead of silent degenerate
+// behaviour (a negative budget that compresses every request to the live turn).
+func validateMaxContextSize(v int) error {
+	if v >= 0 && v <= domain.MaxContextSizeCeiling {
+		return nil
+	}
+	return pkgerrors.InvalidInput(fmt.Sprintf("max_context_size must be between 0 (unlimited) and %d tokens", domain.MaxContextSizeCeiling))
+}
+
+// validateAgentBudgets validates the per-turn budget fields shared by create and
+// update, returning the first 400 InvalidInput.
+func validateAgentBudgets(req deliveryhttp.CreateAgentRequest) error {
 	if err := validateMaxStepDuration(req.MaxStepDuration); err != nil {
-		return nil, err
+		return err
 	}
 	if err := validateMaxTurnDuration(req.MaxTurnDuration); err != nil {
+		return err
+	}
+	return validateMaxContextSize(req.MaxContextSize)
+}
+
+func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
+	if err := validateAgentBudgets(req); err != nil {
 		return nil, err
 	}
 	if err := a.resolveAgentModel(ctx, &req); err != nil {
@@ -280,10 +300,7 @@ func (a *agentManagerHTTPAdapter) CreateAgent(ctx context.Context, req deliveryh
 }
 
 func (a *agentManagerHTTPAdapter) UpdateAgent(ctx context.Context, name string, req deliveryhttp.CreateAgentRequest) (*deliveryhttp.AgentDetail, error) {
-	if err := validateMaxStepDuration(req.MaxStepDuration); err != nil {
-		return nil, err
-	}
-	if err := validateMaxTurnDuration(req.MaxTurnDuration); err != nil {
+	if err := validateAgentBudgets(req); err != nil {
 		return nil, err
 	}
 	name, err := a.resolveAgentName(ctx, name)
@@ -403,6 +420,9 @@ func (a *agentManagerHTTPAdapter) PatchAgent(ctx context.Context, name string, r
 		existing.MaxSteps = *req.MaxSteps
 	}
 	if req.MaxContextSize != nil {
+		if err := validateMaxContextSize(*req.MaxContextSize); err != nil {
+			return nil, err
+		}
 		existing.MaxContextSize = *req.MaxContextSize
 	}
 	if req.MaxTurnDuration != nil {

@@ -40,9 +40,10 @@ type Agent struct {
 	toolNames        []string // List of available tool names for system prompt injection
 	messageModifier  *MessageModifier
 	toolCallRecorder ToolCallRecorder
-	maxTurnDuration  int           // seconds, max time for a single LLM stream turn (0 = default 120s)
-	maxStepDuration  int           // seconds, per-step watchdog timeout (0 = disabled)
-	contextTokens    *atomic.Int64 // last context size reported by ContextRewriter (agent-scoped, survives across turns)
+	maxTurnDuration  int                     // seconds, max time for a single LLM stream turn (0 = default 120s)
+	maxStepDuration  int                     // seconds, per-step watchdog timeout (0 = disabled)
+	contextTokens    *atomic.Int64           // last context size reported by ContextRewriter (agent-scoped, survives across turns)
+	tokenCalibrator  *agents.TokenCalibrator // empirical chars/token from provider usage; feeds the rewriter budget (nil when no max context)
 
 	// ownedRun is our hand-built ReAct graph. It routes budget/loop terminations
 	// into a tool-less finalize node so the model summarises instead of emitting a
@@ -162,6 +163,10 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 	// contextTokensCounter is agent-scoped: created before react.NewAgent(), captured by
 	// ContextRewriter closure, stored in our Agent struct. Survives across turns and retries.
 	var contextTokensCounter *atomic.Int64
+	// tokenCalibrator is agent-scoped likewise: the rewriter records each request's
+	// char size and the model callback records the provider's prompt_tokens, so the
+	// budget decision tracks real tokenization instead of a fixed chars/token guess.
+	var tokenCalibrator *agents.TokenCalibrator
 
 	// Extract per-turn timing budgets from config and clamp BEFORE anything consumes
 	// them (the MessageModifier soft-landing reads maxTurnDuration too).
@@ -229,21 +234,39 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 
 		// Add MessageRewriter (ContextRewriter) if max context size is set
 		if config.AgentConfig.MaxContextSize > 0 {
-			// Agent-scoped counter: created before react.NewAgent(), captured by rewriter closure,
-			// stored in our Agent struct. Survives across per-turn NewBuilder calls and error-retries.
+			// Agent-scoped state: created before the graph is built, captured by the
+			// rewriter closure, stored on the Agent. Survives across per-turn
+			// NewBuilder calls and error-retries.
 			contextTokensCounter = &atomic.Int64{}
-			// Eino's MessageRewriter receives conversation messages WITHOUT system prompt
-			// (system prompt is injected separately by MessageModifier).
-			// Estimate system prompt tokens so context_tokens reflects the full context window usage.
-			systemPromptTokens := 0
-			if config.AgentConfig.Prompts != nil {
-				systemPromptTokens = len(config.AgentConfig.Prompts.SystemPrompt) / 4 // ~4 chars/token
+			tokenCalibrator = agents.NewTokenCalibrator()
+
+			// Defense-in-depth runtime clamp: max_context_size is bounded by API-layer
+			// validation, but a stale or non-API-written row carrying an absurd value
+			// would overflow the rewriter's token×ratio char arithmetic. Cap it at the
+			// ceiling (not 0 — that would mean "unlimited" and skip compression).
+			maxContextSize := config.AgentConfig.MaxContextSize
+			if maxContextSize > domain.MaxContextSizeCeiling {
+				slog.WarnContext(ctx, "max_context_size above ceiling; clamping",
+					"value", maxContextSize, "ceiling", domain.MaxContextSizeCeiling)
+				maxContextSize = domain.MaxContextSizeCeiling
 			}
-			messageRewriterFunc = agents.NewContextRewriterWithLogging(
-				config.AgentConfig.MaxContextSize,
-				contextLogger,
-				func(n int) { contextTokensCounter.Store(int64(n + systemPromptTokens)) },
-			)
+
+			// The rewriter sees conversation messages only; the system prompt is
+			// injected by the MessageModifier and the tool schemas by the model
+			// binding, both AFTER the rewriter runs. Feed their sizes in as fixed
+			// overhead so the budget covers the whole request, not just messages.
+			systemPromptChars := 0
+			if config.AgentConfig.Prompts != nil {
+				systemPromptChars = len(config.AgentConfig.Prompts.SystemPrompt)
+			}
+			messageRewriterFunc = agents.NewContextRewriterFromConfig(agents.ContextRewriterConfig{
+				MaxContextTokens:  maxContextSize,
+				SystemPromptChars: systemPromptChars,
+				ToolSchemaChars:   estimateToolSchemaChars(toolInfos),
+				Calibrator:        tokenCalibrator,
+				ContextLogger:     contextLogger,
+				OnContextSize:     func(n int) { contextTokensCounter.Store(int64(n)) },
+			})
 		}
 
 		// Add StreamToolCallChecker (EnhancedStreamToolCallChecker) if enabled
@@ -296,8 +319,37 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 		maxTurnDuration:  maxTurnDuration,
 		maxStepDuration:  maxStepDuration,
 		contextTokens:    contextTokensCounter,
+		tokenCalibrator:  tokenCalibrator,
 		ownedRun:         ownedRun,
 	}, nil
+}
+
+// promptTokensRecorder returns the calibrator's prompt_tokens sink, or nil when no
+// context budget is configured (so the callback builder skips the wiring).
+func (a *Agent) promptTokensRecorder() func(int) {
+	if a.tokenCalibrator == nil {
+		return nil
+	}
+	return a.tokenCalibrator.RecordPromptTokens
+}
+
+// estimateToolSchemaChars approximates the byte size of the tool/function schemas
+// sent to the provider on every request. It is a fixed per-request overhead the
+// context budget must account for; the TokenCalibrator later absorbs any residual
+// estimate error from the real prompt_tokens.
+func estimateToolSchemaChars(toolInfos []*schema.ToolInfo) int {
+	total := 0
+	for _, info := range toolInfos {
+		if info == nil {
+			continue
+		}
+		if b, err := json.Marshal(info); err == nil {
+			total += len(b)
+			continue
+		}
+		total += len(info.Name) + len(info.Desc)
+	}
+	return total
 }
 
 // ownedStepBudget maps the configured MaxSteps (tool-round budget; 0 = unlimited)

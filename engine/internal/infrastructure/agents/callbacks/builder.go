@@ -34,6 +34,9 @@ type BuilderConfig struct {
 	// graph owns loop policy (detection + correction + escalation) in its routing,
 	// so the callbacks breakers must not also fire. The step watchdog stays active.
 	DisableLoopBreakers bool
+	// RecordPromptTokens, when set, receives each model call's real prompt_tokens so
+	// the context-size calibrator can derive a true chars/token ratio. Nil disables it.
+	RecordPromptTokens func(int)
 }
 
 // AgentCallbackBuilder wires together all callback sub-components
@@ -63,6 +66,9 @@ func NewBuilder(cfg BuilderConfig) *AgentCallbackBuilder {
 	activity := NewActivityClock()
 
 	modelHandler := NewModelEventHandler(emitter, counter, extractor, cfg.ChunkCallback, tokenAcc, activity)
+	if cfg.RecordPromptTokens != nil {
+		modelHandler.SetPromptTokensRecorder(cfg.RecordPromptTokens)
+	}
 	toolHandler := NewToolEventHandler(emitter, counter, modelHandler, cfg.ToolCallRecorder, cfg.SessionID, terminal, activity, cfg.DisableLoopBreakers)
 
 	return &AgentCallbackBuilder{
