@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.7.1] — 2026-06-11
+
+### Fixed
+
+- **`max_context_size` is now enforced in real tokens, not a fixed `chars/4`
+  guess.** The compression guard previously estimated tokens as characters ÷ 4.
+  For tool- and JSON-heavy, multilingual traffic the real ratio is closer to
+  ~2.7 chars/token, so the estimate undercounted by ~46% and the guard skipped
+  compression exactly when it was needed — a flow configured for 128k tokens
+  could ship ~187k. The decision now runs off an empirical chars-per-token ratio
+  calibrated from the provider's real `prompt_tokens` (with a conservative
+  cold-start default and a safety headroom), so the budget tracks true
+  tokenization.
+- **The budget now covers the whole request.** The system prompt and the tool
+  schemas — both injected after the rewriter runs and previously invisible to it —
+  are counted toward the context budget, not just the conversation messages.
+- **The budget is a hard ceiling.** When the system prompt plus user turns still
+  exceed the limit, the oldest user turns are evicted (keeping the live turn)
+  instead of warning and sending an over-limit request. The forced-summary call
+  at the budget wall is compressed too, so it cannot overflow on a long turn.
+- **Compression keeps parallel tool calls well-formed.** An assistant message that
+  issued several tool calls in one step is now kept together with ALL of its tool
+  results, or dropped as a whole. Previously compression could keep the assistant
+  while evicting one of its tool results, leaving a `tool_call` with no matching
+  result — which OpenAI-strict providers reject with a 400. This was latent while
+  the chars/4 under-count rarely triggered compression; enforcing the real budget
+  makes compression fire regularly, so the atomic-group rule is now required.
+- **Data race on the streaming answer-start flag.** The per-call streaming
+  goroutines could overlap across sequential model calls in a turn and write the
+  shared `answerStarted` flag without synchronization (caught by `go test -race`).
+  The flag is now guarded by the same lock as the rest of the streamed-answer
+  state.
+
+### Security
+
+- **`max_context_size` is bounded at the API layer.** A value above a sane ceiling
+  (100M tokens) is now rejected with 400 on create / update / patch / config-import,
+  instead of overflowing the budget arithmetic into silent degenerate compression
+  (SCC-03: invalid input must be 400, not a silent wrong result).
+
 ## [1.7.0] — 2026-06-10
 
 ### Changed

@@ -127,6 +127,7 @@ func (a *Agent) streamOwned(ctx context.Context, input string, callback func(chu
 		ToolCallRecorder:    a.toolCallRecorder,
 		AbortLoop:           cancel,
 		DisableLoopBreakers: true,
+		RecordPromptTokens:  a.promptTokensRecorder(),
 	})
 	if a.messageModifier != nil {
 		a.messageModifier.StartTurn()
@@ -281,6 +282,7 @@ func (a *Agent) runOwned(ctx context.Context, input string, eventCallback func(e
 		ToolCallRecorder:    a.toolCallRecorder,
 		AbortLoop:           cancel,
 		DisableLoopBreakers: true,
+		RecordPromptTokens:  a.promptTokensRecorder(),
 	})
 	if a.messageModifier != nil {
 		a.messageModifier.StartTurn()

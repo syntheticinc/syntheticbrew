@@ -24,6 +24,10 @@ type ModelEventHandler struct {
 	tokenAcc  *TokenAccumulator
 	activity  *ActivityClock
 
+	// promptTokensRecorder, when set, receives each call's real prompt_tokens so the
+	// context-size calibrator can derive a true chars/token ratio. Optional.
+	promptTokensRecorder func(int)
+
 	// Text accumulation state for streaming
 	accumulatedReasoning string
 	reasoningMu          sync.Mutex
@@ -54,6 +58,41 @@ func (h *ModelEventHandler) HITLSeen() bool {
 	h.accumulatedMu.Lock()
 	defer h.accumulatedMu.Unlock()
 	return h.hitlSeen
+}
+
+// SetPromptTokensRecorder wires a sink for each call's real prompt_tokens.
+func (h *ModelEventHandler) SetPromptTokensRecorder(fn func(int)) {
+	h.promptTokensRecorder = fn
+}
+
+// recordPromptTokens forwards the provider's prompt_tokens to the calibrator.
+func (h *ModelEventHandler) recordPromptTokens(usage *model.TokenUsage) {
+	if usage == nil || h.promptTokensRecorder == nil {
+		return
+	}
+	h.promptTokensRecorder(usage.PromptTokens)
+}
+
+// markAnswerStartedOnce flips answerStarted true and reports whether this call was
+// the first to do so. Guarded by accumulatedMu because overlapping streaming
+// goroutines (sequential model calls whose background drains overlap) would
+// otherwise race on the field.
+func (h *ModelEventHandler) markAnswerStartedOnce() bool {
+	h.accumulatedMu.Lock()
+	defer h.accumulatedMu.Unlock()
+	if h.answerStarted {
+		return false
+	}
+	h.answerStarted = true
+	return true
+}
+
+// resetAnswerStarted clears the flag for the next streaming session, under the
+// same lock that guards markAnswerStartedOnce.
+func (h *ModelEventHandler) resetAnswerStarted() {
+	h.accumulatedMu.Lock()
+	h.answerStarted = false
+	h.accumulatedMu.Unlock()
 }
 
 // NewModelEventHandler creates a new ModelEventHandler.
@@ -87,6 +126,7 @@ func (h *ModelEventHandler) OnModelEnd(ctx context.Context, info *callbacks.RunI
 	if output.TokenUsage != nil && h.tokenAcc != nil {
 		h.tokenAcc.Add(output.TokenUsage)
 	}
+	h.recordPromptTokens(output.TokenUsage)
 
 	msg := output.Message
 
@@ -188,6 +228,7 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 			if frame.TokenUsage != nil && h.tokenAcc != nil {
 				h.tokenAcc.Add(frame.TokenUsage)
 			}
+			h.recordPromptTokens(frame.TokenUsage)
 
 			msg := frame.Message
 			slog.DebugContext(ctx, "[CALLBACK] processing frame", "frame_count", frameCount, "has_content", msg.Content != "", "tool_calls", len(msg.ToolCalls))
@@ -218,8 +259,7 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 				if h.chunkCb != nil {
 					// If this is the first answer chunk and we have accumulated reasoning,
 					// finalize reasoning first so client knows reasoning is complete
-					if !h.answerStarted {
-						h.answerStarted = true
+					if h.markAnswerStartedOnce() {
 						h.reasoningMu.Lock()
 						if h.accumulatedReasoning != "" {
 							event := &domain.AgentEvent{
@@ -284,7 +324,7 @@ func (h *ModelEventHandler) OnModelEndWithStreamOutput(ctx context.Context, info
 		}
 
 		// Reset answerStarted for next streaming session
-		h.answerStarted = false
+		h.resetAnswerStarted()
 
 		// Increment step only if no error occurred AND no tool calls detected
 		// Tool execution will handle step increment in onToolEnd
