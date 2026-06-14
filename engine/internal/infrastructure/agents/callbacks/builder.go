@@ -156,6 +156,7 @@ func (b *AgentCallbackBuilder) EmitTokenUsage(ctx context.Context, contextTokens
 	if total == 0 {
 		return
 	}
+	cached := b.tokenAcc.CachedPromptTokens()
 	metadata := map[string]interface{}{
 		"total_tokens":      b.tokenAcc.TotalTokens(),
 		"prompt_tokens":     b.tokenAcc.PromptTokens(),
@@ -164,6 +165,13 @@ func (b *AgentCallbackBuilder) EmitTokenUsage(ctx context.Context, contextTokens
 	if contextTokens > 0 {
 		metadata["context_tokens"] = contextTokens
 	}
+	if cached > 0 {
+		metadata["cached_prompt_tokens"] = cached
+	}
+	slog.DebugContext(ctx, "turn token usage",
+		"prompt_tokens", b.tokenAcc.PromptTokens(),
+		"cached_prompt_tokens", cached,
+		"completion_tokens", b.tokenAcc.CompletionTokens())
 	b.emitter.Emit(ctx, &domain.AgentEvent{
 		Type:     domain.EventTypeTokenUsage,
 		Metadata: metadata,

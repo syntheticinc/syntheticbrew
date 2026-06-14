@@ -18,6 +18,23 @@ import (
 type ModelConfig struct {
 	EmbeddingDim int            `json:"embedding_dim,omitempty"` // >0 for embedding models (e.g. 1536 for text-embedding-3-small)
 	ExtraBody    map[string]any `json:"extra_body,omitempty"`
+	CacheControl *CacheControl  `json:"cache_control,omitempty"`
+}
+
+// CacheControl configures provider-agnostic prompt-cache breakpoints on a model.
+// Default (nil / Enabled=false) = off: the request shape stays byte-identical to
+// no-cache, so existing tenants are unaffected. Only the openai_compatible and
+// anthropic adapters translate it to wire-level cache_control breakpoints on the
+// stable prefix; automatic-cache providers (openai, azure_openai, google) cache
+// on their own and ignore it.
+type CacheControl struct {
+	Enabled bool `json:"enabled"`
+	// Breakpoints names the prefix segments to mark cacheable; subset of
+	// {"system","tools","history"}. Empty = adapter default placement.
+	Breakpoints []string `json:"breakpoints,omitempty"`
+	// MinPrefixTokens skips marking prefixes estimated below this size (provider
+	// caches have a minimum, e.g. ~1024 tokens). 0 = adapter default.
+	MinPrefixTokens int `json:"min_prefix_tokens,omitempty"`
 }
 
 // LLMProviderModel maps to the "models" table (LLM provider configuration).

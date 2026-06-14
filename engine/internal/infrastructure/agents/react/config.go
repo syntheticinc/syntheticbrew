@@ -32,4 +32,8 @@ type AgentConfig struct {
 	SessionDirName           string                    // shared session dir name (set by parent to keep all logs together)
 	ProviderType             string                    // e.g. "openai", "openai_compatible", "anthropic"
 	ProviderBaseURL          string                    // upstream API base URL — paired with ProviderType/ModelName for route detection
+	// RequestPayloadModifier, when non-nil, transforms the serialized chat
+	// request body before send (prompt-cache breakpoint injection). Applied to
+	// the chat node only. nil = no transform (request shape unchanged).
+	RequestPayloadModifier func([]byte) ([]byte, error)
 }

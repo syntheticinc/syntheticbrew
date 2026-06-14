@@ -70,6 +70,16 @@ func terminalHolderFrom(ctx context.Context) *terminalHolder {
 // out as a normal answer — there is no post-hoc error→graceful-answer mapping and
 // no shadow-state reconstruction. The hardcoded message survives only as the
 // fallback when the finalize model yields nothing.
+// runOptions assembles the per-run compose options for the owned graph: the
+// callbacks handler plus any chat-node call options (the prompt-cache payload
+// modifier). chatCallOptions is empty when caching is off.
+func (a *Agent) runOptions(cb *callbacks.AgentCallbackBuilder) []compose.Option {
+	opts := make([]compose.Option, 0, 1+len(a.chatCallOptions))
+	opts = append(opts, cb.BuildComposeCallbacksOption())
+	opts = append(opts, a.chatCallOptions...)
+	return opts
+}
+
 func (a *Agent) streamOwned(ctx context.Context, input string, callback func(chunk string) error, eventCallback func(event *domain.AgentEvent) error) error {
 	slog.InfoContext(ctx, "[OWNED] starting streamOwned", "input_length", len(input))
 
@@ -133,7 +143,7 @@ func (a *Agent) streamOwned(ctx context.Context, input string, callback func(chu
 		a.messageModifier.StartTurn()
 	}
 
-	reader, err := a.ownedRun.Stream(streamCtx, messages, cb.BuildComposeCallbacksOption())
+	reader, err := a.ownedRun.Stream(streamCtx, messages, a.runOptions(cb)...)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -289,7 +299,7 @@ func (a *Agent) runOwned(ctx context.Context, input string, eventCallback func(e
 	}
 
 	stopWatchdog := cb.StartStepWatchdog(streamCtx, a.stepWatchdogDuration())
-	result, err := a.ownedRun.Invoke(streamCtx, messages, cb.BuildComposeCallbacksOption())
+	result, err := a.ownedRun.Invoke(streamCtx, messages, a.runOptions(cb)...)
 	stopWatchdog()
 
 	if err != nil {

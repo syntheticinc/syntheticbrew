@@ -18,6 +18,32 @@ type ModelCacheInvalidator interface {
 	Invalidate(modelID string)
 }
 
+// toDomainCacheControl converts the HTTP cache-control payload to the persisted
+// config form (nil → nil = off).
+func toDomainCacheControl(p *deliveryhttp.CacheControlPayload) *models.CacheControl {
+	if p == nil {
+		return nil
+	}
+	return &models.CacheControl{
+		Enabled:         p.Enabled,
+		Breakpoints:     p.Breakpoints,
+		MinPrefixTokens: p.MinPrefixTokens,
+	}
+}
+
+// toHTTPCacheControl converts the persisted cache-control config to its HTTP
+// representation (nil → nil = absent in the response).
+func toHTTPCacheControl(c *models.CacheControl) *deliveryhttp.CacheControlPayload {
+	if c == nil {
+		return nil
+	}
+	return &deliveryhttp.CacheControlPayload{
+		Enabled:         c.Enabled,
+		Breakpoints:     c.Breakpoints,
+		MinPrefixTokens: c.MinPrefixTokens,
+	}
+}
+
 // modelServiceHTTPAdapter bridges GORMLLMProviderRepository to the http.ModelService interface.
 type modelServiceHTTPAdapter struct {
 	repo       *configrepo.GORMLLMProviderRepository
@@ -55,6 +81,7 @@ func (m *modelServiceHTTPAdapter) ListModels(ctx context.Context) ([]deliveryhtt
 			EmbeddingDim: p.EmbeddingDim(),
 			IsDefault:    p.IsDefault,
 			ExtraBody:    p.GetConfig().ExtraBody,
+			CacheControl: toHTTPCacheControl(p.GetConfig().CacheControl),
 			CreatedAt:    p.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -97,10 +124,11 @@ func (m *modelServiceHTTPAdapter) CreateModel(ctx context.Context, req deliveryh
 	if kind == "chat" && autoPromoted {
 		provider.IsDefault = true
 	}
-	if req.EmbeddingDim > 0 || len(req.ExtraBody) > 0 {
+	if req.EmbeddingDim > 0 || len(req.ExtraBody) > 0 || req.CacheControl != nil {
 		provider.SetConfig(models.ModelConfig{
 			EmbeddingDim: req.EmbeddingDim,
 			ExtraBody:    req.ExtraBody,
+			CacheControl: toDomainCacheControl(req.CacheControl),
 		})
 	}
 
@@ -139,6 +167,7 @@ func (m *modelServiceHTTPAdapter) CreateModel(ctx context.Context, req deliveryh
 		EmbeddingDim: provider.EmbeddingDim(),
 		IsDefault:    provider.IsDefault,
 		ExtraBody:    provider.GetConfig().ExtraBody,
+		CacheControl: toHTTPCacheControl(provider.GetConfig().CacheControl),
 		CreatedAt:    provider.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
@@ -212,10 +241,11 @@ func (m *modelServiceHTTPAdapter) UpdateModel(ctx context.Context, name string, 
 	// PUT semantics: replace config wholesale. Carry over both
 	// EmbeddingDim and ExtraBody from the request — omitted fields clear
 	// (mirrors the rest of the PUT path which replaces, not patches).
-	if req.EmbeddingDim > 0 || len(req.ExtraBody) > 0 {
+	if req.EmbeddingDim > 0 || len(req.ExtraBody) > 0 || req.CacheControl != nil {
 		update.SetConfig(models.ModelConfig{
 			EmbeddingDim: req.EmbeddingDim,
 			ExtraBody:    req.ExtraBody,
+			CacheControl: toDomainCacheControl(req.CacheControl),
 		})
 	}
 	// Only update API key if provided (empty means keep existing).
@@ -271,6 +301,7 @@ func (m *modelServiceHTTPAdapter) UpdateModel(ctx context.Context, name string, 
 		EmbeddingDim: req.EmbeddingDim,
 		IsDefault:    isDefault,
 		ExtraBody:    req.ExtraBody,
+		CacheControl: req.CacheControl,
 		CreatedAt:    existing.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
@@ -340,6 +371,11 @@ func (m *modelServiceHTTPAdapter) PatchModel(ctx context.Context, name string, r
 		cfg.ExtraBody = *req.ExtraBody
 		update.SetConfig(cfg)
 	}
+	if req.CacheControl != nil {
+		cfg := update.GetConfig()
+		cfg.CacheControl = toDomainCacheControl(req.CacheControl)
+		update.SetConfig(cfg)
+	}
 
 	// Preserve current IsDefault through the plain Update path — promotion
 	// goes through SetDefault to keep the atomic-swap invariant intact.
@@ -387,6 +423,7 @@ func (m *modelServiceHTTPAdapter) PatchModel(ctx context.Context, name string, r
 		EmbeddingDim: embDim,
 		IsDefault:    isDefault,
 		ExtraBody:    update.GetConfig().ExtraBody,
+		CacheControl: toHTTPCacheControl(update.GetConfig().CacheControl),
 		CreatedAt:    existing.CreatedAt.Format(time.RFC3339),
 	}, nil
 }

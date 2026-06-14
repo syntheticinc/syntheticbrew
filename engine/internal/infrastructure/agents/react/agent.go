@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	openaiext "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
@@ -49,6 +50,10 @@ type Agent struct {
 	// into a tool-less finalize node so the model summarises instead of emitting a
 	// hardcoded apology.
 	ownedRun compose.Runnable[[]*schema.Message, *schema.Message]
+
+	// chatCallOptions are extra per-run options designated to the chat node —
+	// currently the prompt-cache payload modifier. Empty when caching is off.
+	chatCallOptions []compose.Option
 }
 
 // NewAgent creates a new ReAct agent
@@ -321,7 +326,54 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 		contextTokens:    contextTokensCounter,
 		tokenCalibrator:  tokenCalibrator,
 		ownedRun:         ownedRun,
+		chatCallOptions:  buildChatCallOptions(config.RequestPayloadModifier, config.SessionID),
 	}, nil
+}
+
+// buildChatCallOptions assembles the chat-node call options: the prompt-cache
+// payload modifier (explicit-cache providers) and the x-session-id header
+// (sticky-routing for auto-cache providers). Either may be absent; an empty slice
+// leaves the request shape unchanged.
+func buildChatCallOptions(modifier func([]byte) ([]byte, error), sessionID string) []compose.Option {
+	var opts []compose.Option
+	if modifier != nil {
+		opts = append(opts, compose.WithChatModelOption(
+			openaiext.WithRequestPayloadModifier(
+				func(_ context.Context, _ []*schema.Message, rawBody []byte) ([]byte, error) {
+					return modifier(rawBody)
+				},
+			),
+		).DesignateNode(ownedNodeChat))
+	}
+	// A stable per-conversation session id lets OpenRouter sticky-route every step
+	// and turn to the same upstream provider, keeping its automatic prefix cache
+	// warm (the only lever for auto-cache providers like Qwen, which ignore
+	// cache_control). Plain header — non-OpenRouter providers ignore it, and the
+	// request body is untouched.
+	if headerSafeSessionID(sessionID) {
+		opts = append(opts, compose.WithChatModelOption(
+			openaiext.WithExtraHeader(map[string]string{"x-session-id": sessionID}),
+		).DesignateNode(ownedNodeChat))
+	}
+	return opts
+}
+
+// headerSafeSessionID reports whether the session id is safe to send as an HTTP
+// header value and within OpenRouter's 256-char limit. The session id is
+// client-supplied (chat request body) and unvalidated upstream; Go's transport
+// rejects control characters in header values, so a malformed id would otherwise
+// fail the turn at send time. We skip the sticky header for unsafe ids instead —
+// graceful degradation, never a broken turn.
+func headerSafeSessionID(s string) bool {
+	if s == "" || len(s) > 256 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e { // printable ASCII only
+			return false
+		}
+	}
+	return true
 }
 
 // promptTokensRecorder returns the calibrator's prompt_tokens sink, or nil when no

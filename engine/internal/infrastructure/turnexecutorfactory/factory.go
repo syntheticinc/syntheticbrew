@@ -251,6 +251,7 @@ func (f *Factory) CreateForSession(
 		ModelName:        resolved.Name,
 		ProviderType:     resolved.ProviderType,
 		ProviderBaseURL:  resolved.BaseURL,
+		RequestPayloadModifier: llm.NewCacheControlModifier(resolved.ProviderType, resolved.CacheControl),
 		AgentName:        agentName,
 		AgentUUID:        agentUUID,
 		SchemaID:         schemaID,

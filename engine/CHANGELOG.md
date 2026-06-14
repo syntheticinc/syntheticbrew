@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.2] — 2026-06-14
+
+### Added
+
+- **Prompt caching: provider-agnostic `cache_control` breakpoints.** A new opt-in
+  per-model `cache_control` config marks the stable prefix (system prompt + tool
+  definitions + frozen history) as cacheable, so explicit-cache providers
+  (Anthropic Claude; explicit Qwen models) serve it from cache instead of
+  re-billing it on every ReAct step. Default off — when off, the request shape is
+  byte-identical to before. Automatic-cache providers ignore the marker
+  (harmless). Cached tokens are surfaced in the per-turn `token_usage` event as
+  `cached_prompt_tokens` and in a debug log line.
+- **Prompt caching: OpenRouter sticky-routing via `x-session-id`.** The engine now
+  sends the conversation's session id as an `x-session-id` header on
+  OpenAI-compatible requests (on by default). OpenRouter uses it to pin every step
+  and turn of a conversation to the same upstream provider, keeping that provider's
+  automatic prefix cache warm — the only effective lever for auto-cache models such
+  as `qwen3-coder-next`, which ignore `cache_control`. Harmless for non-OpenRouter
+  providers (the header is ignored). See `deployment/prompt-caching` in the docs.
+
 ## [1.7.1] — 2026-06-11
 
 ### Fixed

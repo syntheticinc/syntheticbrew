@@ -68,6 +68,7 @@ type EngineAdapter struct {
 	modelName        string
 	providerType     string // e.g. "openai", "openai_compatible"
 	providerBaseURL  string
+	requestPayloadModifier func([]byte) ([]byte, error) // prompt-cache body transform; nil = none
 	agentName        string
 	agentUUID        string // uuid FK → agents.id (for engine execution context)
 	// pass-through deps
@@ -90,6 +91,7 @@ type Config struct {
 	ModelName        string
 	ProviderType     string // e.g. "openai", "openai_compatible"
 	ProviderBaseURL  string
+	RequestPayloadModifier func([]byte) ([]byte, error) // prompt-cache body transform; nil = none
 	AgentName        string
 	AgentUUID        string // uuid FK → agents.id (for engine execution context)
 	ContextReminders []ContextReminderProvider
@@ -127,6 +129,7 @@ func NewEngineAdapter(cfg Config) (*EngineAdapter, error) {
 		modelName:        cfg.ModelName,
 		providerType:     cfg.ProviderType,
 		providerBaseURL:  cfg.ProviderBaseURL,
+		requestPayloadModifier: cfg.RequestPayloadModifier,
 		agentName:        cfg.AgentName,
 		agentUUID:        cfg.AgentUUID,
 		contextReminders: cfg.ContextReminders,
@@ -216,6 +219,7 @@ func (e *EngineAdapter) ExecuteTurn(
 		ModelName:         e.modelName,
 		ProviderType:      e.providerType,
 		ProviderBaseURL:   e.providerBaseURL,
+		RequestPayloadModifier: e.requestPayloadModifier,
 		AgentConfig:       e.agentConfig,
 		MessageCompressor: compressor,
 	}
