@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.7.3] — 2026-06-14
+
+### Fixed
+
+- **Prompt caching: history breakpoint no longer lands on dynamic trailing
+  content, so the growing conversation prefix actually caches.** On explicit-cache
+  providers the cached-token count could freeze at the system-prompt-plus-tools
+  size (the static head) while the rest of the conversation was re-billed on every
+  call. Two causes, both fixed:
+  - The `cache_control` history breakpoint was placed on the absolute last message.
+    In the live request that is a per-call dynamic reminder (tool-call history,
+    environment time) injected after the conversation, so its cache block was never
+    re-read and only the static head re-hit. The breakpoint now lands on the last
+    **stable** message (the last non-system turn), before the trailing reminders.
+  - Per-step directives (task focus, finalize, urgency) were concatenated into the
+    head system message, changing its bytes from one model call to the next and
+    breaking the head's own cache. They are now emitted as a single trailing system
+    message — the model sees the same text, positioned last for recency, while the
+    head stays byte-identical and cacheable across the turn.
+
+  Behaviour is unchanged (same text reaches the model); this is a billing/transport
+  fix. Most effective on explicit-cache providers (Anthropic; explicit Qwen models
+  such as `qwen-plus` / `qwen3.x-plus`).
+
 ## [1.7.2] — 2026-06-14
 
 ### Added

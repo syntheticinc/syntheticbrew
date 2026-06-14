@@ -125,10 +125,9 @@ func injectCacheControl(body []byte, minPrefixTokens int, markSystem, markHistor
 }
 
 // selectBreakpointIndices picks the message indices to mark (≤ maxCacheBreakpoints),
-// deduped. system = first system message; history = last message carrying
-// cacheable content (skips trailing tool_call-only assistant turns with null
-// content). Both placements yield incremental hits: the front caches the large
-// stable block, the tail caches the growing conversation prefix.
+// deduped. system = first system message; history = last STABLE cacheable message.
+// Both placements yield incremental hits: the front caches the large stable block,
+// the tail caches the growing conversation prefix.
 func selectBreakpointIndices(msgs []map[string]json.RawMessage, markSystem, markHistory bool) []int {
 	var idxs []int
 	seen := map[int]bool{}
@@ -144,7 +143,7 @@ func selectBreakpointIndices(msgs []map[string]json.RawMessage, markSystem, mark
 		}
 	}
 	if markHistory {
-		if i := lastCacheableIndex(msgs); i >= 0 {
+		if i := lastStableCacheableIndex(msgs); i >= 0 {
 			add(i)
 		}
 	}
@@ -160,8 +159,20 @@ func firstSystemIndex(msgs []map[string]json.RawMessage) int {
 	return -1
 }
 
-func lastCacheableIndex(msgs []map[string]json.RawMessage) int {
+// lastStableCacheableIndex returns the index that ends the stable cacheable prefix:
+// the last NON-system message with cacheable content. Trailing system messages are
+// per-call dynamic reminders injected after the conversation (tool-call history,
+// environment time, finalize/urgency directives) — marking one of them anchors the
+// cache breakpoint on content that changes every call, so the write is never re-read
+// and only the static head re-hits (the cached_tokens-frozen-at-system symptom). The
+// genuine conversation tail (a user/assistant/tool turn) is byte-stable call-to-call.
+// Non-cacheable turns (e.g. tool_call-only assistant with null content) are skipped
+// by contentIsCacheable.
+func lastStableCacheableIndex(msgs []map[string]json.RawMessage) int {
 	for i := len(msgs) - 1; i >= 0; i-- {
+		if messageRole(msgs[i]) == "system" {
+			continue
+		}
 		if contentIsCacheable(msgs[i]["content"]) {
 			return i
 		}
@@ -232,7 +243,13 @@ func applyCacheControlToMessage(m map[string]json.RawMessage) bool {
 		if err := json.Unmarshal(content, &parts); err != nil || len(parts) == 0 {
 			return false
 		}
-		parts[len(parts)-1]["cache_control"] = ephemeralCacheControl
+		// A JSON null element decodes to a nil map (e.g. content:[null]); writing to
+		// it would panic. Caching is best-effort — skip rather than break the request.
+		last := parts[len(parts)-1]
+		if last == nil {
+			return false
+		}
+		last["cache_control"] = ephemeralCacheControl
 		newContent, err := json.Marshal(parts)
 		if err != nil {
 			return false

@@ -47,25 +47,32 @@ func TestShouldFinalize(t *testing.T) {
 	})
 }
 
-// TestModify_InjectsFinalizeDirective verifies the directive reaches the system
-// prompt once the step reserve point is crossed.
+// TestModify_InjectsFinalizeDirective verifies the directive reaches the model as
+// the trailing directive message once the step reserve point is crossed, while the
+// cacheable head stays clean.
 func TestModify_InjectsFinalizeDirective(t *testing.T) {
 	m := NewMessageModifier(MessageModifierConfig{SystemPrompt: "base", MaxSteps: 6}) // budget = 3, fires at step 2
 	m.StartTurn()
 
 	input := []*schema.Message{{Role: schema.User, Content: "hi"}}
 
-	// Step 0, 1: below the reserve point — no directive.
+	// Step 0, 1: below the reserve point — no directive anywhere.
 	for i := 0; i < 2; i++ {
 		out := m.Modify(context.Background(), input)
-		if strings.Contains(out[0].Content, "BUDGET REACHED") {
-			t.Fatalf("directive injected too early at model call %d", i)
+		for _, msg := range out {
+			if strings.Contains(msg.Content, "BUDGET REACHED") {
+				t.Fatalf("directive injected too early at model call %d", i)
+			}
 		}
 	}
-	// Step 2: reserve point reached — directive present.
+	// Step 2: reserve point reached — directive present in the trailing message,
+	// never in the head.
 	out := m.Modify(context.Background(), input)
-	if !strings.Contains(out[0].Content, "BUDGET REACHED") {
-		t.Fatal("finalize directive not injected at the reserve point")
+	if strings.Contains(out[0].Content, "BUDGET REACHED") {
+		t.Fatal("finalize directive must NOT pollute the cacheable head system message")
+	}
+	if !strings.Contains(out[len(out)-1].Content, "BUDGET REACHED") {
+		t.Fatal("finalize directive not emitted as the trailing directive at the reserve point")
 	}
 }
 

@@ -109,9 +109,14 @@ func TestMessageModifier_UrgencyWarning(t *testing.T) {
 		result = modifier.Modify(context.Background(), input)
 	}
 
-	// At step 7, remaining = 10 - 7 = 3, warning should be added
-	if !strings.Contains(result[0].Content, "WARNING:") {
-		t.Errorf("expected urgency warning at step 7, got: %s", result[0].Content)
+	// At step 7, remaining = 10 - 7 = 3, warning is emitted as the trailing
+	// directive message (kept off the cacheable head).
+	last := result[len(result)-1].Content
+	if !strings.Contains(last, "WARNING:") {
+		t.Errorf("expected urgency warning in trailing directive at step 7, got: %s", last)
+	}
+	if strings.Contains(result[0].Content, "WARNING:") {
+		t.Error("urgency warning must NOT pollute the cacheable head system message")
 	}
 }
 
@@ -139,11 +144,53 @@ func TestMessageModifier_TaskReminder(t *testing.T) {
 		t.Error("should not have task reminder at step 1")
 	}
 
-	// At step 2, task reminder should appear
+	// At step 2, the task reminder appears as the trailing directive message,
+	// NOT in the head (the head must stay cacheable across steps).
 	result = modifier.Modify(context.Background(), input)
-	if !strings.Contains(result[0].Content, "CURRENT TASK") {
-		t.Errorf("expected task reminder at step 2, got: %s", result[0].Content)
+	last := result[len(result)-1].Content
+	if !strings.Contains(last, "CURRENT TASK") {
+		t.Errorf("expected task reminder in trailing directive at step 2, got: %s", last)
 	}
+	if strings.Contains(result[0].Content, "CURRENT TASK") {
+		t.Error("task reminder must NOT pollute the cacheable head system message")
+	}
+}
+
+// TestMessageModifier_HeadStableAcrossSteps is the cache-stability guard: the head
+// system message must be byte-identical across model calls within a turn even as
+// per-step directives (task focus / finalize) fire, so the provider can prompt-cache
+// the stable prefix. The dynamic directives live in a trailing message instead.
+func TestMessageModifier_HeadStableAcrossSteps(t *testing.T) {
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt: "You are a helpful assistant.",
+		ToolNames:    []string{"knowledge_search", "manage_tasks"},
+		MaxSteps:     6,
+	})
+	m.StartTurn()
+
+	input := []*schema.Message{{Role: schema.User, Content: "My question"}}
+
+	var head string
+	sawDirective := false
+	for i := 0; i < 5; i++ {
+		out := m.Modify(context.Background(), input)
+		require.Equal(t, schema.System, out[0].Role)
+		if i == 0 {
+			head = out[0].Content
+		} else {
+			require.Equal(t, head, out[0].Content,
+				"head system message must stay byte-identical across steps (step %d)", i)
+		}
+		if strings.Contains(out[len(out)-1].Content, "CURRENT TASK") ||
+			strings.Contains(out[len(out)-1].Content, "BUDGET REACHED") {
+			sawDirective = true
+		}
+	}
+	require.True(t, sawDirective, "per-step directive must still reach the model as a trailing message")
+	// Sanity: the static head carries the tool list (the cacheable ~prefix), never a directive.
+	require.Contains(t, head, "**Available tools:**")
+	require.NotContains(t, head, "CURRENT TASK")
+	require.NotContains(t, head, "BUDGET REACHED")
 }
 
 func TestMessageModifier_GetStep(t *testing.T) {

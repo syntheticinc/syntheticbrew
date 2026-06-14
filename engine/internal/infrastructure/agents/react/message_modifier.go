@@ -78,8 +78,12 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 	turnStart := m.turnStart
 	m.mu.Unlock()
 
-	// Build system prompt with urgency warning if approaching max steps
-	// Only apply urgency warning if maxSteps > 0 (when limit is set)
+	// The head system message holds ONLY content that is stable across the turn's
+	// model calls (system prompt + tool list + HITL directive). Per-step dynamic
+	// directives (urgency, finalize, task focus) are emitted as a trailing system
+	// message below instead of being concatenated here, so the head stays
+	// byte-identical call-to-call and the provider can prompt-cache it. The same
+	// text reaches the model — positioned last for recency, not in the head.
 	currentSystemPrompt := m.systemPrompt
 
 	// Inject available tool names into system prompt
@@ -96,76 +100,27 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 		currentSystemPrompt += hitlPromptDirective
 	}
 
-	if m.maxSteps > 0 {
-		remainingSteps := m.maxSteps - currentStep
-		if remainingSteps <= 3 && remainingSteps > 0 && m.urgencyWarning != "" {
-			urgencyMsg := fmt.Sprintf(m.urgencyWarning, remainingSteps)
-			currentSystemPrompt = currentSystemPrompt + urgencyMsg
-		}
-	}
-
-	// Soft-landing: once the turn is about to exhaust its time or step budget,
-	// force the model to finalize NOW (inside the budget) instead of running into
-	// the hard wall with no answer. Best-effort — the agent loop's terminal
-	// fallback still guarantees a graceful answer if the model ignores this.
-	if m.shouldFinalize(currentStep, turnStart) {
-		currentSystemPrompt += finalizeDirective
-	}
-
-	// Find and extract LATEST user question for task reminder
-	// In a conversation, the most recent user message is what needs to be answered
-	var userQuestion string
-	for _, msg := range input {
-		if msg.Role == schema.User && msg.Content != "" {
-			userQuestion = msg.Content
-			// Don't break - continue to find the LAST user message
-		}
-	}
-
-	// Add task reminder to system prompt after several steps
-	// Uses the LATEST user message to keep focus on current question
-	if currentStep >= 2 && userQuestion != "" {
-		currentSystemPrompt += fmt.Sprintf("\n\n**CURRENT TASK (Step %d):** Answer the user's question: \"%s\"\nDo NOT get distracted - answer THIS question!", currentStep, sanitizeForSystemPrompt(userQuestion, 500))
-	}
+	// Per-step dynamic directives (urgency / finalize / task focus) are built
+	// separately and emitted as a trailing system message below — kept OUT of the
+	// head so the cacheable prefix stays stable across model calls.
+	directive := m.buildDynamicDirective(currentStep, turnStart, input)
 
 	// Add system prompt at the beginning, then the conversation. The owned graph
 	// preserves assistant content alongside tool_calls in state, so no content
 	// recovery is needed here.
-	result := make([]*schema.Message, 0, len(input)+1)
+	result := make([]*schema.Message, 0, len(input)+2)
 	result = append(result, schema.SystemMessage(currentSystemPrompt))
 	result = append(result, input...)
+	result = m.appendContextReminders(ctx, result)
 
-	// Collect and inject context reminders from all providers
-	// This allows tools/components to add their own reminders without coupling
-	if len(m.reminderProviders) > 0 && m.sessionID != "" {
-		type reminder struct {
-			content  string
-			priority int
-		}
-		var reminders []reminder
-
-		for _, provider := range m.reminderProviders {
-			if content, priority, ok := provider.GetContextReminder(ctx, m.sessionID); ok {
-				reminders = append(reminders, reminder{content: content, priority: priority})
-			}
-		}
-
-		// Sort by priority (lower first, so higher priority ends up at the end)
-		sort.Slice(reminders, func(i, j int) bool {
-			return reminders[i].priority < reminders[j].priority
+	// Trailing dynamic directive (urgency / finalize / task focus) — appended last
+	// for recency, kept off the cacheable head. Same text the model would have seen
+	// concatenated into the head before.
+	if directive != "" {
+		result = append(result, &schema.Message{
+			Role:    schema.System,
+			Content: directive,
 		})
-
-		// Inject reminders as system messages at end of context
-		// This exploits recency bias - LLM sees these last
-		for _, r := range reminders {
-			result = append(result, &schema.Message{
-				Role:    schema.System,
-				Content: r.content,
-			})
-			slog.DebugContext(ctx, "injected context reminder",
-				"priority", r.priority,
-				"content_length", len(r.content))
-		}
 	}
 
 	// Context logging moved to ContextRewriter to log post-compression state
@@ -177,6 +132,80 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 	m.mu.Unlock()
 
 	return result
+}
+
+// buildDynamicDirective assembles the per-step directives that must NOT live in the
+// cacheable head system message: urgency warning, budget soft-landing, and task
+// focus. Returns the combined text (trimmed) for a single trailing system message,
+// or "" when none apply.
+func (m *MessageModifier) buildDynamicDirective(currentStep int, turnStart time.Time, input []*schema.Message) string {
+	var b strings.Builder
+
+	// Urgency warning if approaching max steps (only when a step limit is set).
+	if m.maxSteps > 0 {
+		remainingSteps := m.maxSteps - currentStep
+		if remainingSteps <= 3 && remainingSteps > 0 && m.urgencyWarning != "" {
+			warning := fmt.Sprintf(m.urgencyWarning, remainingSteps)
+			b.WriteString(warning)
+		}
+	}
+
+	// Soft-landing: once the turn is about to exhaust its time or step budget, force
+	// the model to finalize NOW (inside the budget) instead of running into the hard
+	// wall with no answer. Best-effort — the agent loop's terminal fallback still
+	// guarantees a graceful answer if the model ignores this.
+	if m.shouldFinalize(currentStep, turnStart) {
+		b.WriteString(finalizeDirective)
+	}
+
+	// Task reminder after several steps, using the LATEST user message to keep focus
+	// on the current question.
+	if currentStep >= 2 {
+		if userQuestion := latestUserQuestion(input); userQuestion != "" {
+			fmt.Fprintf(&b, "\n\n**CURRENT TASK (Step %d):** Answer the user's question: \"%s\"\nDo NOT get distracted - answer THIS question!", currentStep, sanitizeForSystemPrompt(userQuestion, 500))
+		}
+	}
+
+	return strings.TrimSpace(b.String())
+}
+
+// appendContextReminders appends each provider's reminder as a trailing system
+// message, sorted so higher-priority reminders land last (recency bias). Returns
+// the extended slice. No-op when no providers or no session id.
+func (m *MessageModifier) appendContextReminders(ctx context.Context, result []*schema.Message) []*schema.Message {
+	if len(m.reminderProviders) == 0 || m.sessionID == "" {
+		return result
+	}
+	type reminder struct {
+		content  string
+		priority int
+	}
+	var reminders []reminder
+	for _, provider := range m.reminderProviders {
+		if content, priority, ok := provider.GetContextReminder(ctx, m.sessionID); ok {
+			reminders = append(reminders, reminder{content: content, priority: priority})
+		}
+	}
+	sort.Slice(reminders, func(i, j int) bool {
+		return reminders[i].priority < reminders[j].priority
+	})
+	for _, r := range reminders {
+		result = append(result, &schema.Message{Role: schema.System, Content: r.content})
+		slog.DebugContext(ctx, "injected context reminder",
+			"priority", r.priority, "content_length", len(r.content))
+	}
+	return result
+}
+
+// latestUserQuestion returns the content of the last non-empty user message.
+func latestUserQuestion(input []*schema.Message) string {
+	var q string
+	for _, msg := range input {
+		if msg.Role == schema.User && msg.Content != "" {
+			q = msg.Content
+		}
+	}
+	return q
 }
 
 // GetStep returns the current step counter (thread-safe)

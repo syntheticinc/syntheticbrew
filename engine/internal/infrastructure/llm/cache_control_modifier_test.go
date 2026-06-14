@@ -160,6 +160,33 @@ func TestCacheModifier_SkipsToolCallOnlyMessage(t *testing.T) {
 	assert.Contains(t, string(msgs[1]["tool_calls"]), "call_1")
 }
 
+func TestCacheModifier_HistorySkipsTrailingSystemReminders(t *testing.T) {
+	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})
+	require.NotNil(t, mod)
+
+	// Engine shape: head system + conversation + a trailing injected system reminder
+	// (tool-call history / environment) whose content changes every call. The history
+	// breakpoint must land on the last STABLE message (the user turn), NOT the dynamic
+	// trailing reminder — otherwise that cache block is never re-read and only the head
+	// caches (the cached_tokens-frozen-at-system symptom).
+	body := []byte(`{
+		"messages": [
+			{"role":"system","content":"` + bigText("you are helpful") + `"},
+			{"role":"user","content":"` + bigText("the stable question") + `"},
+			{"role":"system","content":"` + bigText("TOOL HISTORY changes every step") + `"}
+		]
+	}`)
+
+	out, err := mod(body)
+	require.NoError(t, err)
+	msgs := parseMessages(t, out)
+	require.Len(t, msgs, 3)
+
+	assert.True(t, lastPartHasCacheControl(t, msgs[0]), "head system marked")
+	assert.True(t, lastPartHasCacheControl(t, msgs[1]), "history breakpoint on the stable user turn")
+	assert.False(t, lastPartHasCacheControl(t, msgs[2]), "trailing dynamic reminder must NOT be the breakpoint")
+}
+
 func TestCacheModifier_MinPrefixGateSkipsSmallPrefix(t *testing.T) {
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 100000})
 	require.NotNil(t, mod)
@@ -217,5 +244,22 @@ func TestCacheModifier_PassthroughOnUnexpectedShape(t *testing.T) {
 		out, err := mod(in)
 		require.NoError(t, err)
 		assert.Equal(t, in, out)
+	})
+	// A content-parts array whose last element is JSON null decodes to a nil map;
+	// marking it must not panic — caching is best-effort, the request still ships.
+	t.Run("array content with null last part", func(t *testing.T) {
+		in := []byte(`{"messages":[{"role":"user","content":[` + `null]}]}`)
+		require.NotPanics(t, func() {
+			out, err := mod(in)
+			require.NoError(t, err)
+			assert.Equal(t, in, out, "no markable part → passthrough unchanged")
+		})
+	})
+	t.Run("array content with text then null", func(t *testing.T) {
+		in := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"` + bigText("hi") + `"},null]}]}`)
+		require.NotPanics(t, func() {
+			_, err := mod(in)
+			require.NoError(t, err)
+		})
 	})
 }
