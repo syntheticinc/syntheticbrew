@@ -9,6 +9,16 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// CacheControlPayload is the API representation of a model's prompt-cache config.
+// Default off (absent or enabled=false) → request shape unchanged. Honored only
+// by explicit-cache adapters (openai_compatible, anthropic); automatic-cache
+// providers ignore it.
+type CacheControlPayload struct {
+	Enabled         bool     `json:"enabled"`
+	Breakpoints     []string `json:"breakpoints,omitempty"`       // subset of: system, tools, history
+	MinPrefixTokens int      `json:"min_prefix_tokens,omitempty"` // skip caching prefixes below this size
+}
+
 // ModelResponse is the API representation of an LLM provider model.
 type ModelResponse struct {
 	ID           string `json:"id"`
@@ -28,7 +38,9 @@ type ModelResponse struct {
 	// providers. Lets operators pass upstream-specific fields (e.g. OpenRouter
 	// provider routing) without engine code changes.
 	ExtraBody map[string]any `json:"extra_body,omitempty"`
-	CreatedAt string         `json:"created_at"`
+	// CacheControl is the model's prompt-cache config (absent = off).
+	CacheControl *CacheControlPayload `json:"cache_control,omitempty"`
+	CreatedAt    string               `json:"created_at"`
 }
 
 // CreateModelRequest is the body for POST /api/v1/models.
@@ -47,6 +59,8 @@ type CreateModelRequest struct {
 	// tenant, the server auto-promotes it (natural bootstrap).
 	IsDefault bool           `json:"is_default,omitempty"`
 	ExtraBody map[string]any `json:"extra_body,omitempty"`
+	// CacheControl configures prompt-cache breakpoints (absent = off).
+	CacheControl *CacheControlPayload `json:"cache_control,omitempty"`
 }
 
 // ModelVerifyResult contains the result of model connectivity verification.
@@ -77,6 +91,8 @@ type UpdateModelRequest struct {
 	IsDefault *bool `json:"is_default,omitempty"`
 	// ExtraBody: nil preserves existing value; empty map clears it.
 	ExtraBody *map[string]any `json:"extra_body,omitempty"`
+	// CacheControl: nil preserves existing value; a value replaces it.
+	CacheControl *CacheControlPayload `json:"cache_control,omitempty"`
 }
 
 // ModelService provides LLM model CRUD operations.
@@ -91,6 +107,26 @@ type ModelService interface {
 
 // validModelKinds is the set of accepted kind values for validation.
 var validModelKinds = map[string]bool{"chat": true, "embedding": true}
+
+// validCacheBreakpoints is the set of accepted cache_control breakpoint names.
+var validCacheBreakpoints = map[string]bool{"system": true, "tools": true, "history": true}
+
+// validateCacheControl rejects malformed cache_control payloads with a 400-grade
+// message (returns "" when valid). nil is valid (= off).
+func validateCacheControl(cc *CacheControlPayload) string {
+	if cc == nil {
+		return ""
+	}
+	for _, bp := range cc.Breakpoints {
+		if !validCacheBreakpoints[bp] {
+			return "cache_control.breakpoints entries must be one of: system, tools, history"
+		}
+	}
+	if cc.MinPrefixTokens < 0 {
+		return "cache_control.min_prefix_tokens must be >= 0"
+	}
+	return ""
+}
 
 // ModelHandler serves /api/v1/models endpoints.
 type ModelHandler struct {
@@ -170,6 +206,10 @@ func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validModelKinds[req.Kind] {
 		writeJSONError(w, http.StatusBadRequest, "kind must be one of: chat, embedding")
+		return
+	}
+	if msg := validateCacheControl(req.CacheControl); msg != "" {
+		writeJSONError(w, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -257,6 +297,10 @@ func (h *ModelHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "kind must be one of: chat, embedding")
 		return
 	}
+	if msg := validateCacheControl(req.CacheControl); msg != "" {
+		writeJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	// Embedding model: same validation as Create (keyed on embedding_dim, not type).
 	if req.EmbeddingDim > 0 {
@@ -294,6 +338,10 @@ func (h *ModelHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Kind != nil && !validModelKinds[*req.Kind] {
 		writeJSONError(w, http.StatusBadRequest, "kind must be one of: chat, embedding")
+		return
+	}
+	if msg := validateCacheControl(req.CacheControl); msg != "" {
+		writeJSONError(w, http.StatusBadRequest, msg)
 		return
 	}
 	// Validate + normalize Type alias the same way Create does. Without this,

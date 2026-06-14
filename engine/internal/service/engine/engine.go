@@ -52,6 +52,9 @@ type ExecutionConfig struct {
 	ProviderBaseURL string
 	AgentConfig     *config.AgentConfig
 	SessionDirName  string
+	// RequestPayloadModifier transforms the serialized chat request body before
+	// send (prompt-cache breakpoint injection). nil = no transform.
+	RequestPayloadModifier func([]byte) ([]byte, error)
 
 	// Code agent specific
 	ParentAgentID string
@@ -152,6 +155,7 @@ func (e *Engine) Execute(ctx context.Context, cfg ExecutionConfig) (*ExecutionRe
 		ModelName:                cfg.ModelName,
 		ProviderType:             cfg.ProviderType,
 		ProviderBaseURL:          cfg.ProviderBaseURL,
+		RequestPayloadModifier:   cfg.RequestPayloadModifier,
 		HistoryMessages:          historyMessages,
 		ContextReminderProviders: cfg.ContextReminders,
 		ToolCallRecorder:         cfg.ToolCallRecorder,

@@ -34,6 +34,10 @@ type ResolvedModel struct {
 	Name         string
 	ProviderType string
 	BaseURL      string
+	// CacheControl carries the model's prompt-cache config (nil = off). The
+	// react layer uses it to attach a per-call payload modifier that marks the
+	// cacheable prefix for explicit-cache providers.
+	CacheControl *models.CacheControl
 }
 
 type cachedModel struct {
@@ -83,6 +87,7 @@ func (c *ModelCache) Resolve(ctx context.Context, modelID string) (*ResolvedMode
 		Name:         dbModel.ModelName,
 		ProviderType: dbModel.Type,
 		BaseURL:      dbModel.BaseURL,
+		CacheControl: dbModel.GetConfig().CacheControl,
 	}
 
 	c.mu.Lock()
