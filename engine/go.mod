@@ -3,7 +3,7 @@ module github.com/syntheticinc/syntheticbrew
 go 1.25.0
 
 require (
-	github.com/cloudwego/eino v0.7.21
+	github.com/cloudwego/eino v0.9.6
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/glebarez/go-sqlite v1.21.2
 	github.com/glebarez/sqlite v1.11.0
