@@ -192,6 +192,26 @@ func (t *anthropicCacheTransport) RoundTrip(req *http.Request) (*http.Response, 
 	return t.base.RoundTrip(req)
 }
 
+// newOpenAICompatTransport assembles the request-transform chain for openai /
+// openai_compatible clients. Order (innermost → outermost): default → properties
+// normaliser (OpenAI-strict only) → usage reporting (OpenRouter only) → extra body →
+// response logging. usage reporting sits inside extra body so an operator-supplied
+// `usage` via extra_body wins (it is injected first, then left untouched by the
+// idempotent usage-reporting pass).
+func newOpenAICompatTransport(m models.LLMProviderModel) http.RoundTripper {
+	var transport http.RoundTripper = http.DefaultTransport
+	if IsOpenAIStrictRoute(m.Type, m.ModelName, m.BaseURL) {
+		transport = &propertiesNormalizingTransport{base: transport}
+	}
+	if isOpenRouterBaseURL(m.BaseURL) {
+		transport = &usageReportingTransport{base: transport}
+	}
+	if extra := m.GetConfig().ExtraBody; len(extra) > 0 {
+		transport = &extraBodyTransport{base: transport, extra: extra}
+	}
+	return &responseLoggingTransport{base: transport}
+}
+
 // CreateClientFromDBModel creates a ToolCallingChatModel from a database LLMProviderModel record.
 func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatModel, error) {
 	ctx := context.Background()
@@ -222,17 +242,7 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 			Model:   m.ModelName,
 			APIKey:  m.APIKeyEncrypted,
 		}
-		// Transport chain (innermost → outermost): default → properties
-		// normaliser (OpenAI-strict only) → extra body → response logging.
-		var transport http.RoundTripper = http.DefaultTransport
-		if IsOpenAIStrictRoute(m.Type, m.ModelName, m.BaseURL) {
-			transport = &propertiesNormalizingTransport{base: transport}
-		}
-		if extra := m.GetConfig().ExtraBody; len(extra) > 0 {
-			transport = &extraBodyTransport{base: transport, extra: extra}
-		}
-		transport = &responseLoggingTransport{base: transport}
-		cfg.HTTPClient = &http.Client{Transport: transport}
+		cfg.HTTPClient = &http.Client{Transport: newOpenAICompatTransport(m)}
 		client, err := openai.NewChatModel(ctx, cfg)
 		if err != nil {
 			return nil, err

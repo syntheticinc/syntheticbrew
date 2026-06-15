@@ -67,6 +67,7 @@ export interface UseSSEChatReturn {
   sessionId: string;
   tokenUsage: number | null;
   contextTokens: number | null;
+  cachedTokens: number | null;
   resetSession: () => void;
   stopStreaming: () => void;
   loadSession: (sessionId: string) => Promise<void>;
@@ -312,6 +313,7 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
     const stored = safeGetItem(persistenceKey + '_ctx');
     return stored ? Number(stored) : null;
   });
+  const [cachedTokens, setCachedTokens] = useState<number | null>(null);
 
   const sessionIdRef = useRef(sessionId);
   const abortRef = useRef<AbortController | null>(null);
@@ -398,6 +400,7 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
     setError(null);
     setTokenUsage(null);
     setContextTokens(null);
+    setCachedTokens(null);
     if (persistenceKey) {
       safeRemoveItem(persistenceKey);
       safeRemoveItem(persistenceKey + '_ctx');
@@ -642,6 +645,10 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
                 setContextTokens(ctxTokens);
                 if (persistenceKey) safeSetItem(persistenceKey + '_ctx', String(ctxTokens));
               }
+              const cached = parsed.cached_prompt_tokens as number | undefined;
+              if (cached && cached > 0) {
+                setCachedTokens(cached);
+              }
               updateAssistantNow({ streaming: false });
               break;
             }
@@ -760,5 +767,5 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
     }
   }, [persistenceKey, fetchMessages]);
 
-  return { messages, sendMessage, sendInterruptResume, isStreaming, isRestoring, error, sessionId, tokenUsage, contextTokens, resetSession, stopStreaming, loadSession };
+  return { messages, sendMessage, sendInterruptResume, isStreaming, isRestoring, error, sessionId, tokenUsage, contextTokens, cachedTokens, resetSession, stopStreaming, loadSession };
 }

@@ -15,10 +15,11 @@ interface ContextUsageBarProps {
   maxContextTokens: number | null;
   totalTokens?: number | null;
   contextTokens?: number | null;
+  cachedTokens?: number | null;
   baselineTokens?: number | null;
 }
 
-export default memo(function ContextUsageBar({ maxContextTokens, totalTokens, contextTokens, baselineTokens }: ContextUsageBarProps) {
+export default memo(function ContextUsageBar({ maxContextTokens, totalTokens, contextTokens, cachedTokens, baselineTokens }: ContextUsageBarProps) {
   if (!maxContextTokens) return null;
 
   // Priority: contextTokens (real) > totalTokens (cumulative fallback) > baselineTokens (system prompt estimate)
@@ -38,6 +39,11 @@ export default memo(function ContextUsageBar({ maxContextTokens, totalTokens, co
       <span className="text-[10px] text-brand-shade3 whitespace-nowrap">
         {displayTokens ? formatTokens(displayTokens) : '\u2014'} / {formatTokens(maxContextTokens)} context
       </span>
+      {cachedTokens != null && cachedTokens > 0 && (
+        <span className="text-[10px] text-brand-shade3 whitespace-nowrap">
+          {formatTokens(cachedTokens)} cached
+        </span>
+      )}
     </div>
   );
 });
