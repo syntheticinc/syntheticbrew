@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.8.1] — 2026-06-15
+
+### Fixed
+
+- **Prompt caching now grows with the conversation on explicit-cache providers
+  instead of collapsing mid-turn.** 1.7.3 moved the cache breakpoint ahead of the
+  dynamic trailing reminders, but explicit-cache providers (Alibaba Qwen /
+  DashScope) discard the **entire** prefix cache the moment any already-sent
+  content changes between steps — not just content after the breakpoint. The
+  per-call reminder block (tool-call history, environment time, task state,
+  finalize/urgency directives) was regenerated with changing values every step, so
+  from the step a dynamic reminder first appeared the cached-token count dropped to
+  zero and the whole prefix was re-billed. The reminder accumulator now **freezes
+  each source's first non-empty value per turn**: once a reminder or directive has
+  contributed, its text is snapshotted and never rewritten, so the trailing block
+  stays byte-identical across model calls and the cached prefix grows. Verified
+  live on a Qwen explicit-cache model: cached prompt tokens climb across steps
+  where they previously stayed at zero.
+
+### Changed
+
+- **`cache_control` is now on by default for explicit-cache providers**
+  (`openai_compatible`, `anthropic`). A model with no `cache_control` config caches
+  its stable prefix automatically; set `cache_control.enabled: false` to opt out.
+  Automatic-cache providers (OpenAI, Azure, Google) are unaffected — they ignore
+  the marker. The marker stays gated by `min_prefix_tokens`, so small requests are
+  untouched. A few strict OpenAI-compatible gateways may reject the in-content
+  marker — opt out there.
+
 ## [1.8.0] — 2026-06-15
 
 ### Added

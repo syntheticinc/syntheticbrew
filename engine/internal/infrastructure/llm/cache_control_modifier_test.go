@@ -43,7 +43,7 @@ func lastPartHasCacheControl(t *testing.T, msg map[string]json.RawMessage) bool 
 	return ok && strings.Contains(string(cc), "ephemeral")
 }
 
-func TestNewCacheControlModifier_NilWhenOffOrUnsupported(t *testing.T) {
+func TestNewCacheControlModifier_DefaultOnAndOptOut(t *testing.T) {
 	enabled := &models.CacheControl{Enabled: true}
 	disabled := &models.CacheControl{Enabled: false}
 
@@ -53,25 +53,59 @@ func TestNewCacheControlModifier_NilWhenOffOrUnsupported(t *testing.T) {
 		cc       *models.CacheControl
 		wantNil  bool
 	}{
-		{"nil config", "openai_compatible", nil, true},
-		{"disabled", "openai_compatible", disabled, true},
-		{"openai automatic", "openai", enabled, true},
+		// Default-on: absent config on a honoring provider now caches.
+		{"nil config honoring openai_compatible", "openai_compatible", nil, false},
+		{"nil config honoring anthropic", "anthropic", nil, false},
+		// Explicit opt-out on a honoring provider stays off.
+		{"disabled opt-out openai_compatible", "openai_compatible", disabled, true},
+		{"disabled opt-out anthropic", "anthropic", disabled, true},
+		// Explicit enable on a honoring provider is on.
+		{"openrouter explicit", "openai_compatible", enabled, false},
+		{"anthropic explicit", "anthropic", enabled, false},
+		// Non-honoring providers are always nil, even with nil or enabled config.
+		{"openai automatic nil", "openai", nil, true},
+		{"openai automatic enabled", "openai", enabled, true},
 		{"azure automatic", "azure_openai", enabled, true},
 		{"google automatic", "google", enabled, true},
 		{"ollama local", "ollama", enabled, true},
-		{"openrouter explicit", "openai_compatible", enabled, false},
-		{"anthropic explicit", "anthropic", enabled, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mod := NewCacheControlModifier(tc.provider, tc.cc)
 			if tc.wantNil {
 				assert.Nil(t, mod, "modifier must be nil → not attached → byte-identical request")
-			} else {
-				assert.NotNil(t, mod)
+				return
 			}
+			assert.NotNil(t, mod)
 		})
 	}
+}
+
+// TestCacheModifier_DefaultOnMarksLargeBodyAndNoOpsBelowGate exercises the
+// default-on path (nil config) end-to-end: a large body gets a cache_control
+// marker, and a body below the min-prefix gate passes through byte-identical.
+func TestCacheModifier_DefaultOnMarksLargeBodyAndNoOpsBelowGate(t *testing.T) {
+	mod := NewCacheControlModifier("openai_compatible", nil)
+	require.NotNil(t, mod, "nil config on a honoring provider must default to caching on")
+
+	bigBody := []byte(`{
+		"messages": [
+			{"role":"system","content":"` + bigText("you are helpful") + `"},
+			{"role":"user","content":"` + bigText("the stable question") + `"}
+		]
+	}`)
+	out, err := mod(bigBody)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "cache_control",
+		"default-on modifier must mark a large body above the default min-prefix gate")
+
+	// Below the default min-prefix gate → byte-identical no-op.
+	smallBody := []byte(`{"messages":[{"role":"system","content":"tiny"},{"role":"user","content":"hi"}]}`)
+	smallOut, err := mod(smallBody)
+	require.NoError(t, err)
+	assert.Equal(t, string(smallBody), string(smallOut),
+		"a request below the min-prefix gate must stay byte-identical")
+	assert.NotContains(t, string(smallOut), "cache_control")
 }
 
 func TestCacheModifier_InjectsOnStringContentPrefix(t *testing.T) {

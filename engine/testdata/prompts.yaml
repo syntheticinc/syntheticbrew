@@ -832,4 +832,4 @@ prompts:
     - Minimize tool calls. Read files efficiently.
 
   urgency_warning: |
-    ⚠️ Only %d steps left. Stop exploring and answer NOW with what you have.
+    ⚠️ You are low on remaining steps. Stop exploring and answer NOW with what you have.

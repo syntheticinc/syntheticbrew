@@ -40,7 +40,20 @@ type MessageModifier struct {
 	toolNames         []string // Available tool names for dynamic injection
 	stepCounter       int
 	turnStart         time.Time // stamped by StartTurn; drives time soft-landing
-	mu                sync.Mutex
+
+	// Trailing nudge accumulation. Per-turn, the trailing system block (reminders +
+	// dynamic directives) is built APPEND-ONLY with FREEZE-BY-SOURCE: each source (a
+	// reminder provider, identified by its index, or a named directive) contributes its
+	// FIRST non-empty text and is then frozen — later changed values from that same
+	// source are ignored. This snapshots env-time / live task-state at first appearance
+	// so the trailing block grows only by appending genuinely new sources' first values
+	// and never rewrites already-emitted bytes. Explicit-cache providers (Qwen/DashScope,
+	// Anthropic) keep the prefix cached — any change to already-sent content discards the
+	// whole cache. Reset by StartTurn.
+	emittedNudges []string
+	frozenByKey   map[string]string
+
+	mu sync.Mutex
 }
 
 // MessageModifierConfig holds configuration for MessageModifier
@@ -67,6 +80,7 @@ func NewMessageModifier(cfg MessageModifierConfig) *MessageModifier {
 		sessionID:         cfg.SessionID,
 		toolNames:         cfg.ToolNames,
 		stepCounter:       0,
+		frozenByKey:       make(map[string]string),
 	}
 }
 
@@ -100,27 +114,17 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 		currentSystemPrompt += hitlPromptDirective
 	}
 
-	// Per-step dynamic directives (urgency / finalize / task focus) are built
-	// separately and emitted as a trailing system message below — kept OUT of the
-	// head so the cacheable prefix stays stable across model calls.
-	directive := m.buildDynamicDirective(currentStep, turnStart, input)
-
 	// Add system prompt at the beginning, then the conversation. The owned graph
 	// preserves assistant content alongside tool_calls in state, so no content
 	// recovery is needed here.
-	result := make([]*schema.Message, 0, len(input)+2)
+	result := make([]*schema.Message, 0, len(input)+4)
 	result = append(result, schema.SystemMessage(currentSystemPrompt))
 	result = append(result, input...)
-	result = m.appendContextReminders(ctx, result)
 
-	// Trailing dynamic directive (urgency / finalize / task focus) — appended last
-	// for recency, kept off the cacheable head. Same text the model would have seen
-	// concatenated into the head before.
-	if directive != "" {
-		result = append(result, &schema.Message{
-			Role:    schema.System,
-			Content: directive,
-		})
+	// Trailing nudge block: accumulated append-only across the turn so the bytes the
+	// provider has already cached never change (only new nudges appended at the end).
+	for _, nudge := range m.accumulateNudges(ctx, currentStep, turnStart, input) {
+		result = append(result, &schema.Message{Role: schema.System, Content: nudge})
 	}
 
 	// Context logging moved to ContextRewriter to log post-compression state
@@ -134,67 +138,114 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 	return result
 }
 
-// buildDynamicDirective assembles the per-step directives that must NOT live in the
-// cacheable head system message: urgency warning, budget soft-landing, and task
-// focus. Returns the combined text (trimmed) for a single trailing system message,
-// or "" when none apply.
-func (m *MessageModifier) buildDynamicDirective(currentStep int, turnStart time.Time, input []*schema.Message) string {
-	var b strings.Builder
-
-	// Urgency warning if approaching max steps (only when a step limit is set).
-	if m.maxSteps > 0 {
-		remainingSteps := m.maxSteps - currentStep
-		if remainingSteps <= 3 && remainingSteps > 0 && m.urgencyWarning != "" {
-			warning := fmt.Sprintf(m.urgencyWarning, remainingSteps)
-			b.WriteString(warning)
-		}
-	}
-
-	// Soft-landing: once the turn is about to exhaust its time or step budget, force
-	// the model to finalize NOW (inside the budget) instead of running into the hard
-	// wall with no answer. Best-effort — the agent loop's terminal fallback still
-	// guarantees a graceful answer if the model ignores this.
-	if m.shouldFinalize(currentStep, turnStart) {
-		b.WriteString(finalizeDirective)
-	}
-
-	// Task reminder after several steps, using the LATEST user message to keep focus
-	// on the current question.
-	if currentStep >= 2 {
-		if userQuestion := latestUserQuestion(input); userQuestion != "" {
-			fmt.Fprintf(&b, "\n\n**CURRENT TASK (Step %d):** Answer the user's question: \"%s\"\nDo NOT get distracted - answer THIS question!", currentStep, sanitizeForSystemPrompt(userQuestion, 500))
-		}
-	}
-
-	return strings.TrimSpace(b.String())
+// nudgeCandidate is a step's candidate trailing nudge tagged with a STABLE per-turn
+// source key (a reminder provider's index, or a named directive). The key — not the
+// content — decides freezing: a source contributes once, at its first non-empty value.
+type nudgeCandidate struct {
+	key     string
+	content string
 }
 
-// appendContextReminders appends each provider's reminder as a trailing system
-// message, sorted so higher-priority reminders land last (recency bias). Returns
-// the extended slice. No-op when no providers or no session id.
-func (m *MessageModifier) appendContextReminders(ctx context.Context, result []*schema.Message) []*schema.Message {
+// accumulateNudges collects this step's candidate nudges (reminder-provider content +
+// the dynamic directives), freezes each source at its FIRST non-empty value, appends
+// newly-frozen values to the per-turn emittedNudges list in first-seen order, and
+// returns the full accumulated list.
+//
+// Cache-stability invariant (freeze-by-source): once a source has contributed, its
+// later — possibly changed — values are ignored, so already-emitted bytes are never
+// rewritten. The trailing block grows only by appending a not-yet-seen source's first
+// value, staying a byte-stable growing prefix call-to-call. Candidates are ordered
+// low→high priority within a step (directives last) so that when several sources first
+// appear together they land in recency order.
+func (m *MessageModifier) accumulateNudges(ctx context.Context, currentStep int, turnStart time.Time, input []*schema.Message) []string {
+	candidates := m.collectReminders(ctx)
+	candidates = append(candidates, m.buildDynamicDirectives(currentStep, turnStart, input)...)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range candidates {
+		if c.content == "" {
+			continue
+		}
+		if _, frozen := m.frozenByKey[c.key]; frozen {
+			continue
+		}
+		m.frozenByKey[c.key] = c.content
+		m.emittedNudges = append(m.emittedNudges, c.content)
+	}
+	// Return a copy so callers can't mutate the per-turn accumulator.
+	return append([]string(nil), m.emittedNudges...)
+}
+
+// collectReminders returns each provider's current reminder content keyed by the
+// provider's index in m.reminderProviders (stable per agent/turn → "r:0", "r:1", …),
+// sorted low→high priority so higher-priority reminders land later (recency bias) on
+// first appearance. The provider index, not its content, is the freeze key, so a
+// volatile provider freezes at its first value regardless of how the text later changes.
+func (m *MessageModifier) collectReminders(ctx context.Context) []nudgeCandidate {
 	if len(m.reminderProviders) == 0 || m.sessionID == "" {
-		return result
+		return nil
 	}
 	type reminder struct {
+		key      string
 		content  string
 		priority int
 	}
 	var reminders []reminder
-	for _, provider := range m.reminderProviders {
-		if content, priority, ok := provider.GetContextReminder(ctx, m.sessionID); ok {
-			reminders = append(reminders, reminder{content: content, priority: priority})
+	for i, provider := range m.reminderProviders {
+		if content, priority, ok := provider.GetContextReminder(ctx, m.sessionID); ok && content != "" {
+			reminders = append(reminders, reminder{key: fmt.Sprintf("r:%d", i), content: content, priority: priority})
 		}
 	}
-	sort.Slice(reminders, func(i, j int) bool {
+	sort.SliceStable(reminders, func(i, j int) bool {
 		return reminders[i].priority < reminders[j].priority
 	})
+	out := make([]nudgeCandidate, 0, len(reminders))
 	for _, r := range reminders {
-		result = append(result, &schema.Message{Role: schema.System, Content: r.content})
-		slog.DebugContext(ctx, "injected context reminder",
+		out = append(out, nudgeCandidate{key: r.key, content: r.content})
+		slog.DebugContext(ctx, "collected context reminder",
 			"priority", r.priority, "content_length", len(r.content))
 	}
-	return result
+	return out
+}
+
+// buildDynamicDirectives returns the per-step directives that must NOT live in the
+// cacheable head: urgency warning, budget soft-landing, and task focus — each keyed by
+// a stable per-turn source name ("d:urgency", "d:finalize", "d:task-focus") so it
+// freezes to a single append-once item regardless of how its text might later change.
+// Each directive's text is COUNT-FREE so it stays byte-identical every step it persists.
+func (m *MessageModifier) buildDynamicDirectives(currentStep int, turnStart time.Time, input []*schema.Message) []nudgeCandidate {
+	var directives []nudgeCandidate
+
+	// Urgency warning when approaching the step budget. The configured text is emitted
+	// verbatim (count-free) — embedding the remaining-step number would change it every
+	// step and discard the provider cache.
+	if m.maxSteps > 0 && m.urgencyWarning != "" {
+		remainingSteps := m.maxSteps - currentStep
+		if remainingSteps <= 3 && remainingSteps > 0 {
+			directives = append(directives, nudgeCandidate{key: "d:urgency", content: strings.TrimSpace(m.urgencyWarning)})
+		}
+	}
+
+	// Soft-landing: once the turn is about to exhaust its time or step budget, force the
+	// model to finalize NOW (inside the budget) instead of hitting the hard wall with no
+	// answer. Best-effort — the loop's terminal fallback still guarantees a graceful end.
+	if m.shouldFinalize(currentStep, turnStart) {
+		directives = append(directives, nudgeCandidate{key: "d:finalize", content: strings.TrimSpace(finalizeDirective)})
+	}
+
+	// Task focus after several steps, using the LATEST user message. Count-free (no step
+	// number) and stable within the turn (same sanitized question) so it appends once.
+	if currentStep >= 2 {
+		if userQuestion := latestUserQuestion(input); userQuestion != "" {
+			directives = append(directives, nudgeCandidate{
+				key:     "d:task-focus",
+				content: fmt.Sprintf("**CURRENT TASK:** Answer the user's question: \"%s\"\nDo NOT get distracted - answer THIS question!", sanitizeForSystemPrompt(userQuestion, 500)),
+			})
+		}
+	}
+
+	return directives
 }
 
 // latestUserQuestion returns the content of the last non-empty user message.
@@ -223,11 +274,14 @@ func (m *MessageModifier) ResetStep() {
 }
 
 // StartTurn stamps the turn start time (for time soft-landing) and resets the
-// per-turn model-call counter. Called by the agent at the start of each turn.
+// per-turn model-call counter and trailing-nudge accumulation. Called by the agent
+// at the start of each turn.
 func (m *MessageModifier) StartTurn() {
 	m.mu.Lock()
 	m.turnStart = time.Now()
 	m.stepCounter = 0
+	m.emittedNudges = nil
+	m.frozenByKey = make(map[string]string)
 	m.mu.Unlock()
 }
 

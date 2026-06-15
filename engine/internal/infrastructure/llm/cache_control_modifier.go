@@ -43,12 +43,23 @@ func providerHonorsCacheControl(providerType string) bool {
 
 // NewCacheControlModifier returns a stateless request-payload modifier that marks
 // the stable prefix of an OpenAI-compatible chat-completion body with
-// cache_control:{type:ephemeral} breakpoints. It returns nil when caching is off
-// or the provider doesn't honor explicit breakpoints — callers must treat nil as
-// "do not attach a modifier" so the request stays byte-identical to no-cache. The
-// returned func operates only on its input bytes and is safe for concurrent use.
+// cache_control:{type:ephemeral} breakpoints. For providers that honor explicit
+// breakpoints (openai_compatible, anthropic) caching is default-on: an absent
+// config (cc == nil) is treated as enabled with default breakpoints and min-prefix.
+// A tenant opts out with an explicit cache_control.enabled=false, which returns nil.
+// Providers that don't honor explicit breakpoints always return nil. Callers must
+// treat nil as "do not attach a modifier" so the request stays byte-identical to
+// no-cache. The returned func operates only on its input bytes and is safe for
+// concurrent use.
 func NewCacheControlModifier(providerType string, cc *models.CacheControl) func([]byte) ([]byte, error) {
-	if cc == nil || !cc.Enabled || !providerHonorsCacheControl(providerType) {
+	if !providerHonorsCacheControl(providerType) {
+		return nil
+	}
+	// Default-on: absent config caches with adapter defaults.
+	if cc == nil {
+		cc = &models.CacheControl{Enabled: true}
+	}
+	if !cc.Enabled {
 		return nil
 	}
 	minTokens := cc.MinPrefixTokens

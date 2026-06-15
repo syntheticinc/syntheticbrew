@@ -193,6 +193,175 @@ func TestMessageModifier_HeadStableAcrossSteps(t *testing.T) {
 	require.NotContains(t, head, "BUDGET REACHED")
 }
 
+// volatileReminder mirrors a reminder whose content changes every call (live task
+// state, env time). With freeze-by-source the modifier must snapshot its FIRST value
+// and ignore every later one — used to prove the trailing block stays byte-stable.
+type volatileReminder struct {
+	n        *int
+	priority int
+}
+
+func (r *volatileReminder) GetContextReminder(_ context.Context, _ string) (string, int, bool) {
+	*r.n++
+	prio := r.priority
+	if prio == 0 {
+		prio = 98
+	}
+	return "**TOOL HISTORY:** call " + strings.Repeat("x", *r.n) + " — state changes each step.", prio, true
+}
+
+// volatileReminderFirstValue is the content volatileReminder returns on its first call
+// (n incremented to 1) — the value freeze-by-source must snapshot and keep.
+const volatileReminderFirstValue = "**TOOL HISTORY:** call x — state changes each step."
+
+// staticReminder returns the same content on every call. Freeze-by-source must emit it
+// exactly once (it never changes, so there is nothing to ignore).
+type staticReminder struct {
+	content  string
+	priority int
+}
+
+func (r *staticReminder) GetContextReminder(_ context.Context, _ string) (string, int, bool) {
+	return r.content, r.priority, true
+}
+
+// trailingSystem concatenates every system message AFTER the conversation input
+// (the accumulated trailing nudge block + dynamic directive). The head system
+// message (index 0) is excluded — only the trailing block is asserted for stability.
+func trailingSystem(out []*schema.Message, inputLen int) string {
+	var b strings.Builder
+	for _, msg := range out[1+inputLen:] {
+		b.WriteString("\x00") // separator so adjacent messages can't alias byte-wise
+		b.WriteString(msg.Content)
+	}
+	return b.String()
+}
+
+// TestMessageModifier_TrailingNudgesAreAppendOnly is the cache-stability guard for
+// the trailing nudge block: across model calls within a turn, the concatenation of
+// the trailing system messages at step N must be a BYTE-PREFIX of step N+1's. Prior
+// bytes never mutate or shrink — only genuinely-new sources' first values are appended
+// at the end. A provider whose raw content changes every call (volatileReminder) is
+// included to prove freeze-by-source snapshots its FIRST value and ignores every later
+// one (re-emitting the changing text would discard the provider cache).
+func TestMessageModifier_TrailingNudgesAreAppendOnly(t *testing.T) {
+	var n int
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt:      "You are a helpful assistant.",
+		ToolNames:         []string{"knowledge_search"},
+		MaxSteps:          12,
+		SessionID:         "append-only-session",
+		ReminderProviders: []ContextReminderProvider{&volatileReminder{n: &n}},
+	})
+	m.StartTurn()
+
+	input := []*schema.Message{{Role: schema.User, Content: "My question"}}
+
+	prev := ""
+	for step := 0; step <= 5; step++ {
+		out := m.Modify(context.Background(), input)
+		cur := trailingSystem(out, len(input))
+		require.True(t, strings.HasPrefix(cur, prev),
+			"trailing nudge block at step %d must extend step %d byte-for-byte (append-only); prev=%q cur=%q",
+			step, step-1, prev, cur)
+		require.GreaterOrEqual(t, len(cur), len(prev),
+			"trailing nudge block must never shrink (step %d)", step)
+		prev = cur
+	}
+	// Freeze-by-source: only the volatile reminder's FIRST value is ever emitted; its
+	// later changed values (call xx, xxx, …) must never appear in the trailing block.
+	require.Contains(t, prev, volatileReminderFirstValue,
+		"the volatile reminder's first value must be the snapshot that is kept")
+	require.NotContains(t, prev, "call xx ",
+		"a later (changed) value of the volatile reminder must never reach the trailing block")
+	// Sanity: by step >=2 the task directive must have appeared in the trailing block.
+	require.Contains(t, prev, "CURRENT TASK")
+}
+
+// TestMessageModifier_FreezeBySource is the focused freeze-by-source guard. A static
+// reminder (stable each call) and a volatile reminder (changes each call) run over
+// several Modify calls. The static one appears once; the volatile one appears once at
+// its FIRST value; the trailing block stops growing once every source has first appeared
+// (here: the two reminders plus the task-focus directive that fires at step >= 2) and is
+// then byte-identical step-to-step (the property caching needs). MaxSteps is high enough
+// that the budget/finalize directives never fire, isolating these three sources.
+func TestMessageModifier_FreezeBySource(t *testing.T) {
+	var n int
+	// Lower priority for static so it sorts before the volatile one (deterministic
+	// first-appearance order; not load-bearing for the freeze assertions).
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt: "You are a helpful assistant.",
+		ToolNames:    []string{"knowledge_search"},
+		MaxSteps:     100, // high budget → urgency/finalize directives never fire
+		SessionID:    "freeze-session",
+		ReminderProviders: []ContextReminderProvider{
+			&staticReminder{content: "**STATIC:** stable every step.", priority: 10},
+			&volatileReminder{n: &n, priority: 90},
+		},
+	})
+	m.StartTurn()
+
+	input := []*schema.Message{{Role: schema.User, Content: "My question"}}
+
+	var stabilized string
+	for step := 0; step <= 5; step++ {
+		out := m.Modify(context.Background(), input)
+		cur := trailingSystem(out, len(input))
+
+		// Both reminder sources appear exactly once, the volatile one at its first value.
+		require.Equal(t, 1, strings.Count(cur, "**STATIC:** stable every step."),
+			"static reminder must appear exactly once (step %d)", step)
+		require.Equal(t, 1, strings.Count(cur, volatileReminderFirstValue),
+			"volatile reminder must appear exactly once at its first value (step %d)", step)
+		require.NotContains(t, cur, "call xx ",
+			"a changed value of the volatile reminder must never appear (step %d)", step)
+
+		// All sources have first appeared by step 2 (reminders at step 0, task-focus
+		// directive at step >= 2). From step 2 on the block is frozen byte-for-byte.
+		if step == 2 {
+			stabilized = cur
+		}
+		if step > 2 {
+			require.Equal(t, stabilized, cur,
+				"trailing block must be byte-identical once all sources are frozen (step %d)", step)
+		}
+	}
+	require.Contains(t, stabilized, "**STATIC:** stable every step.")
+	require.Contains(t, stabilized, volatileReminderFirstValue)
+	require.Contains(t, stabilized, "CURRENT TASK")
+}
+
+// TestMessageModifier_TaskDirectiveIsCountFree guards that the task-focus directive
+// carries no per-step counter (the "(Step %d)" suffix made it change every call and
+// killed the provider cache). The directive text must be identical step-to-step.
+func TestMessageModifier_TaskDirectiveIsCountFree(t *testing.T) {
+	m := NewMessageModifier(MessageModifierConfig{
+		SystemPrompt: "System",
+		MaxSteps:     12,
+	})
+	m.StartTurn()
+
+	input := []*schema.Message{{Role: schema.User, Content: "My question"}}
+
+	var first string
+	for step := 0; step <= 4; step++ {
+		out := m.Modify(context.Background(), input)
+		last := out[len(out)-1].Content
+		if !strings.Contains(last, "CURRENT TASK") {
+			continue
+		}
+		require.NotContains(t, last, "Step ",
+			"task directive must be count-free — no '(Step N)' suffix that changes every call")
+		if first == "" {
+			first = last
+		} else {
+			require.Equal(t, first, last,
+				"task directive text must be byte-identical across steps for cache stability")
+		}
+	}
+	require.NotEmpty(t, first, "task directive must fire by step >= 2")
+}
+
 func TestMessageModifier_GetStep(t *testing.T) {
 	logger := newMockContextLogger()
 

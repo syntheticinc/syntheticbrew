@@ -22,11 +22,16 @@ type ModelConfig struct {
 }
 
 // CacheControl configures provider-agnostic prompt-cache breakpoints on a model.
-// Default (nil / Enabled=false) = off: the request shape stays byte-identical to
-// no-cache, so existing tenants are unaffected. Only the openai_compatible and
-// anthropic adapters translate it to wire-level cache_control breakpoints on the
-// stable prefix; automatic-cache providers (openai, azure_openai, google) cache
-// on their own and ignore it.
+// For the openai_compatible and anthropic adapters caching is default-on: nil
+// config (or Enabled=true) marks wire-level cache_control breakpoints on the stable
+// prefix. An explicit Enabled=false opts out (request stays byte-identical to
+// no-cache). Automatic-cache providers (openai, azure_openai, google) cache on their
+// own and ignore this entirely.
+//
+// Safety caveats: the marker is added inside a content-part, which a few strict
+// OpenAI-compatible gateways may reject — such a tenant opts out via
+// cache_control.enabled=false. The MinPrefixTokens gate also means small requests
+// get no marker at all.
 type CacheControl struct {
 	Enabled bool `json:"enabled"`
 	// Breakpoints names the prefix segments to mark cacheable; subset of
