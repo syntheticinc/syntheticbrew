@@ -7,6 +7,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // AdaptMCPTool converts an MCP tool to Eino InvokableTool.
@@ -21,11 +23,17 @@ type mcpToolAdapter struct {
 
 func (a *mcpToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
 	params := parseJSONSchemaToParams(a.mcpTool.InputSchema)
-	return &schema.ToolInfo{
+	info := &schema.ToolInfo{
 		Name:        a.mcpTool.Name,
 		Desc:        a.mcpTool.Description,
 		ParamsOneOf: schema.NewParamsOneOfByParams(params),
-	}, nil
+	}
+	// Carry the tool's self-declared return-directly intent to the ReAct loop via
+	// ToolInfo.Extra. The tool wrappers delegate Info(), so this survives wrapping.
+	if a.mcpTool.ReturnsDirectly() {
+		info.Extra = map[string]any{domain.ToolExtraReturnDirectly: true}
+	}
+	return info, nil
 }
 
 func (a *mcpToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {

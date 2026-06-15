@@ -323,16 +323,56 @@ func (a *Agent) runOwned(ctx context.Context, input string, eventCallback func(e
 		return "", errors.Wrap(err, errors.CodeInternal, "owned agent run failed")
 	}
 
-	content := result.Content
-	if cb.HITLSeen() {
-		content = ""
+	// Return-directly terminal: the graph routed tools→direct_return→END and the run
+	// output IS the tool-result message (Role=Tool). That tool's tool_result event
+	// already delivered the answer; re-emitting it as EventTypeAnswer would persist a
+	// duplicate assistant_message. Mirror the HITL contract — the tool is the
+	// message: return its content as the answer but emit no answer event.
+	directReturn := result != nil && result.Role == schema.Tool
+	resultContent := ""
+	if result != nil {
+		resultContent = result.Content
+	}
+	content := a.emitRunFinalAnswer(ctx, cb, holder, resultContent, directReturn, eventCallback)
+
+	cb.EmitTokenUsage(ctx, a.lastContextTokens())
+
+	if content != "" && !directReturn {
+		messages = append(messages, &schema.Message{Role: schema.Assistant, Content: content})
+	}
+	if a.contextLogger != nil {
+		a.contextLogger.LogContextSummary(ctx, messages)
 	}
 
-	if content == "" && !cb.HITLSeen() {
-		if reason, tool, detail := gracefulTerminalReason(holder, cb); reason != callbacks.TerminalNone {
-			content = cb.EmitGracefulFallback(ctx, reason, tool, detail)
+	slog.InfoContext(ctx, "[OWNED] runOwned completed", "answer_length", len(content))
+	return content, nil
+}
+
+// emitRunFinalAnswer emits the non-streaming turn's terminal answer event and
+// returns the content to record. Three terminal shapes:
+//   - return-directly: the tool_result event already delivered the answer; emit
+//     nothing and return the tool content (caller skips the assistant history row).
+//   - empty content: a HITL turn delivers via the interrupt (no fallback), else a
+//     force-terminated turn emits the graceful hardcoded fallback.
+//   - normal answer: emitted as EventTypeAnswer.
+func (a *Agent) emitRunFinalAnswer(ctx context.Context, cb *callbacks.AgentCallbackBuilder, holder *terminalHolder, content string, directReturn bool, eventCallback func(event *domain.AgentEvent) error) string {
+	hitl := cb.HITLSeen()
+	if hitl {
+		content = ""
+	}
+	if directReturn {
+		return content
+	}
+	if content == "" {
+		if hitl {
+			return content
 		}
-	} else if content != "" && eventCallback != nil {
+		if reason, tool, detail := gracefulTerminalReason(holder, cb); reason != callbacks.TerminalNone {
+			return cb.EmitGracefulFallback(ctx, reason, tool, detail)
+		}
+		return content
+	}
+	if eventCallback != nil {
 		if emitErr := eventCallback(&domain.AgentEvent{
 			Type:       domain.EventTypeAnswer,
 			Timestamp:  time.Now(),
@@ -343,16 +383,5 @@ func (a *Agent) runOwned(ctx context.Context, input string, eventCallback func(e
 			slog.WarnContext(ctx, "[OWNED] failed to emit final answer event", "error", emitErr)
 		}
 	}
-
-	cb.EmitTokenUsage(ctx, a.lastContextTokens())
-
-	if content != "" {
-		messages = append(messages, &schema.Message{Role: schema.Assistant, Content: content})
-	}
-	if a.contextLogger != nil {
-		a.contextLogger.LogContextSummary(ctx, messages)
-	}
-
-	slog.InfoContext(ctx, "[OWNED] runOwned completed", "answer_length", len(content))
-	return content, nil
+	return content
 }

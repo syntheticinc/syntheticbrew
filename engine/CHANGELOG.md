@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **MCP tools can self-declare "return-directly" (terminal) via tool metadata.** A
+  tool whose `tools/list` entry carries `_meta: {"syntheticbrew.ai/return-directly":
+  true}` ends the ReAct turn the moment it runs: its result is the final answer,
+  with no follow-up model call and no trailing assistant message. This lets a tool
+  meant to render the final answer (e.g. one that returns a formatted
+  recommendation) stop the loop without the engine hard-coding third-party tool
+  names. On reasoning models this removes a spurious trailing self-narration turn
+  that a non-terminal "final answer" tool would otherwise force. The key is
+  namespaced per the MCP `_meta` spec; only a boolean `true` enables it, and any
+  other shape (missing/malformed) leaves behaviour unchanged. The existing global
+  `agent.tool_return_directly` list still works and is unioned with self-declared
+  tools.
+
 ## [1.7.3] — 2026-06-14
 
 ### Fixed

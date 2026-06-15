@@ -296,7 +296,7 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 		maxTurnDuration:      time.Duration(maxTurnDuration) * time.Second,
 		messageModifier:      messageModifierFunc,
 		messageRewriter:      messageRewriterFunc,
-		toolReturnDirectly:   ownedReturnDirectlyMap(config.AgentConfig),
+		toolReturnDirectly:   ownedReturnDirectlyMap(config.AgentConfig, toolInfos),
 		streamToolChecker:    streamToolChecker,
 		unknownToolsHandler:  unknownToolsHandler,
 		toolArgumentsHandler: toolArgumentsHandler,
@@ -423,12 +423,36 @@ func ownedBackstopSteps(maxSteps int) int {
 	return maxSteps*3 + 10
 }
 
-// ownedReturnDirectlyMap extracts the return-directly tool set from config.
-func ownedReturnDirectlyMap(cfg *config.AgentConfig) map[string]struct{} {
-	if cfg == nil || len(cfg.ToolReturnDirectly) == 0 {
-		return nil
+// ownedReturnDirectlyMap builds the return-directly tool set: names from the agent
+// config (the global/baked tool_return_directly) unioned with tools that
+// self-declare it via ToolInfo.Extra (e.g. an MCP tool carrying the
+// return-directly _meta). A fresh map is returned so the shared config is never
+// mutated; nil when empty so the loop's default (no early return) is unchanged.
+func ownedReturnDirectlyMap(cfg *config.AgentConfig, toolInfos []*schema.ToolInfo) map[string]struct{} {
+	var set map[string]struct{}
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		if set == nil {
+			set = make(map[string]struct{})
+		}
+		set[name] = struct{}{}
 	}
-	return cfg.ToolReturnDirectly
+	if cfg != nil {
+		for name := range cfg.ToolReturnDirectly {
+			add(name)
+		}
+	}
+	for _, info := range toolInfos {
+		if info == nil || info.Extra == nil {
+			continue
+		}
+		if v, _ := info.Extra[domain.ToolExtraReturnDirectly].(bool); v {
+			add(info.Name)
+		}
+	}
+	return set
 }
 
 // lastContextTokens returns the last context size reported by the ContextRewriter.
