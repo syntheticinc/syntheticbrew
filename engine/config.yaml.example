@@ -75,6 +75,12 @@ qa:
 agent:
   max_steps: 0
   max_context_size: 32000 # Maximum context size in TOKENS (not characters). 1 token ≈ 4 chars.
+  # Tools that terminate the ReAct turn the moment they run: the tool result
+  # becomes the final answer, with no follow-up model call. Use for "final answer"
+  # tools (e.g. one that renders the response) to avoid a trailing model-narration
+  # turn. An MCP tool can also self-declare this from its own tools/list metadata —
+  # set `_meta: {"syntheticbrew.ai/return-directly": true}` on the tool — without
+  # being listed here.
   tool_return_directly: []
   enable_enhanced_tool_call_checker: true
 

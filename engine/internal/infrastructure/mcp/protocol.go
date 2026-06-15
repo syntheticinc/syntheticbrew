@@ -31,11 +31,32 @@ type RPCError struct {
 
 func (e *RPCError) Error() string { return e.Message }
 
+// metaKeyReturnDirectly is the MCP `_meta` key an MCP tool sets to declare itself
+// terminal: after it runs the agent turn ends with the tool result as the final
+// answer, no follow-up model call. The key is namespaced under a domain we own,
+// per the MCP spec's `_meta` naming rules (prefix = dotted labels + "/"), so it
+// never collides with the reserved `mcp`/`modelcontextprotocol` namespace.
+const metaKeyReturnDirectly = "syntheticbrew.ai/return-directly"
+
 // MCPTool describes a tool provided by an MCP server.
 type MCPTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"inputSchema"` // JSON Schema
+	Meta        map[string]any  `json:"_meta,omitempty"`
+}
+
+// ReturnsDirectly reports whether the tool declared return-directly via its MCP
+// `_meta`. Strictly a boolean true counts — any other shape (missing, string,
+// number, null) is treated as not declared, so a malformed `_meta` degrades to
+// the default (off) rather than failing ingestion.
+func (t MCPTool) ReturnsDirectly() bool {
+	v, ok := t.Meta[metaKeyReturnDirectly]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
 }
 
 // ToolsListResult is the result of tools/list.
