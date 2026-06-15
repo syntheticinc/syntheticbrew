@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.8.0] — 2026-06-15
 
 ### Added
 
@@ -16,6 +16,17 @@
   other shape (missing/malformed) leaves behaviour unchanged. The existing global
   `agent.tool_return_directly` list still works and is unioned with self-declared
   tools.
+
+### Fixed
+
+- **Two data races eliminated (`go test -race ./...` is now clean).** Both were real
+  concurrency defects, not test artifacts: `SSEWriter` wrote the same
+  `http.ResponseWriter` from the request and heartbeat goroutines without a lock
+  (and its heartbeat stop returned before the goroutine had exited), and
+  `SessionEventBus.Publish` could send on `eventCh` while `Close` closed it — a
+  send racing a channel close, which panics ("send on closed channel"). Writes are
+  now mutex-serialized, heartbeat stop blocks until the goroutine exits, and
+  Publish/Close are mutually exclusive via a mutex + closed flag.
 
 ## [1.7.3] — 2026-06-14
 
