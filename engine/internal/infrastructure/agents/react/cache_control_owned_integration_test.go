@@ -88,12 +88,12 @@ func TestOwnedGraph_CacheControlReachesChatNodeWire(t *testing.T) {
 		"the request leaving the owned-graph chat node must carry cache_control — proves DesignateNode routing + modifier wiring end-to-end")
 }
 
-// TestOwnedGraph_HistoryBreakpointSkipsTrailingReminder is the regression guard for
-// the cached_tokens-frozen-at-system bug: when the engine injects a dynamic trailing
-// system reminder (tool-call history / environment), the history cache breakpoint
-// must land on the last STABLE conversation message, NOT on the ever-changing
-// reminder — otherwise that block is never re-read and only the static head caches.
-func TestOwnedGraph_HistoryBreakpointSkipsTrailingReminder(t *testing.T) {
+// TestOwnedGraph_CacheBreakpointOnAppendOnlyTail verifies the history cache breakpoint
+// lands on the LAST message of the append-only request (head + last cacheable message).
+// The MessageModifier appends reminders and turns at the tail and never rewrites earlier
+// ones, so the last message is byte-stable across calls and is the correct breakpoint —
+// marking it caches the whole growing prefix; on the next call it is interior and read.
+func TestOwnedGraph_CacheBreakpointOnAppendOnlyTail(t *testing.T) {
 	const reminderMarker = "DYNAMIC-REMINDER-MARKER"
 	var lastBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,20 +150,16 @@ func TestOwnedGraph_HistoryBreakpointSkipsTrailingReminder(t *testing.T) {
 	contentStr := func(m map[string]json.RawMessage) string { return string(m["content"]) }
 
 	last := msgs[len(msgs)-1]
-	require.Contains(t, contentStr(last), reminderMarker, "the trailing message must be the dynamic reminder")
-	assert.False(t, hasCC(last), "the dynamic trailing reminder must NOT carry the cache breakpoint")
+	require.Contains(t, contentStr(last), reminderMarker, "the trailing message must be the appended reminder")
+	// Append-increment never rewrites the tail, so the breakpoint belongs ON the last
+	// message: marking it caches the whole growing prefix; next call it is interior and read.
+	assert.True(t, hasCC(last), "the append-only tail message must carry the cache breakpoint")
 
-	// head marked, and exactly one non-head message (the stable user turn) marked.
+	// head marked too (the large stable block); only head + tail are breakpoints.
 	assert.True(t, hasCC(msgs[0]), "head system message must be marked")
-	markedUser := false
-	for _, m := range msgs[1:] {
-		if hasCC(m) {
-			assert.Contains(t, contentStr(m), userInputMarker,
-				"the history breakpoint must land on the stable user turn")
-			markedUser = true
-		}
+	for i, m := range msgs[1 : len(msgs)-1] {
+		assert.False(t, hasCC(m), "only head and tail are breakpoints; interior message %d must not be marked", i+1)
 	}
-	assert.True(t, markedUser, "a stable conversation message must carry the history breakpoint")
 }
 
 // jsonKindIsArray reports whether a raw JSON value is an array (first non-space byte '[').

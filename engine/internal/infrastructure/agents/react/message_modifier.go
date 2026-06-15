@@ -26,6 +26,16 @@ const (
 	softLandingTimeDenominator = 10
 )
 
+// injectedReminder is one reminder system message captured at the input position it
+// was first appended after. afterIndex pins it BETWEEN input messages so later steps,
+// which only grow input at the tail, never shift it — the explicit-cache prefix keeps
+// growing instead of collapsing. afterIndex == -1 means "input was empty when added"
+// → emit right after the head, before input[0].
+type injectedReminder struct {
+	afterIndex int
+	content    string
+}
+
 // MessageModifier modifies messages before sending to the model
 // It handles system prompt injection, urgency warnings, task reminders,
 // and context reminders from providers
@@ -41,17 +51,18 @@ type MessageModifier struct {
 	stepCounter       int
 	turnStart         time.Time // stamped by StartTurn; drives time soft-landing
 
-	// Trailing nudge accumulation. Per-turn, the trailing system block (reminders +
-	// dynamic directives) is built APPEND-ONLY with FREEZE-BY-SOURCE: each source (a
-	// reminder provider, identified by its index, or a named directive) contributes its
-	// FIRST non-empty text and is then frozen — later changed values from that same
-	// source are ignored. This snapshots env-time / live task-state at first appearance
-	// so the trailing block grows only by appending genuinely new sources' first values
-	// and never rewrites already-emitted bytes. Explicit-cache providers (Qwen/DashScope,
-	// Anthropic) keep the prefix cached — any change to already-sent content discards the
-	// whole cache. Reset by StartTurn.
-	emittedNudges []string
-	frozenByKey   map[string]string
+	// Append-increment reminder injection. Per-turn, each candidate source (a reminder
+	// provider keyed "r:<index>", or a named directive "d:urgency"/"d:finalize"/
+	// "d:task-focus") is tracked by its LAST emitted value. When a source's value
+	// CHANGES (or first appears) a NEW reminder is appended at the current input tail
+	// and never rewritten or removed; an unchanged value is skipped. Reminders are then
+	// interleaved back into the message stream at their captured input position, so every
+	// prior request stays a clean prefix of the next — old content keeps its position,
+	// only new content lands at the end. This keeps LIVE values (e.g. a step countdown,
+	// which appends a fresh reminder each step) AND lets explicit-cache providers
+	// (Qwen/DashScope, Anthropic) grow the cached prefix. Reset by StartTurn.
+	injected       []injectedReminder
+	lastValueByKey map[string]string
 
 	mu sync.Mutex
 }
@@ -80,8 +91,17 @@ func NewMessageModifier(cfg MessageModifierConfig) *MessageModifier {
 		sessionID:         cfg.SessionID,
 		toolNames:         cfg.ToolNames,
 		stepCounter:       0,
-		frozenByKey:       make(map[string]string),
+		lastValueByKey:    make(map[string]string),
 	}
+}
+
+// reminderCandidate is a step's candidate reminder tagged with a STABLE per-turn source
+// key (a reminder provider's index, or a named directive). The key identifies the
+// source across steps; a NEW reminder is appended only when this key's content differs
+// from the last value emitted for it.
+type reminderCandidate struct {
+	key     string
+	content string
 }
 
 // Modify modifies the input messages according to the current step and configuration
@@ -94,95 +114,103 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 
 	// The head system message holds ONLY content that is stable across the turn's
 	// model calls (system prompt + tool list + HITL directive). Per-step dynamic
-	// directives (urgency, finalize, task focus) are emitted as a trailing system
-	// message below instead of being concatenated here, so the head stays
-	// byte-identical call-to-call and the provider can prompt-cache it. The same
-	// text reaches the model — positioned last for recency, not in the head.
-	currentSystemPrompt := m.systemPrompt
+	// directives (urgency, finalize, task focus) and provider reminders are emitted as
+	// interleaved system messages below instead of being concatenated here, so the head
+	// stays byte-identical call-to-call and the provider can prompt-cache it.
+	head := schema.SystemMessage(m.buildHead())
 
-	// Inject available tool names into system prompt
-	// This prevents LLM from inventing non-existent tools
+	// Gather this step's candidates (providers called OUTSIDE the lock), then append any
+	// genuinely-new content under the lock and interleave the accumulated reminders back
+	// into the stream at their captured input positions.
+	candidates := m.gatherCandidates(ctx, currentStep, turnStart, input)
+
+	m.mu.Lock()
+	for _, c := range candidates {
+		if c.content == "" {
+			continue
+		}
+		if m.lastValueByKey[c.key] == c.content {
+			continue // unchanged value → do not duplicate
+		}
+		m.lastValueByKey[c.key] = c.content
+		m.injected = append(m.injected, injectedReminder{afterIndex: len(input) - 1, content: c.content})
+	}
+	injected := append([]injectedReminder(nil), m.injected...)
+	m.stepCounter++
+	m.mu.Unlock()
+
+	// Context logging moved to ContextRewriter to log post-compression state
+	// (what LLM actually receives, not pre-compression snapshot)
+
+	return interleave(head, input, injected)
+}
+
+// interleave rebuilds the message stream as [head] + input with the accumulated
+// reminders spliced back in at their captured input positions. A reminder is emitted
+// immediately AFTER the input message at its afterIndex (in insertion order when several
+// share an index); afterIndex == -1 reminders (input was empty when added) land right
+// after the head, before input[0]. Reminders added this step carry afterIndex ==
+// len(input)-1 and therefore land after the last input message — at the very end for
+// recency. Because input only grows at the tail, every prior reminder keeps the exact
+// position it had, so call N's sequence stays a prefix of call N+1's.
+func interleave(head *schema.Message, input []*schema.Message, injected []injectedReminder) []*schema.Message {
+	result := make([]*schema.Message, 0, len(input)+len(injected)+1)
+	result = append(result, head)
+
+	emitAt := func(idx int) {
+		for _, r := range injected {
+			if r.afterIndex == idx {
+				result = append(result, &schema.Message{Role: schema.System, Content: r.content})
+			}
+		}
+	}
+
+	emitAt(-1) // reminders captured when input was empty
+	for i := range input {
+		result = append(result, input[i])
+		emitAt(i)
+	}
+	return result
+}
+
+// gatherCandidates returns this step's candidate reminders in low→high priority order
+// (reminder-provider content first, then dynamic directives), so when several sources
+// first appear together they land in recency order. Providers are invoked here, outside
+// the modifier lock.
+func (m *MessageModifier) gatherCandidates(ctx context.Context, currentStep int, turnStart time.Time, input []*schema.Message) []reminderCandidate {
+	candidates := m.collectReminders(ctx)
+	candidates = append(candidates, m.buildDynamicDirectives(currentStep, turnStart, input)...)
+	return candidates
+}
+
+// buildHead returns the stable head system prompt: configured system prompt + the
+// available-tools whitelist + the HITL halt-point directive. It carries no per-step
+// dynamic content so it stays byte-identical across the turn's model calls and the
+// provider can prompt-cache it.
+func (m *MessageModifier) buildHead() string {
+	head := m.systemPrompt
+
+	// Inject available tool names so the model can't invent non-existent tools.
 	if len(m.toolNames) > 0 {
-		toolsNote := fmt.Sprintf("\n\n**Available tools:** %s\nOnly use these tools. Do not invent or call tools that are not listed.",
+		head += fmt.Sprintf("\n\n**Available tools:** %s\nOnly use these tools. Do not invent or call tools that are not listed.",
 			strings.Join(m.toolNames, ", "))
-		currentSystemPrompt += toolsNote
 	}
 
 	// Inject the HITL halt-point directive when any HITL tool is available.
 	// Constrains models that emit prose alongside the HITL tool_call.
 	if domain.HasAnyHITLTool(m.toolNames) {
-		currentSystemPrompt += hitlPromptDirective
+		head += hitlPromptDirective
 	}
 
-	// Add system prompt at the beginning, then the conversation. The owned graph
-	// preserves assistant content alongside tool_calls in state, so no content
-	// recovery is needed here.
-	result := make([]*schema.Message, 0, len(input)+4)
-	result = append(result, schema.SystemMessage(currentSystemPrompt))
-	result = append(result, input...)
-
-	// Trailing nudge block: accumulated append-only across the turn so the bytes the
-	// provider has already cached never change (only new nudges appended at the end).
-	for _, nudge := range m.accumulateNudges(ctx, currentStep, turnStart, input) {
-		result = append(result, &schema.Message{Role: schema.System, Content: nudge})
-	}
-
-	// Context logging moved to ContextRewriter to log post-compression state
-	// (what LLM actually receives, not pre-compression snapshot)
-
-	// Always increment step counter so urgency warnings and task reminders work
-	m.mu.Lock()
-	m.stepCounter++
-	m.mu.Unlock()
-
-	return result
-}
-
-// nudgeCandidate is a step's candidate trailing nudge tagged with a STABLE per-turn
-// source key (a reminder provider's index, or a named directive). The key — not the
-// content — decides freezing: a source contributes once, at its first non-empty value.
-type nudgeCandidate struct {
-	key     string
-	content string
-}
-
-// accumulateNudges collects this step's candidate nudges (reminder-provider content +
-// the dynamic directives), freezes each source at its FIRST non-empty value, appends
-// newly-frozen values to the per-turn emittedNudges list in first-seen order, and
-// returns the full accumulated list.
-//
-// Cache-stability invariant (freeze-by-source): once a source has contributed, its
-// later — possibly changed — values are ignored, so already-emitted bytes are never
-// rewritten. The trailing block grows only by appending a not-yet-seen source's first
-// value, staying a byte-stable growing prefix call-to-call. Candidates are ordered
-// low→high priority within a step (directives last) so that when several sources first
-// appear together they land in recency order.
-func (m *MessageModifier) accumulateNudges(ctx context.Context, currentStep int, turnStart time.Time, input []*schema.Message) []string {
-	candidates := m.collectReminders(ctx)
-	candidates = append(candidates, m.buildDynamicDirectives(currentStep, turnStart, input)...)
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, c := range candidates {
-		if c.content == "" {
-			continue
-		}
-		if _, frozen := m.frozenByKey[c.key]; frozen {
-			continue
-		}
-		m.frozenByKey[c.key] = c.content
-		m.emittedNudges = append(m.emittedNudges, c.content)
-	}
-	// Return a copy so callers can't mutate the per-turn accumulator.
-	return append([]string(nil), m.emittedNudges...)
+	return head
 }
 
 // collectReminders returns each provider's current reminder content keyed by the
 // provider's index in m.reminderProviders (stable per agent/turn → "r:0", "r:1", …),
-// sorted low→high priority so higher-priority reminders land later (recency bias) on
-// first appearance. The provider index, not its content, is the freeze key, so a
-// volatile provider freezes at its first value regardless of how the text later changes.
-func (m *MessageModifier) collectReminders(ctx context.Context) []nudgeCandidate {
+// sorted low→high priority so higher-priority reminders land later (recency bias).
+// A new reminder is appended for a provider only when its content changes from the
+// value last emitted for that key.
+func (m *MessageModifier) collectReminders(ctx context.Context) []reminderCandidate {
 	if len(m.reminderProviders) == 0 || m.sessionID == "" {
 		return nil
 	}
@@ -200,9 +228,9 @@ func (m *MessageModifier) collectReminders(ctx context.Context) []nudgeCandidate
 	sort.SliceStable(reminders, func(i, j int) bool {
 		return reminders[i].priority < reminders[j].priority
 	})
-	out := make([]nudgeCandidate, 0, len(reminders))
+	out := make([]reminderCandidate, 0, len(reminders))
 	for _, r := range reminders {
-		out = append(out, nudgeCandidate{key: r.key, content: r.content})
+		out = append(out, reminderCandidate{key: r.key, content: r.content})
 		slog.DebugContext(ctx, "collected context reminder",
 			"priority", r.priority, "content_length", len(r.content))
 	}
@@ -211,19 +239,24 @@ func (m *MessageModifier) collectReminders(ctx context.Context) []nudgeCandidate
 
 // buildDynamicDirectives returns the per-step directives that must NOT live in the
 // cacheable head: urgency warning, budget soft-landing, and task focus — each keyed by
-// a stable per-turn source name ("d:urgency", "d:finalize", "d:task-focus") so it
-// freezes to a single append-once item regardless of how its text might later change.
-// Each directive's text is COUNT-FREE so it stays byte-identical every step it persists.
-func (m *MessageModifier) buildDynamicDirectives(currentStep int, turnStart time.Time, input []*schema.Message) []nudgeCandidate {
-	var directives []nudgeCandidate
+// a stable per-turn source name ("d:urgency", "d:finalize", "d:task-focus"). The urgency
+// directive embeds the LIVE remaining-step count, so its value changes each step and
+// append-increment appends a fresh reminder per step (a live countdown). Finalize and
+// task-focus are static, so they append once.
+func (m *MessageModifier) buildDynamicDirectives(currentStep int, turnStart time.Time, input []*schema.Message) []reminderCandidate {
+	var directives []reminderCandidate
 
-	// Urgency warning when approaching the step budget. The configured text is emitted
-	// verbatim (count-free) — embedding the remaining-step number would change it every
-	// step and discard the provider cache.
+	// Urgency warning when approaching the step budget. The configured text carries the
+	// live remaining-step count when it contains a %d verb, so it changes each step and
+	// append-increment trails a fresh countdown reminder.
 	if m.maxSteps > 0 && m.urgencyWarning != "" {
 		remainingSteps := m.maxSteps - currentStep
 		if remainingSteps <= 3 && remainingSteps > 0 {
-			directives = append(directives, nudgeCandidate{key: "d:urgency", content: strings.TrimSpace(m.urgencyWarning)})
+			warning := strings.TrimSpace(m.urgencyWarning)
+			if strings.Contains(warning, "%d") {
+				warning = fmt.Sprintf(warning, remainingSteps)
+			}
+			directives = append(directives, reminderCandidate{key: "d:urgency", content: warning})
 		}
 	}
 
@@ -231,14 +264,14 @@ func (m *MessageModifier) buildDynamicDirectives(currentStep int, turnStart time
 	// model to finalize NOW (inside the budget) instead of hitting the hard wall with no
 	// answer. Best-effort — the loop's terminal fallback still guarantees a graceful end.
 	if m.shouldFinalize(currentStep, turnStart) {
-		directives = append(directives, nudgeCandidate{key: "d:finalize", content: strings.TrimSpace(finalizeDirective)})
+		directives = append(directives, reminderCandidate{key: "d:finalize", content: strings.TrimSpace(finalizeDirective)})
 	}
 
-	// Task focus after several steps, using the LATEST user message. Count-free (no step
-	// number) and stable within the turn (same sanitized question) so it appends once.
+	// Task focus after several steps, using the LATEST user message. Static within the
+	// turn (same sanitized question, no step number) so it appends once.
 	if currentStep >= 2 {
 		if userQuestion := latestUserQuestion(input); userQuestion != "" {
-			directives = append(directives, nudgeCandidate{
+			directives = append(directives, reminderCandidate{
 				key:     "d:task-focus",
 				content: fmt.Sprintf("**CURRENT TASK:** Answer the user's question: \"%s\"\nDo NOT get distracted - answer THIS question!", sanitizeForSystemPrompt(userQuestion, 500)),
 			})
@@ -274,14 +307,14 @@ func (m *MessageModifier) ResetStep() {
 }
 
 // StartTurn stamps the turn start time (for time soft-landing) and resets the
-// per-turn model-call counter and trailing-nudge accumulation. Called by the agent
+// per-turn model-call counter and reminder-injection accumulation. Called by the agent
 // at the start of each turn.
 func (m *MessageModifier) StartTurn() {
 	m.mu.Lock()
 	m.turnStart = time.Now()
 	m.stepCounter = 0
-	m.emittedNudges = nil
-	m.frozenByKey = make(map[string]string)
+	m.injected = nil
+	m.lastValueByKey = make(map[string]string)
 	m.mu.Unlock()
 }
 

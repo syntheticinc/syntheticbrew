@@ -194,20 +194,20 @@ func TestCacheModifier_SkipsToolCallOnlyMessage(t *testing.T) {
 	assert.Contains(t, string(msgs[1]["tool_calls"]), "call_1")
 }
 
-func TestCacheModifier_HistorySkipsTrailingSystemReminders(t *testing.T) {
+func TestCacheModifier_HistoryBreakpointOnAppendOnlyTail(t *testing.T) {
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})
 	require.NotNil(t, mod)
 
-	// Engine shape: head system + conversation + a trailing injected system reminder
-	// (tool-call history / environment) whose content changes every call. The history
-	// breakpoint must land on the last STABLE message (the user turn), NOT the dynamic
-	// trailing reminder — otherwise that cache block is never re-read and only the head
-	// caches (the cached_tokens-frozen-at-system symptom).
+	// Engine shape: head system + conversation + a trailing injected system reminder. The
+	// request is built append-only (reminders/turns appended at the tail, never rewritten),
+	// so the LAST message is byte-stable once written and is the correct history breakpoint:
+	// marking it caches the whole growing prefix, and on the next call it is interior and
+	// read from cache. Only head + tail carry the breakpoint; interior messages do not.
 	body := []byte(`{
 		"messages": [
 			{"role":"system","content":"` + bigText("you are helpful") + `"},
 			{"role":"user","content":"` + bigText("the stable question") + `"},
-			{"role":"system","content":"` + bigText("TOOL HISTORY changes every step") + `"}
+			{"role":"system","content":"` + bigText("COUNTDOWN only N steps left") + `"}
 		]
 	}`)
 
@@ -217,8 +217,8 @@ func TestCacheModifier_HistorySkipsTrailingSystemReminders(t *testing.T) {
 	require.Len(t, msgs, 3)
 
 	assert.True(t, lastPartHasCacheControl(t, msgs[0]), "head system marked")
-	assert.True(t, lastPartHasCacheControl(t, msgs[1]), "history breakpoint on the stable user turn")
-	assert.False(t, lastPartHasCacheControl(t, msgs[2]), "trailing dynamic reminder must NOT be the breakpoint")
+	assert.False(t, lastPartHasCacheControl(t, msgs[1]), "interior message must not be the breakpoint")
+	assert.True(t, lastPartHasCacheControl(t, msgs[2]), "the append-only tail carries the history breakpoint")
 }
 
 func TestCacheModifier_MinPrefixGateSkipsSmallPrefix(t *testing.T) {

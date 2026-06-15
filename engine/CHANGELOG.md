@@ -8,16 +8,20 @@
   instead of collapsing mid-turn.** 1.7.3 moved the cache breakpoint ahead of the
   dynamic trailing reminders, but explicit-cache providers (Alibaba Qwen /
   DashScope) discard the **entire** prefix cache the moment any already-sent
-  content changes between steps — not just content after the breakpoint. The
-  per-call reminder block (tool-call history, environment time, task state,
-  finalize/urgency directives) was regenerated with changing values every step, so
-  from the step a dynamic reminder first appeared the cached-token count dropped to
-  zero and the whole prefix was re-billed. The reminder accumulator now **freezes
-  each source's first non-empty value per turn**: once a reminder or directive has
-  contributed, its text is snapshotted and never rewritten, so the trailing block
-  stays byte-identical across model calls and the cached prefix grows. Verified
-  live on a Qwen explicit-cache model: cached prompt tokens climb across steps
-  where they previously stayed at zero.
+  content changes or shifts between steps — not just content after the breakpoint.
+  The per-call reminders (tool-call history, environment time, task state,
+  finalize/urgency directives) were re-emitted in a trailing block that was
+  rewritten and shifted as the conversation grew, so from the step a dynamic
+  reminder appeared the cached-token count dropped to zero and the whole prefix was
+  re-billed. The engine now builds each turn's messages **append-only**: a reminder
+  is appended as a new message (interleaved at the tail it was added) only when its
+  value changes, prior reminders and turns are never rewritten or shifted, and the
+  cache breakpoint moves to that append-only tail (every message is canonicalized to
+  array form so a former breakpoint stays byte-stable). Each request is therefore a
+  clean prefix-extension of the previous one — the explicit-cache prefix grows while
+  reminders keep their live, per-step values (e.g. a step countdown). Verified live
+  on qwen3.7-plus: cached prompt tokens climb across steps where they previously
+  stayed at zero.
 
 ### Changed
 

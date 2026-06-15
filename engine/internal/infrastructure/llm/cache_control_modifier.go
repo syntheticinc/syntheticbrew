@@ -113,9 +113,21 @@ func injectCacheControl(body []byte, minPrefixTokens int, markSystem, markHistor
 		return body, nil
 	}
 
-	changed := false
+	// Canonicalize every string-content message to array (single text part) form. A cache
+	// breakpoint requires array content, so a marked message is array; without canonicalizing
+	// the rest, a message that was the breakpoint one step ago (array) and is interior the
+	// next (string) would change shape and break the byte-stable prefix that explicit-cache
+	// providers require — the request is built append-only, so the breakpoint moves to the
+	// new tail each step and the previous tail becomes interior. With every message in array
+	// form, a former breakpoint stays array and only the cache_control field drops off, which
+	// the providers tolerate.
+	markSet := make(map[int]bool)
 	for _, idx := range selectBreakpointIndices(msgs, markSystem, markHistory) {
-		if applyCacheControlToMessage(msgs[idx]) {
+		markSet[idx] = true
+	}
+	changed := false
+	for i := range msgs {
+		if canonicalizeContent(msgs[i], markSet[i]) {
 			changed = true
 		}
 	}
@@ -136,9 +148,9 @@ func injectCacheControl(body []byte, minPrefixTokens int, markSystem, markHistor
 }
 
 // selectBreakpointIndices picks the message indices to mark (≤ maxCacheBreakpoints),
-// deduped. system = first system message; history = last STABLE cacheable message.
-// Both placements yield incremental hits: the front caches the large stable block,
-// the tail caches the growing conversation prefix.
+// deduped. system = first system message; history = last cacheable message (the tail
+// of the append-only prefix). Both placements yield incremental hits: the front caches
+// the large stable block, the tail caches the growing conversation prefix.
 func selectBreakpointIndices(msgs []map[string]json.RawMessage, markSystem, markHistory bool) []int {
 	var idxs []int
 	seen := map[int]bool{}
@@ -154,7 +166,7 @@ func selectBreakpointIndices(msgs []map[string]json.RawMessage, markSystem, mark
 		}
 	}
 	if markHistory {
-		if i := lastStableCacheableIndex(msgs); i >= 0 {
+		if i := lastCacheableIndex(msgs); i >= 0 {
 			add(i)
 		}
 	}
@@ -170,20 +182,19 @@ func firstSystemIndex(msgs []map[string]json.RawMessage) int {
 	return -1
 }
 
-// lastStableCacheableIndex returns the index that ends the stable cacheable prefix:
-// the last NON-system message with cacheable content. Trailing system messages are
-// per-call dynamic reminders injected after the conversation (tool-call history,
-// environment time, finalize/urgency directives) — marking one of them anchors the
-// cache breakpoint on content that changes every call, so the write is never re-read
-// and only the static head re-hits (the cached_tokens-frozen-at-system symptom). The
-// genuine conversation tail (a user/assistant/tool turn) is byte-stable call-to-call.
-// Non-cacheable turns (e.g. tool_call-only assistant with null content) are skipped
-// by contentIsCacheable.
-func lastStableCacheableIndex(msgs []map[string]json.RawMessage) int {
+// lastCacheableIndex returns the index of the LAST message with cacheable content —
+// the end of the request's stable prefix. The engine builds each turn's messages
+// append-only: the MessageModifier appends new reminders and conversation turns at the
+// tail and never rewrites or shifts earlier ones, so the last message is byte-stable
+// once written. Marking it caches the whole growing prefix, and on the next call it is
+// interior and read from cache. (Earlier versions skipped trailing system reminders
+// because the old design REWROTE a single trailing reminder each call — content after
+// the breakpoint then changed and explicit-cache providers discarded the whole cache;
+// append-increment removes that rewrite, so the trailing reminder is now the correct,
+// stable breakpoint.) Non-cacheable turns (e.g. tool_call-only assistant with null
+// content) are skipped by contentIsCacheable.
+func lastCacheableIndex(msgs []map[string]json.RawMessage) int {
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if messageRole(msgs[i]) == "system" {
-			continue
-		}
 		if contentIsCacheable(msgs[i]["content"]) {
 			return i
 		}
@@ -219,11 +230,15 @@ func contentIsCacheable(content json.RawMessage) bool {
 	return false
 }
 
-// applyCacheControlToMessage adds an ephemeral cache_control marker to a message's
-// content, converting a plain string into a single text content-part. Other
-// message fields (role, name, tool_calls, tool_call_id) are left untouched.
-// Returns whether the message was modified.
-func applyCacheControlToMessage(m map[string]json.RawMessage) bool {
+// canonicalizeContent rewrites a message's content to array form — a string becomes a
+// single text content-part — and, when mark is true, adds an ephemeral cache_control
+// marker to the last content-part. Canonicalizing EVERY message (not just the marked
+// ones) keeps shape stable across calls: a message that is the breakpoint one step and
+// interior the next stays array either way, so only the cache_control field changes.
+// Other message fields (role, name, tool_calls, tool_call_id) are left untouched.
+// null/empty content (e.g. a tool_calls-only assistant turn) is left as-is. Returns
+// whether the message was modified.
+func canonicalizeContent(m map[string]json.RawMessage, mark bool) bool {
 	content, ok := m["content"]
 	if !ok {
 		return false
@@ -234,15 +249,17 @@ func applyCacheControlToMessage(m map[string]json.RawMessage) bool {
 		if err := json.Unmarshal(content, &s); err != nil || s == "" {
 			return false
 		}
-		part := map[string]json.RawMessage{
-			"type":          json.RawMessage(`"text"`),
-			"cache_control": ephemeralCacheControl,
-		}
 		text, err := json.Marshal(s)
 		if err != nil {
 			return false
 		}
-		part["text"] = text
+		part := map[string]json.RawMessage{
+			"type": json.RawMessage(`"text"`),
+			"text": text,
+		}
+		if mark {
+			part["cache_control"] = ephemeralCacheControl
+		}
 		newContent, err := json.Marshal([]map[string]json.RawMessage{part})
 		if err != nil {
 			return false
@@ -250,6 +267,9 @@ func applyCacheControlToMessage(m map[string]json.RawMessage) bool {
 		m["content"] = newContent
 		return true
 	case jsonArray:
+		if !mark {
+			return false // already array form; nothing to change when not marking
+		}
 		var parts []map[string]json.RawMessage
 		if err := json.Unmarshal(content, &parts); err != nil || len(parts) == 0 {
 			return false
