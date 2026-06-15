@@ -28,11 +28,16 @@ type OrchestratorEvent struct {
 // SessionEventBus is a per-session, channel-based event bus.
 // Single consumer reads via Events(), multiple producers write via Publish().
 // Supports interrupt signalling for cancelling in-progress REACT turns.
+//
+// mu serializes Publish against Close so a producer's send can never race with
+// (or land after) the close of eventCh — concurrently sending on and closing a
+// channel is a data race and panics. Publish's send is non-blocking, so holding
+// mu across it cannot deadlock Close.
 type SessionEventBus struct {
+	mu          sync.Mutex
+	closed      bool
 	eventCh     chan OrchestratorEvent
 	interruptCh chan struct{}
-	done        chan struct{}
-	once        sync.Once
 }
 
 // NewSessionEventBus creates a new event bus with the given buffer size.
@@ -43,24 +48,21 @@ func NewSessionEventBus(bufferSize int) *SessionEventBus {
 	return &SessionEventBus{
 		eventCh:     make(chan OrchestratorEvent, bufferSize),
 		interruptCh: make(chan struct{}, 1),
-		done:        make(chan struct{}),
 	}
 }
 
 // Publish sends an event to the bus. Non-blocking if buffer is not full.
 // Returns error if the bus is closed or the buffer is full.
 func (b *SessionEventBus) Publish(event OrchestratorEvent) error {
-	select {
-	case <-b.done:
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
 		return fmt.Errorf("event bus closed")
-	default:
 	}
 
 	select {
 	case b.eventCh <- event:
 		return nil
-	case <-b.done:
-		return fmt.Errorf("event bus closed")
 	default:
 		return fmt.Errorf("event bus buffer full")
 	}
@@ -111,8 +113,11 @@ func (b *SessionEventBus) Events() <-chan OrchestratorEvent {
 // Close stops accepting new events and closes the channel.
 // Safe to call multiple times.
 func (b *SessionEventBus) Close() {
-	b.once.Do(func() {
-		close(b.done)
-		close(b.eventCh)
-	})
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	b.closed = true
+	close(b.eventCh)
 }
