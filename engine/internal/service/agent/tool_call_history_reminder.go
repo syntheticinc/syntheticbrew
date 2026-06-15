@@ -114,8 +114,17 @@ func (r *ToolCallHistoryReminder) ClearSession(sessionID string) {
 	delete(r.consecutiveSameTool, sessionID)
 }
 
-// GetContextReminder returns a reminder if the session has >= 3 tool calls.
-// Priority: 98 — appears last in context (after work context=90, environment=95) for maximum recency bias.
+// loopThreshold is the consecutive-call/error count at which a loop warning fires.
+const loopThreshold = 3
+
+// GetContextReminder returns a loop/error warning when the session is stuck, else
+// nothing. Priority 98 — appears last in context for maximum recency bias.
+//
+// Cache-stability invariant: the emitted text must be byte-identical every step it
+// persists, so the trailing-nudge dedup in MessageModifier treats it as one
+// append-once item. Therefore the text is COUNT-FREE (no climbing call/error number)
+// and the routine per-step "you called X(xN)" summary is gone — it was redundant
+// with the transcript and changed every step, discarding the provider's prompt cache.
 func (r *ToolCallHistoryReminder) GetContextReminder(_ context.Context, sessionID string) (string, int, bool) {
 	if sessionID == "" {
 		return "", 0, false
@@ -124,55 +133,33 @@ func (r *ToolCallHistoryReminder) GetContextReminder(_ context.Context, sessionI
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	toolCalls := r.callsPerTool[sessionID]
-	if len(toolCalls) == 0 {
-		return "", 0, false
-	}
+	var warnings []string
 
-	// Count total calls
-	totalCalls := 0
-	for _, count := range toolCalls {
-		totalCalls += count
-	}
-
-	// Only show reminder if >= 3 tool calls
-	if totalCalls < 3 {
-		return "", 0, false
-	}
-
-	// Build summary: "read_file(x3), smart_search(x2)"
-	var parts []string
-	// Sort tool names for consistent output
-	toolNames := make([]string, 0, len(toolCalls))
-	for name := range toolCalls {
-		toolNames = append(toolNames, name)
-	}
-	sort.Strings(toolNames)
-
-	for _, name := range toolNames {
-		count := toolCalls[name]
-		if count > 1 {
-			parts = append(parts, fmt.Sprintf("%s(x%d)", name, count))
-		} else {
-			parts = append(parts, name)
-		}
-	}
-
-	reminder := fmt.Sprintf("**TOOL HISTORY:** You called: %s.\nResults are in conversation above. Re-read only if file was modified since last read.", strings.Join(parts, ", "))
-
-	// Check for consecutive same-tool calls
-	if sameToolCount := r.consecutiveSameTool[sessionID]; sameToolCount >= 3 {
+	// Same-tool loop: count-free, stable text so it dedups to one append.
+	if r.consecutiveSameTool[sessionID] >= loopThreshold {
 		lastTool := r.lastToolName[sessionID]
-		reminder += fmt.Sprintf("\n\n⚠️ WARNING: You called \"%s\" %d times in a row. You may be stuck in a loop. Try a DIFFERENT tool or approach. If waiting for subtasks — use spawn_agent to start them.", lastTool, sameToolCount)
+		warnings = append(warnings, fmt.Sprintf("⚠️ WARNING: You appear to be calling \"%s\" repeatedly. You may be stuck in a loop. Try a DIFFERENT tool or approach. If waiting for subtasks — use spawn_agent to start them.", lastTool))
 	}
 
-	// Check for error loops
+	// Error loops: count-free, stable text. Sorted for deterministic order so the
+	// concatenation is byte-identical across calls when the same tools loop.
 	errorLoops := r.consecutiveErrors[sessionID]
-	for toolName, count := range errorLoops {
-		if count >= 3 {
-			reminder += fmt.Sprintf("\n\n⚠️ WARNING: Tool \"%s\" returned [ERROR] %d times in a row. You are STUCK in a loop. STOP calling this tool the same way. Read the error message and FIX your arguments, or try a DIFFERENT approach.", toolName, count)
+	if len(errorLoops) > 0 {
+		loopedTools := make([]string, 0, len(errorLoops))
+		for toolName, count := range errorLoops {
+			if count >= loopThreshold {
+				loopedTools = append(loopedTools, toolName)
+			}
+		}
+		sort.Strings(loopedTools)
+		for _, toolName := range loopedTools {
+			warnings = append(warnings, fmt.Sprintf("⚠️ WARNING: Tool \"%s\" keeps returning [ERROR]. You are STUCK in a loop. STOP calling this tool the same way. Read the error message and FIX your arguments, or try a DIFFERENT approach.", toolName))
 		}
 	}
 
-	return reminder, 98, true
+	if len(warnings) == 0 {
+		return "", 0, false
+	}
+
+	return strings.Join(warnings, "\n\n"), 98, true
 }

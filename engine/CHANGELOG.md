@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.8.1] — 2026-06-15
+
+### Fixed
+
+- **Prompt caching now grows with the conversation on explicit-cache providers
+  instead of collapsing mid-turn.** 1.7.3 moved the cache breakpoint ahead of the
+  dynamic trailing reminders, but explicit-cache providers (Alibaba Qwen /
+  DashScope) discard the **entire** prefix cache the moment any already-sent
+  content changes or shifts between steps — not just content after the breakpoint.
+  The per-call reminders (tool-call history, environment time, task state,
+  finalize/urgency directives) were re-emitted in a trailing block that was
+  rewritten and shifted as the conversation grew, so from the step a dynamic
+  reminder appeared the cached-token count dropped to zero and the whole prefix was
+  re-billed. The engine now builds each turn's messages **append-only**: a reminder
+  is appended as a new message (interleaved at the tail it was added) only when its
+  value changes, prior reminders and turns are never rewritten or shifted, and the
+  cache breakpoint moves to that append-only tail (every message is canonicalized to
+  array form so a former breakpoint stays byte-stable). Each request is therefore a
+  clean prefix-extension of the previous one — the explicit-cache prefix grows while
+  reminders keep their live, per-step values (e.g. a step countdown). Verified live
+  on qwen3.7-plus: cached prompt tokens climb across steps where they previously
+  stayed at zero.
+
+### Changed
+
+- **`cache_control` is now on by default for explicit-cache providers**
+  (`openai_compatible`, `anthropic`). A model with no `cache_control` config caches
+  its stable prefix automatically; set `cache_control.enabled: false` to opt out.
+  Automatic-cache providers (OpenAI, Azure, Google) are unaffected — they ignore
+  the marker. The marker stays gated by `min_prefix_tokens`, so small requests are
+  untouched. A few strict OpenAI-compatible gateways may reject the in-content
+  marker — opt out there.
+
 ## [1.8.0] — 2026-06-15
 
 ### Added
