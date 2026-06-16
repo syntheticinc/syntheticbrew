@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
@@ -226,11 +225,10 @@ func (t *StructuredOutputTool) InvokableRun(ctx context.Context, argumentsInJSON
 		})
 	}
 
-	// Halt the react loop — user's resume_interrupt POST drives the next turn.
-	if err := react.SetReturnDirectly(ctx); err != nil {
-		slog.ErrorContext(ctx, "[structured_output] SetReturnDirectly failed — react loop may not halt", "error", err)
-	}
-
+	// The loop halts via the owned-loop return-directly route keyed on this tool's
+	// HITL name (see react.ownedReturnDirectlyMap): once the widget fires the turn
+	// ends and the user's resume_interrupt POST drives the next one. The tool just
+	// emits the widget and returns — it does not touch loop state.
 	return "Structured output displayed to user.", nil
 }
 
