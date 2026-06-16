@@ -111,7 +111,7 @@ export default function BottomPanel() {
   const effectiveSchema = lockedSchema ?? selectedSchema ?? undefined;
 
   const resolveBuilderSession = useCallback(() => api.getBuilderLastSession(), []);
-  const { messages, sendMessage, sendInterruptResume, isStreaming, isRestoring, resetSession, tokenUsage, contextTokens } = useSSEChat({
+  const { messages, sendMessage, sendInterruptResume, isStreaming, isRestoring, resetSession, tokenUsage, contextTokens, cachedTokens } = useSSEChat({
     endpoint: `/api/v1/admin/assistant/chat`,
     schemaContext: effectiveSchema === 'builder-schema' ? undefined : effectiveSchema,
     resolveSessionId: resolveBuilderSession,
@@ -473,7 +473,7 @@ export default function BottomPanel() {
 
       {/* Context usage bar — assistant tab only */}
       {!collapsed && tab === 'assistant' && (
-        <ContextUsageBar maxContextTokens={maxContextTokens} totalTokens={tokenUsage} contextTokens={contextTokens} baselineTokens={baselineTokens} />
+        <ContextUsageBar maxContextTokens={maxContextTokens} totalTokens={tokenUsage} contextTokens={contextTokens} cachedTokens={cachedTokens} baselineTokens={baselineTokens} />
       )}
 
       {/* Message input — assistant tab only (testflow has its own) */}

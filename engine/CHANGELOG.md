@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.2] — 2026-06-15
+
+### Fixed
+
+- **Cached prompt tokens are now visible in the engine response and admin chat for
+  OpenRouter models.** Prompt caching already worked, but OpenRouter omits
+  `usage.prompt_tokens_details.cached_tokens` from its response unless the request
+  body carries the `usage: {"include": true}` flag — which the engine never sent, so
+  `cached_prompt_tokens` always read as zero even on cache hits. The engine now adds
+  that flag for OpenRouter base URLs (only — it is an OpenRouter extension, and real
+  OpenAI / strict gateways reject unknown body keys; an operator-supplied `usage` via
+  `extra_body` still wins). The cached count flows through to the `processing_stopped`
+  SSE event (`cached_prompt_tokens`, alongside `prompt_tokens` / `completion_tokens`)
+  and renders in the admin chat context bar. Verified live on qwen3.7-plus over the
+  streaming path: cached tokens surface and climb across steps.
+
 ## [1.8.1] — 2026-06-15
 
 ### Fixed
