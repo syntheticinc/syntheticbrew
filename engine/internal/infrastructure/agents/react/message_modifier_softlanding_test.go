@@ -65,14 +65,21 @@ func TestModify_InjectsFinalizeDirective(t *testing.T) {
 			}
 		}
 	}
-	// Step 2: reserve point reached — directive present in the trailing message,
-	// never in the head.
+	// Step 2: reserve point reached — directive present in a trailing nudge message,
+	// never in the head. (Nudges accumulate append-only; finalize is one of possibly
+	// several trailing nudges, so assert presence among the trailing block, not last.)
 	out := m.Modify(context.Background(), input)
 	if strings.Contains(out[0].Content, "BUDGET REACHED") {
 		t.Fatal("finalize directive must NOT pollute the cacheable head system message")
 	}
-	if !strings.Contains(out[len(out)-1].Content, "BUDGET REACHED") {
-		t.Fatal("finalize directive not emitted as the trailing directive at the reserve point")
+	foundFinalize := false
+	for _, msg := range out[1:] {
+		if strings.Contains(msg.Content, "BUDGET REACHED") {
+			foundFinalize = true
+		}
+	}
+	if !foundFinalize {
+		t.Fatal("finalize directive not emitted as a trailing nudge at the reserve point")
 	}
 }
 

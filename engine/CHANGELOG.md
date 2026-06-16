@@ -18,6 +18,77 @@
   use. This is independent of the model. The dead halt call, which logged an error
   on every widget emit, has been removed.
 
+## [1.8.3] — 2026-06-16
+
+### Fixed
+
+- **Prompt cache no longer collapses every few steps, and now grows with the
+  conversation, on explicit-cache providers (Qwen/DashScope via OpenRouter).** Two
+  independent causes, both verified live on qwen3.7-plus:
+  - The environment-context reminder embedded the wall-clock time **to the minute**
+    and re-read it on every model call, so when the minute rolled mid-turn (≈ every
+    3–4 reasoning steps) an already-sent prefix message changed value — which makes
+    explicit-cache providers discard the **entire** prefix cache. The reminder now
+    stamps the time once at turn start (it is built per turn) and stays byte-identical
+    across the turn's steps.
+  - The history cache breakpoint was placed on the **moving last message**, so the
+    previous tail lost its `cache_control` marker every step; on Qwen/DashScope that
+    byte change stops the prior cache write from being reused, pinning cached tokens
+    at the system prompt. Breakpoints now anchor to **fixed stride boundaries** that
+    accumulate and never move, so the cached prefix grows in a staircase as the
+    conversation extends (live: cached climbed `2k → 8.8k → 16.4k` across a 20-step
+    tool loop where it previously stayed flat at ~2k), with no per-step collapse. Short
+    turns below the first boundary keep marking the tail, unchanged.
+
+## [1.8.2] — 2026-06-15
+
+### Fixed
+
+- **Cached prompt tokens are now visible in the engine response and admin chat for
+  OpenRouter models.** Prompt caching already worked, but OpenRouter omits
+  `usage.prompt_tokens_details.cached_tokens` from its response unless the request
+  body carries the `usage: {"include": true}` flag — which the engine never sent, so
+  `cached_prompt_tokens` always read as zero even on cache hits. The engine now adds
+  that flag for OpenRouter base URLs (only — it is an OpenRouter extension, and real
+  OpenAI / strict gateways reject unknown body keys; an operator-supplied `usage` via
+  `extra_body` still wins). The cached count flows through to the `processing_stopped`
+  SSE event (`cached_prompt_tokens`, alongside `prompt_tokens` / `completion_tokens`)
+  and renders in the admin chat context bar. Verified live on qwen3.7-plus over the
+  streaming path: cached tokens surface and climb across steps.
+
+## [1.8.1] — 2026-06-15
+
+### Fixed
+
+- **Prompt caching now grows with the conversation on explicit-cache providers
+  instead of collapsing mid-turn.** 1.7.3 moved the cache breakpoint ahead of the
+  dynamic trailing reminders, but explicit-cache providers (Alibaba Qwen /
+  DashScope) discard the **entire** prefix cache the moment any already-sent
+  content changes or shifts between steps — not just content after the breakpoint.
+  The per-call reminders (tool-call history, environment time, task state,
+  finalize/urgency directives) were re-emitted in a trailing block that was
+  rewritten and shifted as the conversation grew, so from the step a dynamic
+  reminder appeared the cached-token count dropped to zero and the whole prefix was
+  re-billed. The engine now builds each turn's messages **append-only**: a reminder
+  is appended as a new message (interleaved at the tail it was added) only when its
+  value changes, prior reminders and turns are never rewritten or shifted, and the
+  cache breakpoint moves to that append-only tail (every message is canonicalized to
+  array form so a former breakpoint stays byte-stable). Each request is therefore a
+  clean prefix-extension of the previous one — the explicit-cache prefix grows while
+  reminders keep their live, per-step values (e.g. a step countdown). Verified live
+  on qwen3.7-plus: cached prompt tokens climb across steps where they previously
+  stayed at zero.
+
+### Changed
+
+- **`cache_control` is now on by default for explicit-cache providers**
+  (`openai_compatible`, `anthropic`). A model with no `cache_control` config caches
+  its stable prefix automatically; set `cache_control.enabled: false` to opt out.
+  Automatic-cache providers (OpenAI, Azure, Google) are unaffected — they ignore
+  the marker. The marker stays gated by `min_prefix_tokens`, so small requests are
+  untouched. A few strict OpenAI-compatible gateways may reject the in-content
+  marker — opt out there.
+
 ## [1.8.0] — 2026-06-15
 
 ### Added

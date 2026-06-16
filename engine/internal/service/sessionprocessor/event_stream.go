@@ -37,9 +37,12 @@ type EventStream struct {
 	sessionID     string
 	publisher     EventPublisher
 	store         EventStore
-	interrupts    InterruptCreator // optional, nil in no-DB mode; required for HITL
-	totalTokens   int              // accumulated from EventTypeTokenUsage, included in ProcessingStopped
-	contextTokens int              // actual context window size at last model call (from ContextRewriter)
+	interrupts       InterruptCreator // optional, nil in no-DB mode; required for HITL
+	totalTokens      int              // accumulated from EventTypeTokenUsage, included in ProcessingStopped
+	contextTokens    int              // actual context window size at last model call (from ContextRewriter)
+	promptTokens     int              // accumulated prompt tokens from EventTypeTokenUsage
+	completionTokens int              // accumulated completion tokens from EventTypeTokenUsage
+	cachedTokens     int              // cached prompt tokens from EventTypeTokenUsage (0 when none)
 }
 
 // NewEventStream creates a new event stream that persists and publishes events.
@@ -63,6 +66,16 @@ func (s *EventStream) Send(event *domain.AgentEvent) error {
 		}
 		if ctx, ok := event.Metadata["context_tokens"].(int); ok {
 			s.contextTokens = ctx
+		}
+		if prompt, ok := event.Metadata["prompt_tokens"].(int); ok {
+			s.promptTokens = prompt
+		}
+		if completion, ok := event.Metadata["completion_tokens"].(int); ok {
+			s.completionTokens = completion
+		}
+		// cached_prompt_tokens is emitted only when >0; absence leaves cachedTokens at 0.
+		if cached, ok := event.Metadata["cached_prompt_tokens"].(int); ok {
+			s.cachedTokens = cached
 		}
 		return nil
 	}
@@ -145,6 +158,15 @@ func (s *EventStream) PublishProcessingStopped() {
 		data := map[string]int{"total_tokens": s.totalTokens}
 		if s.contextTokens > 0 {
 			data["context_tokens"] = s.contextTokens
+		}
+		if s.promptTokens > 0 {
+			data["prompt_tokens"] = s.promptTokens
+		}
+		if s.completionTokens > 0 {
+			data["completion_tokens"] = s.completionTokens
+		}
+		if s.cachedTokens > 0 {
+			data["cached_prompt_tokens"] = s.cachedTokens
 		}
 		if encoded, err := json.Marshal(data); err == nil {
 			evt.Content = string(encoded)

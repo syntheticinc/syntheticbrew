@@ -43,7 +43,7 @@ func lastPartHasCacheControl(t *testing.T, msg map[string]json.RawMessage) bool 
 	return ok && strings.Contains(string(cc), "ephemeral")
 }
 
-func TestNewCacheControlModifier_NilWhenOffOrUnsupported(t *testing.T) {
+func TestNewCacheControlModifier_DefaultOnAndOptOut(t *testing.T) {
 	enabled := &models.CacheControl{Enabled: true}
 	disabled := &models.CacheControl{Enabled: false}
 
@@ -53,25 +53,59 @@ func TestNewCacheControlModifier_NilWhenOffOrUnsupported(t *testing.T) {
 		cc       *models.CacheControl
 		wantNil  bool
 	}{
-		{"nil config", "openai_compatible", nil, true},
-		{"disabled", "openai_compatible", disabled, true},
-		{"openai automatic", "openai", enabled, true},
+		// Default-on: absent config on a honoring provider now caches.
+		{"nil config honoring openai_compatible", "openai_compatible", nil, false},
+		{"nil config honoring anthropic", "anthropic", nil, false},
+		// Explicit opt-out on a honoring provider stays off.
+		{"disabled opt-out openai_compatible", "openai_compatible", disabled, true},
+		{"disabled opt-out anthropic", "anthropic", disabled, true},
+		// Explicit enable on a honoring provider is on.
+		{"openrouter explicit", "openai_compatible", enabled, false},
+		{"anthropic explicit", "anthropic", enabled, false},
+		// Non-honoring providers are always nil, even with nil or enabled config.
+		{"openai automatic nil", "openai", nil, true},
+		{"openai automatic enabled", "openai", enabled, true},
 		{"azure automatic", "azure_openai", enabled, true},
 		{"google automatic", "google", enabled, true},
 		{"ollama local", "ollama", enabled, true},
-		{"openrouter explicit", "openai_compatible", enabled, false},
-		{"anthropic explicit", "anthropic", enabled, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mod := NewCacheControlModifier(tc.provider, tc.cc)
 			if tc.wantNil {
 				assert.Nil(t, mod, "modifier must be nil → not attached → byte-identical request")
-			} else {
-				assert.NotNil(t, mod)
+				return
 			}
+			assert.NotNil(t, mod)
 		})
 	}
+}
+
+// TestCacheModifier_DefaultOnMarksLargeBodyAndNoOpsBelowGate exercises the
+// default-on path (nil config) end-to-end: a large body gets a cache_control
+// marker, and a body below the min-prefix gate passes through byte-identical.
+func TestCacheModifier_DefaultOnMarksLargeBodyAndNoOpsBelowGate(t *testing.T) {
+	mod := NewCacheControlModifier("openai_compatible", nil)
+	require.NotNil(t, mod, "nil config on a honoring provider must default to caching on")
+
+	bigBody := []byte(`{
+		"messages": [
+			{"role":"system","content":"` + bigText("you are helpful") + `"},
+			{"role":"user","content":"` + bigText("the stable question") + `"}
+		]
+	}`)
+	out, err := mod(bigBody)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "cache_control",
+		"default-on modifier must mark a large body above the default min-prefix gate")
+
+	// Below the default min-prefix gate → byte-identical no-op.
+	smallBody := []byte(`{"messages":[{"role":"system","content":"tiny"},{"role":"user","content":"hi"}]}`)
+	smallOut, err := mod(smallBody)
+	require.NoError(t, err)
+	assert.Equal(t, string(smallBody), string(smallOut),
+		"a request below the min-prefix gate must stay byte-identical")
+	assert.NotContains(t, string(smallOut), "cache_control")
 }
 
 func TestCacheModifier_InjectsOnStringContentPrefix(t *testing.T) {
@@ -160,20 +194,74 @@ func TestCacheModifier_SkipsToolCallOnlyMessage(t *testing.T) {
 	assert.Contains(t, string(msgs[1]["tool_calls"]), "call_1")
 }
 
-func TestCacheModifier_HistorySkipsTrailingSystemReminders(t *testing.T) {
+// markedHistoryIndices returns the message indices carrying a cache_control marker,
+// for a history-only modifier run over a body of n cacheable text messages.
+func markedHistoryIndices(t *testing.T, n int) []int {
+	t.Helper()
+	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1, Breakpoints: []string{"history"}})
+	require.NotNil(t, mod)
+	var sb strings.Builder
+	sb.WriteString(`{"messages":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString(`{"role":"user","content":"` + bigText("m") + `"}`)
+	}
+	sb.WriteString(`]}`)
+	out, err := mod([]byte(sb.String()))
+	require.NoError(t, err)
+	msgs := parseMessages(t, out)
+	var marked []int
+	for i, m := range msgs {
+		if lastPartHasCacheControl(t, m) {
+			marked = append(marked, i)
+		}
+	}
+	return marked
+}
+
+// TestCacheModifier_HistoryCheckpointsAreStableAndGrow is the regression guard for the
+// cache-growth fix: history breakpoints anchor to FIXED stride boundaries (16, 32, …), so
+// a marked message keeps the same index as the conversation grows at the tail (never
+// toggled off), and a second checkpoint is ADDED — not moved — when the conversation
+// crosses the next boundary. A moving tail marker (the old behaviour) instead toggled the
+// previous tail off every step, which on Qwen/DashScope pinned cached tokens at the head.
+func TestCacheModifier_HistoryCheckpointsAreStableAndGrow(t *testing.T) {
+	const stride = historyCheckpointStride
+
+	// Past the first boundary: exactly one checkpoint, at the stride boundary — NOT the tail.
+	at20 := markedHistoryIndices(t, stride+4)
+	require.Equal(t, []int{stride}, at20, "one fixed checkpoint at the stride boundary, not the moving tail")
+
+	// Grow the conversation by a few messages: the checkpoint must stay on the SAME index
+	// (byte-stable marker → the provider keeps the prior cache write), not advance to the tail.
+	at24 := markedHistoryIndices(t, stride+8)
+	require.Equal(t, []int{stride}, at24, "checkpoint stays put as the tail grows (no toggling)")
+
+	// Past the second boundary: the first checkpoint is KEPT and a second is added.
+	at40 := markedHistoryIndices(t, 2*stride+8)
+	require.Equal(t, []int{stride, 2 * stride}, at40, "checkpoints accumulate at fixed boundaries")
+
+	// Below the first boundary: fall back to marking the tail so short turns still cache.
+	short := markedHistoryIndices(t, 4)
+	require.Equal(t, []int{3}, short, "short conversation marks the tail (fallback)")
+}
+
+func TestCacheModifier_HistoryBreakpointOnAppendOnlyTail(t *testing.T) {
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})
 	require.NotNil(t, mod)
 
-	// Engine shape: head system + conversation + a trailing injected system reminder
-	// (tool-call history / environment) whose content changes every call. The history
-	// breakpoint must land on the last STABLE message (the user turn), NOT the dynamic
-	// trailing reminder — otherwise that cache block is never re-read and only the head
-	// caches (the cached_tokens-frozen-at-system symptom).
+	// Engine shape: head system + conversation + a trailing injected system reminder. The
+	// request is built append-only (reminders/turns appended at the tail, never rewritten),
+	// so the LAST message is byte-stable once written and is the correct history breakpoint:
+	// marking it caches the whole growing prefix, and on the next call it is interior and
+	// read from cache. Only head + tail carry the breakpoint; interior messages do not.
 	body := []byte(`{
 		"messages": [
 			{"role":"system","content":"` + bigText("you are helpful") + `"},
 			{"role":"user","content":"` + bigText("the stable question") + `"},
-			{"role":"system","content":"` + bigText("TOOL HISTORY changes every step") + `"}
+			{"role":"system","content":"` + bigText("COUNTDOWN only N steps left") + `"}
 		]
 	}`)
 
@@ -183,8 +271,8 @@ func TestCacheModifier_HistorySkipsTrailingSystemReminders(t *testing.T) {
 	require.Len(t, msgs, 3)
 
 	assert.True(t, lastPartHasCacheControl(t, msgs[0]), "head system marked")
-	assert.True(t, lastPartHasCacheControl(t, msgs[1]), "history breakpoint on the stable user turn")
-	assert.False(t, lastPartHasCacheControl(t, msgs[2]), "trailing dynamic reminder must NOT be the breakpoint")
+	assert.False(t, lastPartHasCacheControl(t, msgs[1]), "interior message must not be the breakpoint")
+	assert.True(t, lastPartHasCacheControl(t, msgs[2]), "the append-only tail carries the history breakpoint")
 }
 
 func TestCacheModifier_MinPrefixGateSkipsSmallPrefix(t *testing.T) {

@@ -516,6 +516,15 @@ func convertSessionEventToSSE(event *pb.SessionEvent, sessionID string) *deliver
 				if c, ok := tokenData["context_tokens"]; ok && c > 0 {
 					data["context_tokens"] = c
 				}
+				if p, ok := tokenData["prompt_tokens"]; ok && p > 0 {
+					data["prompt_tokens"] = p
+				}
+				if comp, ok := tokenData["completion_tokens"]; ok && comp > 0 {
+					data["completion_tokens"] = comp
+				}
+				if cached, ok := tokenData["cached_prompt_tokens"]; ok && cached > 0 {
+					data["cached_prompt_tokens"] = cached
+				}
 			} else {
 				if tokens, err := strconv.Atoi(content); err == nil && tokens > 0 {
 					data["total_tokens"] = tokens
