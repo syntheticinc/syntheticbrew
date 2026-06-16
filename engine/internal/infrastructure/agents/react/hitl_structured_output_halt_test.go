@@ -97,6 +97,55 @@ func TestHITL_StructuredOutput_HaltsOwnedLoop_NonStreaming(t *testing.T) {
 	}
 }
 
+// TestHITL_StructuredOutput_HaltsOwnedLoop_ParallelToolCalls locks the
+// halt-on-first invariant when the model emits show_structured_output ALONGSIDE
+// another tool in the SAME assistant step (parallel tool calls). The turn must
+// still halt after one model call regardless of which position the widget takes;
+// without the fix the widget is not in the return-directly set and the loop runs on.
+func TestHITL_StructuredOutput_HaltsOwnedLoop_ParallelToolCalls(t *testing.T) {
+	cases := []struct {
+		name  string
+		first bool // widget is the first of the two parallel calls
+	}{
+		{"widget_first", true},
+		{"widget_second", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			widgetRuns := 0
+			modelCalls := 0
+			widget := &hitlWidgetTool{runs: &widgetRuns}
+			other := &charTool{name: "lookup", run: func(string) string { return `{"facts":["A"]}` }}
+
+			model := historyChatModel(func(input []*schema.Message) *schema.Message {
+				modelCalls++
+				widgetCall := []any{"w0", "show_structured_output", `{"output_type":"info","title":"Q"}`}
+				otherCall := []any{"t0", "lookup", `{"q":"x"}`}
+				a, b := widgetCall, otherCall
+				if !tc.first {
+					a, b = otherCall, widgetCall
+				}
+				return charToolCall2(
+					a[0].(string), a[1].(string), a[2].(string),
+					b[0].(string), b[1].(string), b[2].(string))
+			})
+
+			cap := runStreamOwned(t, model, []einotool.BaseTool{widget, other}, charAgentConfig(nil))
+			t.Logf("typeSeq=%v modelCalls=%d widgetRuns=%d", cap.typeSeq(), modelCalls, widgetRuns)
+
+			if modelCalls != 1 {
+				t.Errorf("a parallel step containing the widget must halt after one model call, got %d", modelCalls)
+			}
+			if widgetRuns != 1 {
+				t.Errorf("widget must run exactly once, got %d", widgetRuns)
+			}
+			if got := cap.countType(domain.EventTypeAnswer); got != 0 {
+				t.Errorf("HITL turn must emit zero answer events, got %d", got)
+			}
+		})
+	}
+}
+
 // TestOwnedReturnDirectlyMap_IncludesBuiltinHITL locks the invariant directly: the
 // built-in HITL tools are always return-directly, independent of agent config or
 // any ToolInfo.Extra self-declaration. This is the seam that ties the HITL
