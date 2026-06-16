@@ -1,6 +1,7 @@
 package sessionprocessor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -39,9 +40,44 @@ func (m *mockStore) Append(sessionID, eventType string, evt *pb.SessionEvent, _ 
 	return "mock-event-id", nil
 }
 
+// tenantRecordingInterruptCreator records the ctx its Create was called with so
+// a test can assert the interrupts row is stamped with the session's tenant.
+type tenantRecordingInterruptCreator struct {
+	called bool
+	tenant string
+}
+
+func (c *tenantRecordingInterruptCreator) Create(ctx context.Context, _ *domain.Interrupt) error {
+	c.called = true
+	c.tenant = domain.TenantIDFromContext(ctx)
+	return nil
+}
+
+// Regression for the Cloud HITL bug: the interrupts row was created with
+// context.Background() → resolved to the CE default tenant → a multi-tenant
+// (Cloud) resume lookup (tenant-scoped) returned 404 "interrupt not found".
+// The row must be stamped with the session's tenant carried by the EventStream
+// ctx (the processing goroutine preserves context values via WithoutCancel).
+func TestSend_InterruptRequest_CreatedUnderSessionTenant(t *testing.T) {
+	rec := &tenantRecordingInterruptCreator{}
+	const tenant = "11111111-1111-1111-1111-111111111111"
+	ctx := domain.WithTenantID(context.Background(), tenant)
+	stream := NewEventStream(ctx, "session-cloud", &mockPublisher{}, &mockStore{}, rec)
+
+	err := stream.Send(&domain.AgentEvent{
+		Type:     domain.EventTypeInterruptRequest,
+		Content:  `{"interrupt_id":"int-1"}`,
+		Metadata: map[string]interface{}{"interrupt_id": "int-1"},
+	})
+	require.NoError(t, err)
+	require.True(t, rec.called, "interrupt row must be created on interrupt_request")
+	assert.Equal(t, tenant, rec.tenant,
+		"interrupts row must be stamped with the session tenant, not context.Background()")
+}
+
 func TestSend_ToolResult_UsesFullResultFromMetadata(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, &mockStore{}, nil)
 
 	fullResult := "device1: iPhone 14 Pro\ndevice2: Pixel 8\ndevice3: Samsung Galaxy S24\ndevice4: OnePlus 12\ndevice5: Xiaomi 14"
 	preview := "device1: iPhone 14 Pro..."
@@ -67,7 +103,7 @@ func TestSend_ToolResult_UsesFullResultFromMetadata(t *testing.T) {
 
 func TestSend_ToolResult_FallsBackToContent(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, &mockStore{}, nil)
 
 	content := "result without full_result metadata"
 
@@ -91,7 +127,7 @@ func TestSend_ToolResult_FallsBackToContent(t *testing.T) {
 func TestSend_Answer_SkipsSSEWhenAlreadyStreamed(t *testing.T) {
 	pub := &mockPublisher{}
 	store := &mockStore{}
-	stream := NewEventStream("session-1", pub, store, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, store, nil)
 
 	content := "This text was already sent via message_delta chunks"
 	err := stream.Send(&domain.AgentEvent{
@@ -114,7 +150,7 @@ func TestSend_Answer_SkipsSSEWhenAlreadyStreamed(t *testing.T) {
 
 func TestSend_Answer_PublishesWhenNotStreamed(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, &mockStore{}, nil)
 
 	err := stream.Send(&domain.AgentEvent{
 		Type:    domain.EventTypeAnswer,
@@ -130,7 +166,7 @@ func TestSend_Answer_PublishesWhenNotStreamed(t *testing.T) {
 func TestSend_Answer_SkipsEmptyContent(t *testing.T) {
 	pub := &mockPublisher{}
 	store := &mockStore{}
-	stream := NewEventStream("session-1", pub, store, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, store, nil)
 
 	err := stream.Send(&domain.AgentEvent{
 		Type:       domain.EventTypeAnswer,
@@ -145,7 +181,7 @@ func TestSend_Answer_SkipsEmptyContent(t *testing.T) {
 
 func TestSend_ToolResult_PreservesSummary(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, &mockStore{}, nil)
 
 	fullResult := "device1: iPhone 14 Pro\ndevice2: Pixel 8\ndevice3: Samsung Galaxy S24"
 	summary := "3 devices found"
@@ -171,7 +207,7 @@ func TestSend_ToolResult_PreservesSummary(t *testing.T) {
 
 func TestPublishError_CarriesTypedCodeAndCuratedMessage(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, &mockStore{}, nil)
 
 	inner := apperrors.Unavailable("Service temporarily unavailable — please try again in a few seconds.", errorsNew("circuit breaker open for external-service"))
 	stream.PublishError(apperrors.Wrap(inner, apperrors.CodeInternal, "agent stream failed"))
@@ -200,7 +236,7 @@ func processingStoppedTokens(t *testing.T, evt *pb.SessionEvent) map[string]int 
 
 func TestPublishProcessingStopped_IncludesCachedAndBreakdownTokens(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, &mockStore{}, nil)
 
 	// token_usage is captured (not broadcast) then folded into ProcessingStopped.
 	err := stream.Send(&domain.AgentEvent{
@@ -230,7 +266,7 @@ func TestPublishProcessingStopped_IncludesCachedAndBreakdownTokens(t *testing.T)
 
 func TestPublishProcessingStopped_OmitsCachedWhenZero(t *testing.T) {
 	pub := &mockPublisher{}
-	stream := NewEventStream("session-1", pub, &mockStore{}, nil)
+	stream := NewEventStream(context.Background(), "session-1",pub, &mockStore{}, nil)
 
 	// No cached_prompt_tokens key (EmitTokenUsage emits it only when >0).
 	err := stream.Send(&domain.AgentEvent{

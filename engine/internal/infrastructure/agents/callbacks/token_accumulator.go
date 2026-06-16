@@ -31,7 +31,12 @@ func (a *TokenAccumulator) Add(usage *model.TokenUsage) {
 	a.promptTokens += usage.PromptTokens
 	a.completionTokens += usage.CompletionTokens
 	a.totalTokens += usage.TotalTokens
-	a.cachedPromptTokens += usage.PromptTokenDetails.CachedTokens
+	// Cached is the reused-prefix size of THIS call, not an increment: every step
+	// re-reports its full cached prefix, so summing across a multi-step turn
+	// balloons past any single prompt (the prod "cached > used" bug). The context
+	// bar shows the CURRENT reused prefix, so keep the last call's value — it is
+	// always a subset of the last call's prompt, hence ≤ the displayed context.
+	a.cachedPromptTokens = usage.PromptTokenDetails.CachedTokens
 }
 
 // TotalTokens returns the accumulated total token count.

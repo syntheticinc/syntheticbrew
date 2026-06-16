@@ -19,7 +19,7 @@ func TestTokenAccumulator_AddSumsAcrossCalls(t *testing.T) {
 	assert.Equal(t, 0, acc.CachedPromptTokens(), "no cache details reported → zero")
 }
 
-func TestTokenAccumulator_AccumulatesCachedPromptTokens(t *testing.T) {
+func TestTokenAccumulator_CachedTracksLastCall_PromptSums(t *testing.T) {
 	acc := NewTokenAccumulator()
 
 	// Step 1: cold prefix, nothing cached.
@@ -28,7 +28,7 @@ func TestTokenAccumulator_AccumulatesCachedPromptTokens(t *testing.T) {
 		CompletionTokens: 40,
 		TotalTokens:      2040,
 	})
-	// Step 2+: provider reports a cache hit on the stable prefix.
+	// Step 2+: provider reports a cache hit on the stable prefix (grows per step).
 	acc.Add(&model.TokenUsage{
 		PromptTokens:       2100,
 		CompletionTokens:   55,
@@ -42,8 +42,41 @@ func TestTokenAccumulator_AccumulatesCachedPromptTokens(t *testing.T) {
 		PromptTokenDetails: model.PromptTokenDetails{CachedTokens: 1900},
 	})
 
-	assert.Equal(t, 3700, acc.CachedPromptTokens(), "cached tokens accumulate across steps")
+	// prompt/completion/total still sum across the turn (cost totals); cached is
+	// the current reused prefix = the last call's value.
+	assert.Equal(t, 1900, acc.CachedPromptTokens(), "cached = current reused prefix (last call)")
 	assert.Equal(t, 6300, acc.PromptTokens())
+}
+
+// RED repro for the prod bug: the chat footer showed "cached" larger than the
+// context/used tokens. Cached is documented as "a subset of PromptTokens" — it
+// can never exceed the prompt of the call it describes. Summing per-call cached
+// across a multi-step turn (each call re-reporting its full reused prefix)
+// violates that invariant: with a growing prefix the sum balloons past any
+// single call's prompt. The context-usage bar shows the CURRENT reused prefix,
+// so cached must track the last call's value, not the cross-step sum.
+func TestTokenAccumulator_CachedReflectsCurrentPrefix_NotSum(t *testing.T) {
+	acc := NewTokenAccumulator()
+
+	// Staircase cache growth across a 3-step tool loop (real qwen3.7-plus shape).
+	acc.Add(&model.TokenUsage{PromptTokens: 2000, TotalTokens: 2040})
+	acc.Add(&model.TokenUsage{
+		PromptTokens:       2100,
+		TotalTokens:        2155,
+		PromptTokenDetails: model.PromptTokenDetails{CachedTokens: 1800},
+	})
+	acc.Add(&model.TokenUsage{
+		PromptTokens:       2200,
+		TotalTokens:        2260,
+		PromptTokenDetails: model.PromptTokenDetails{CachedTokens: 1900},
+	})
+
+	// The current reused prefix is the last call's cached (1900), never the sum.
+	assert.Equal(t, 1900, acc.CachedPromptTokens(),
+		"cached must reflect the current reused prefix, not the cross-step sum")
+	// Invariant: cached can never exceed the largest single-call prompt.
+	assert.LessOrEqual(t, acc.CachedPromptTokens(), 2200,
+		"cached is a subset of a prompt and cannot exceed any single call's prompt")
 }
 
 func TestTokenAccumulator_AddNilIsNoop(t *testing.T) {

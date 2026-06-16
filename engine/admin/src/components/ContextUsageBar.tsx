@@ -26,6 +26,12 @@ export default memo(function ContextUsageBar({ maxContextTokens, totalTokens, co
   const displayTokens = contextTokens ?? totalTokens ?? baselineTokens;
   const pct = displayTokens ? Math.min(100, (displayTokens / maxContextTokens) * 100) : 0;
 
+  // Cached is a subset of the current context — never show it larger than the
+  // displayed context (defense-in-depth against an upstream over-count).
+  const shownCached = cachedTokens != null && displayTokens != null
+    ? Math.min(cachedTokens, displayTokens)
+    : cachedTokens;
+
   return (
     <div className="px-3 py-1 flex items-center gap-2 border-t border-brand-shade3/10 flex-shrink-0">
       <div className="flex-1 h-1 bg-brand-shade3/10 rounded-full overflow-hidden">
@@ -39,9 +45,9 @@ export default memo(function ContextUsageBar({ maxContextTokens, totalTokens, co
       <span className="text-[10px] text-brand-shade3 whitespace-nowrap">
         {displayTokens ? formatTokens(displayTokens) : '\u2014'} / {formatTokens(maxContextTokens)} context
       </span>
-      {cachedTokens != null && cachedTokens > 0 && (
+      {shownCached != null && shownCached > 0 && (
         <span className="text-[10px] text-brand-shade3 whitespace-nowrap">
-          {formatTokens(cachedTokens)} cached
+          {formatTokens(shownCached)} cached
         </span>
       )}
     </div>

@@ -27,4 +27,13 @@ describe('ContextUsageBar', () => {
     render(<ContextUsageBar maxContextTokens={128000} contextTokens={32000} cachedTokens={0} />);
     expect(screen.queryByText(/cached/)).not.toBeInTheDocument();
   });
+
+  // Regression for the prod bug: footer showed "11.9K / 16K context  31.0K cached"
+  // — cached larger than the context window/used is nonsensical. The bar must
+  // clamp the displayed cached to the current context.
+  it('clamps cached to the displayed context (never shows cached > context)', () => {
+    render(<ContextUsageBar maxContextTokens={16000} contextTokens={11900} cachedTokens={31000} />);
+    expect(screen.getByText('11.9K cached')).toBeInTheDocument();
+    expect(screen.queryByText('31K cached')).not.toBeInTheDocument();
+  });
 });

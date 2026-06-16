@@ -178,7 +178,7 @@ func (p *Processor) processMessage(ctx context.Context, sessionID, message strin
 		p.mu.Unlock()
 	}()
 
-	eventStream := NewEventStream(sessionID, p.registry, p.eventStore, p.interrupts)
+	eventStream := NewEventStream(ctx, sessionID, p.registry, p.eventStore, p.interrupts)
 
 	// Resume turns must not surface as user_message (SSE or messages-table) —
 	// the widget's answered state already represents the user's answer.
