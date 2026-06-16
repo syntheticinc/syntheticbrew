@@ -131,7 +131,7 @@ Examples:
   info (no input collected):
     {"output_type":"info","title":"Deployment status","description":"Rolling restart in progress."}
 
-ON TOOL ERROR — STOP. Do NOT retry the same args; surface the error to the user or escalate. Re-reading this tool description before retrying is the right path when the error is about field shape.
+ON TOOL ERROR — read the "[ERROR] …" message. If it names a fixable input-shape problem (e.g. a missing required "id" on a multi-question form, an invalid "type", too few "options"), CORRECT those fields and call show_structured_output AGAIN — the user has seen nothing yet, so a corrected re-call is the right move, not a dead end. Do NOT re-send the identical args, and do NOT add narration. Only STOP and surface/escalate when the error is not something you can fix by reshaping the input.
 `,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"output_type": {Type: schema.String, Desc: `Exactly one of: "summary_table" | "form" | "info"`, Required: true},
