@@ -423,9 +423,10 @@ func ownedBackstopSteps(maxSteps int) int {
 	return maxSteps*3 + 10
 }
 
-// ownedReturnDirectlyMap builds the return-directly tool set: names from the agent
-// config (the global/baked tool_return_directly) unioned with tools that
-// self-declare it via ToolInfo.Extra (e.g. an MCP tool carrying the
+// ownedReturnDirectlyMap builds the return-directly tool set: the built-in HITL
+// tools (which halt the loop and wait for the user by definition), unioned with
+// names from the agent config (the global/baked tool_return_directly) and tools
+// that self-declare it via ToolInfo.Extra (e.g. an MCP tool carrying the
 // return-directly _meta). A fresh map is returned so the shared config is never
 // mutated; nil when empty so the loop's default (no early return) is unchanged.
 func ownedReturnDirectlyMap(cfg *config.AgentConfig, toolInfos []*schema.ToolInfo) map[string]struct{} {
@@ -438,6 +439,14 @@ func ownedReturnDirectlyMap(cfg *config.AgentConfig, toolInfos []*schema.ToolInf
 			set = make(map[string]struct{})
 		}
 		set[name] = struct{}{}
+	}
+	// Built-in HITL tools (show_structured_output) drive the same
+	// tools→direct_return→END route as config/Extra-declared tools; the HITL
+	// surfacing (drop prose, no answer event) is applied downstream by HITLSeen.
+	// Routing them here is the single seam that ties the HITL classification to
+	// the loop halt, so a new HITL tool cannot forget to stop the loop.
+	for _, name := range domain.HITLToolNames() {
+		add(name)
 	}
 	if cfg != nil {
 		for name := range cfg.ToolReturnDirectly {

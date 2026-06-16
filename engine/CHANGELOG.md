@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.8.4] — 2026-06-16
+
+### Fixed
+
+- **The built-in `show_structured_output` HITL widget halts the agent turn on the
+  first widget again.** When the engine took ownership of the ReAct loop (1.7.0),
+  the loop's halt-after-tool ("return-directly") signal began to be driven by a
+  tool-name set carried on the loop's own state. The built-in widget, however,
+  still tried to halt through the previous loop's state type — which the owned loop
+  does not carry — so the halt call failed on every widget emit and the turn never
+  stopped. Having shown a widget but not ended its turn, the model would re-emit the
+  same widget repeatedly (observed up to 14× in one turn), narrate the prompt as
+  plain text, or run to the turn budget. The built-in human-in-the-loop tools are
+  now part of the loop's return-directly set, so the turn ends the moment the widget
+  fires (one widget per turn) — the same route MCP return-directly tools already
+  use. This is independent of the model. The dead halt call, which logged an error
+  on every widget emit, has been removed.
+
 ## [1.8.0] — 2026-06-15
 
 ### Added
