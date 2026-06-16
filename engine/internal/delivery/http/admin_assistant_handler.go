@@ -79,13 +79,28 @@ func (h *AdminAssistantHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Message == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message required"})
+	// Caller must send exactly one of `message` / `resume_interrupt`. The HITL
+	// widget answer (show_structured_output) posts resume_interrupt with no
+	// message — without this branch the builder widget could never be resumed
+	// (the click 400'd with "message required" and the turn appeared frozen).
+	hasMessage := req.Message != ""
+	hasResume := req.ResumeInterrupt != nil && req.ResumeInterrupt.InterruptID != ""
+	switch {
+	case hasMessage && hasResume:
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "message and resume_interrupt are mutually exclusive",
+		})
+		return
+	case !hasMessage && !hasResume:
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "message or resume_interrupt required",
+		})
 		return
 	}
 
-	// Prepend schema context to the message so the assistant knows its working scope.
-	if req.SchemaContext != "" {
+	// Prepend schema context to the message so the assistant knows its working
+	// scope (message path only — a resume continues an existing turn).
+	if hasMessage && req.SchemaContext != "" {
 		req.Message = "[Schema: " + req.SchemaContext + "]\n\n" + req.Message
 	}
 
@@ -116,7 +131,15 @@ func (h *AdminAssistantHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := h.service.Chat(ctx, schemaID, req.Message, userSub, req.SessionID)
+	var events <-chan SSEEvent
+	if hasResume {
+		events, err = h.service.ResumeInterrupt(
+			ctx, schemaID, userSub, req.SessionID,
+			req.ResumeInterrupt.InterruptID, req.ResumeInterrupt.Payload,
+		)
+	} else {
+		events, err = h.service.Chat(ctx, schemaID, req.Message, userSub, req.SessionID)
+	}
 	if err != nil {
 		writeDomainError(w, err)
 		return
