@@ -161,6 +161,7 @@ func (e *EngineAdapter) ExecuteTurn(
 	// Wraps per-turn eventCallback so tools can publish session events directly
 	// (Eino's MessageCollector chain is downstream and never sees them).
 	toolDeps.EventEmitter = &eventCallbackEmitter{
+		ctx:         context.WithoutCancel(ctx),
 		cb:          eventCallback,
 		historyRepo: e.historyRepo,
 		sessionID:   sessionID,
@@ -311,6 +312,11 @@ func convertToolCallRecorderToEngine(recorder ToolCallRecorder) react.ToolCallRe
 // both the SSE event stream (via cb → session_event_log) and the messages
 // table (via historyRepo → reload replay).
 type eventCallbackEmitter struct {
+	// ctx carries the turn's tenant_id into the best-effort history mirror.
+	// Without it the interrupt_request/resume rows were written under the CE
+	// default tenant and a Cloud (multi-tenant) GET /sessions/{id}/messages —
+	// tenant-scoped — excluded them, so the widget vanished from history.
+	ctx         context.Context
 	cb          func(event *domain.AgentEvent) error
 	historyRepo HistoryRepository
 	sessionID   string
@@ -322,20 +328,24 @@ type HistoryRepository = engine.HistoryRepository
 func (e *eventCallbackEmitter) Send(event *domain.AgentEvent) error {
 	// Best-effort history mirror — failures log but never fail Send.
 	if e.historyRepo != nil {
+		histCtx := e.ctx
+		if histCtx == nil {
+			histCtx = context.Background()
+		}
 		switch event.Type {
 		case domain.EventTypeInterruptRequest:
 			interruptID, _ := event.Metadata["interrupt_id"].(string)
 			msg, err := domain.NewInterruptRequestMessage(e.sessionID, interruptID, event.Content)
 			if err == nil {
 				msg.AgentID = e.agentID
-				_ = e.historyRepo.Create(context.Background(), msg)
+				_ = e.historyRepo.Create(histCtx, msg)
 			}
 		case domain.EventTypeInterruptResume:
 			interruptID, _ := event.Metadata["interrupt_id"].(string)
 			msg, err := domain.NewInterruptResumeMessage(e.sessionID, interruptID, event.Content)
 			if err == nil {
 				msg.AgentID = e.agentID
-				_ = e.historyRepo.Create(context.Background(), msg)
+				_ = e.historyRepo.Create(histCtx, msg)
 			}
 		}
 	}

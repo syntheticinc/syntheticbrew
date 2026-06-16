@@ -34,6 +34,12 @@ type InterruptCreator interface {
 // and publishes via EventPublisher.
 // Implements domain.AgentEventStream.
 type EventStream struct {
+	// ctx carries the turn's tenant_id into DB writes triggered from the
+	// callback chain (which has no ctx of its own). The processing goroutine
+	// detaches cancellation but preserves values, so this is the session's
+	// tenant. Without it the interrupts row was created under the CE default
+	// tenant and a Cloud (multi-tenant) resume lookup could not find it (404).
+	ctx           context.Context
 	sessionID     string
 	publisher     EventPublisher
 	store         EventStore
@@ -46,9 +52,15 @@ type EventStream struct {
 }
 
 // NewEventStream creates a new event stream that persists and publishes events.
-// interrupts may be nil for no-DB / test contexts.
-func NewEventStream(sessionID string, publisher EventPublisher, store EventStore, interrupts InterruptCreator) *EventStream {
+// ctx must carry the session's tenant_id (used to stamp the interrupts row);
+// nil is tolerated and falls back to the CE default tenant. interrupts may be
+// nil for no-DB / test contexts.
+func NewEventStream(ctx context.Context, sessionID string, publisher EventPublisher, store EventStore, interrupts InterruptCreator) *EventStream {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &EventStream{
+		ctx:        ctx,
 		sessionID:  sessionID,
 		publisher:  publisher,
 		store:      store,
@@ -227,7 +239,7 @@ func (s *EventStream) persistAndPublish(event *pb.SessionEvent) {
 		if event.GetType() == pb.SessionEventType_SESSION_EVENT_INTERRUPT_REQUEST && s.interrupts != nil && id != "" {
 			interruptID := event.GetCallId()
 			if interruptID != "" {
-				createErr := s.interrupts.Create(context.Background(), &domain.Interrupt{
+				createErr := s.interrupts.Create(s.ctx, &domain.Interrupt{
 					ID:             interruptID,
 					RequestEventID: id,
 				})
