@@ -194,6 +194,60 @@ func TestCacheModifier_SkipsToolCallOnlyMessage(t *testing.T) {
 	assert.Contains(t, string(msgs[1]["tool_calls"]), "call_1")
 }
 
+// markedHistoryIndices returns the message indices carrying a cache_control marker,
+// for a history-only modifier run over a body of n cacheable text messages.
+func markedHistoryIndices(t *testing.T, n int) []int {
+	t.Helper()
+	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1, Breakpoints: []string{"history"}})
+	require.NotNil(t, mod)
+	var sb strings.Builder
+	sb.WriteString(`{"messages":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString(`{"role":"user","content":"` + bigText("m") + `"}`)
+	}
+	sb.WriteString(`]}`)
+	out, err := mod([]byte(sb.String()))
+	require.NoError(t, err)
+	msgs := parseMessages(t, out)
+	var marked []int
+	for i, m := range msgs {
+		if lastPartHasCacheControl(t, m) {
+			marked = append(marked, i)
+		}
+	}
+	return marked
+}
+
+// TestCacheModifier_HistoryCheckpointsAreStableAndGrow is the regression guard for the
+// cache-growth fix: history breakpoints anchor to FIXED stride boundaries (16, 32, …), so
+// a marked message keeps the same index as the conversation grows at the tail (never
+// toggled off), and a second checkpoint is ADDED — not moved — when the conversation
+// crosses the next boundary. A moving tail marker (the old behaviour) instead toggled the
+// previous tail off every step, which on Qwen/DashScope pinned cached tokens at the head.
+func TestCacheModifier_HistoryCheckpointsAreStableAndGrow(t *testing.T) {
+	const stride = historyCheckpointStride
+
+	// Past the first boundary: exactly one checkpoint, at the stride boundary — NOT the tail.
+	at20 := markedHistoryIndices(t, stride+4)
+	require.Equal(t, []int{stride}, at20, "one fixed checkpoint at the stride boundary, not the moving tail")
+
+	// Grow the conversation by a few messages: the checkpoint must stay on the SAME index
+	// (byte-stable marker → the provider keeps the prior cache write), not advance to the tail.
+	at24 := markedHistoryIndices(t, stride+8)
+	require.Equal(t, []int{stride}, at24, "checkpoint stays put as the tail grows (no toggling)")
+
+	// Past the second boundary: the first checkpoint is KEPT and a second is added.
+	at40 := markedHistoryIndices(t, 2*stride+8)
+	require.Equal(t, []int{stride, 2 * stride}, at40, "checkpoints accumulate at fixed boundaries")
+
+	// Below the first boundary: fall back to marking the tail so short turns still cache.
+	short := markedHistoryIndices(t, 4)
+	require.Equal(t, []int{3}, short, "short conversation marks the tail (fallback)")
+}
+
 func TestCacheModifier_HistoryBreakpointOnAppendOnlyTail(t *testing.T) {
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})
 	require.NotNil(t, mod)

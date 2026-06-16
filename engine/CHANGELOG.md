@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.8.3] — 2026-06-16
+
+### Fixed
+
+- **Prompt cache no longer collapses every few steps, and now grows with the
+  conversation, on explicit-cache providers (Qwen/DashScope via OpenRouter).** Two
+  independent causes, both verified live on qwen3.7-plus:
+  - The environment-context reminder embedded the wall-clock time **to the minute**
+    and re-read it on every model call, so when the minute rolled mid-turn (≈ every
+    3–4 reasoning steps) an already-sent prefix message changed value — which makes
+    explicit-cache providers discard the **entire** prefix cache. The reminder now
+    stamps the time once at turn start (it is built per turn) and stays byte-identical
+    across the turn's steps.
+  - The history cache breakpoint was placed on the **moving last message**, so the
+    previous tail lost its `cache_control` marker every step; on Qwen/DashScope that
+    byte change stops the prior cache write from being reused, pinning cached tokens
+    at the system prompt. Breakpoints now anchor to **fixed stride boundaries** that
+    accumulate and never move, so the cached prefix grows in a staircase as the
+    conversation extends (live: cached climbed `2k → 8.8k → 16.4k` across a 20-step
+    tool loop where it previously stayed flat at ~2k), with no per-step collapse. Short
+    turns below the first boundary keep marking the tail, unchanged.
+
 ## [1.8.2] — 2026-06-15
 
 ### Fixed
