@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.8.5] — 2026-06-17
+
+### Fixed
+
+- **HITL widget interrupts are now created under the session's tenant.** On
+  multi-tenant deployments the interrupts state-tracker row, and the
+  interrupt_request/interrupt_resume mirror written to session history, were
+  created with a background context that resolved to the default tenant. A
+  tenant-scoped resume could then not find the interrupt (returned 404 "interrupt
+  not found"), and the `interrupt_request` event was missing from
+  `GET /sessions/{id}/messages` (tenant-scoped). Both writes now carry the turn's
+  tenant, so the interrupt → resume cycle completes and the widget appears in
+  history. Single-tenant installs were unaffected (everything already resolved to
+  the same default tenant).
+
+- **The built-in admin builder-assistant chat supports `resume_interrupt`.** Its
+  handler required a `message` and ignored the `resume_interrupt` body, so
+  answering a `show_structured_output` widget returned 400 "message required" and
+  the chat appeared frozen. It now routes a widget answer to the resume path, the
+  same way the schema chat endpoint already did.
+
+- **Token usage indicator.** The "cached" figure summed each step's reported cache
+  hit across a multi-step turn, so it could exceed the prompt and the context
+  window; it now reflects the current reused prefix (the last call's value). The
+  indicator also persists its live value and restores it after a page reload,
+  instead of dropping back to a baseline estimate.
+
+### Changed
+
+- **`show_structured_output` error guidance.** On a fixable input-shape error
+  (e.g. a missing required question `id` on a multi-question form), the tool's
+  description now tells the model to correct the arguments and call the tool again,
+  rather than stop. Previously the guidance ("on error, STOP, do not retry")
+  contradicted the self-correcting validation, so a malformed first attempt could
+  dead-end the widget. The validation contract (multi-question forms require an
+  `id` per question; single-question forms auto-assign one) is unchanged.
+
 ## [1.8.4] — 2026-06-16
 
 ### Fixed
