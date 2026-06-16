@@ -368,11 +368,20 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
         if (controller.signal.aborted) return;
         const restored = mapEventsToMessages(raw);
         setMessages(restored);
-        // Do NOT compute contextTokens from event content — that undercounts
-        // by 3-4x because it excludes the system prompt, which is what fills
-        // most of the context window for AI builder. Leave contextTokens
-        // null so ContextUsageBar falls back to baselineTokens (system prompt
-        // estimate). The real value arrives via the next SSE `done` event.
+        // Restore the last turn's token usage from localStorage (persisted by
+        // the `done` handler). The reload endpoint returns the messages table,
+        // which carries no token counts, so without this the bar fell back to a
+        // baseline estimate and the value visibly changed after a refresh. We do
+        // NOT recompute from message content — that undercounts ~3-4x by
+        // ignoring the system prompt.
+        if (persistenceKey) {
+          const ctx = Number(safeGetItem(persistenceKey + '_ctx') || '');
+          const cached = Number(safeGetItem(persistenceKey + '_cached') || '');
+          const total = Number(safeGetItem(persistenceKey + '_total') || '');
+          if (total > 0) setTokenUsage(total);
+          if (ctx > 0) setContextTokens(ctx);
+          if (cached > 0) setCachedTokens(cached);
+        }
       } catch (err) {
         if (controller.signal.aborted) return;
         if ((err as Error).name !== 'AbortError') {
@@ -639,6 +648,7 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
               const tokens = parsed.total_tokens as number | undefined;
               if (tokens && tokens > 0) {
                 setTokenUsage(tokens);
+                if (persistenceKey) safeSetItem(persistenceKey + '_total', String(tokens));
               }
               const ctxTokens = parsed.context_tokens as number | undefined;
               if (ctxTokens && ctxTokens > 0) {
@@ -648,6 +658,7 @@ export function useSSEChat(config: UseSSEChatConfig): UseSSEChatReturn {
               const cached = parsed.cached_prompt_tokens as number | undefined;
               if (cached && cached > 0) {
                 setCachedTokens(cached);
+                if (persistenceKey) safeSetItem(persistenceKey + '_cached', String(cached));
               }
               updateAssistantNow({ streaming: false });
               break;
