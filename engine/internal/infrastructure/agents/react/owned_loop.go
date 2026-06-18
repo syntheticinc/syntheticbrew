@@ -65,11 +65,10 @@ type ownedState struct {
 	lastSameArgsAt  time.Time      // when the last identical call's results came back
 	correctionCount int            // nudges issued this turn before escalating to finalize
 
-	// pendingCorrection holds a loop-correction nudge to inject on the next chat
-	// call. Staged here (not appended directly) so it lands AFTER the tool result
-	// in the transcript — never between an assistant tool_call and its result,
-	// which providers reject.
-	pendingCorrection string
+	// softLandingNoted records that the budget soft-landing nudge has already been
+	// folded into a tool result this turn, so it is not repeated every round once the
+	// turn is near its wall.
+	softLandingNoted bool
 }
 
 // ownedGraphConfig is the dependency set for building the owned graph. It is
@@ -82,6 +81,7 @@ type ownedGraphConfig struct {
 	maxStep            int
 	stepBudget         int           // finalize once this many tool rounds complete (0 = derive from maxStep)
 	maxTurnDuration    time.Duration // finalize once the turn exceeds this wall-clock (0 = no time wall)
+	urgencyWarning     string        // agent-configured wrap-up text folded into the soft-landing nudge ("" = none)
 	messageModifier    func(ctx context.Context, input []*schema.Message) []*schema.Message
 	messageRewriter    func(ctx context.Context, input []*schema.Message) []*schema.Message
 	toolReturnDirectly map[string]struct{}
@@ -201,16 +201,12 @@ func buildOwnedGraph(ctx context.Context, cfg ownedGraphConfig) (compose.Runnabl
 	// chat node: accumulate input into state, apply rewriter + modifier, call the
 	// tool-bound model. Mirrors eino's modelPreHandle.
 	chatPreHandle := func(ctx context.Context, input []*schema.Message, state *ownedState) ([]*schema.Message, error) {
+		// Append-only: the input (tool results, already carrying any folded engine
+		// notes from the tools post-handler) extends the transcript at the tail. No
+		// standalone correction message is inserted here — dynamic feedback rides
+		// inside the tool result the post-handler already produced, so the formed
+		// prefix is never mutated and the explicit-cache prefix keeps growing.
 		state.Messages = append(state.Messages, input...)
-		// Inject any staged loop-correction nudge AFTER the tool result, so the
-		// transcript stays well-formed (assistant tool_call → tool result → nudge).
-		if state.pendingCorrection != "" {
-			state.Messages = append(state.Messages, &schema.Message{
-				Role:    schema.System,
-				Content: state.pendingCorrection,
-			})
-			state.pendingCorrection = ""
-		}
 		if cfg.messageRewriter != nil {
 			state.Messages = cfg.messageRewriter(ctx, state.Messages)
 		}
@@ -241,7 +237,23 @@ func buildOwnedGraph(ctx context.Context, cfg ownedGraphConfig) (compose.Runnabl
 		return input, nil
 	}
 	toolsPostHandle := func(ctx context.Context, output []*schema.Message, state *ownedState) ([]*schema.Message, error) {
-		cfg.applyLoopPolicy(ctx, state, output)
+		// Collect any dynamic feedback for this round (loop correction, budget soft-
+		// landing) and fold it into the tool result the loop already appends — never a
+		// standalone mid-conversation system message. A return-directly round is the
+		// HITL answer itself, so it is left untouched.
+		var notes []string
+		if note := cfg.applyLoopPolicy(ctx, state, output); note != "" {
+			notes = append(notes, note)
+		}
+		if !state.softLandingNoted {
+			if note := cfg.softLandingNote(state); note != "" {
+				notes = append(notes, note)
+				state.softLandingNoted = true
+			}
+		}
+		if len(notes) > 0 && state.ReturnDirectlyToolCallID == "" {
+			foldEngineNotesIntoToolResults(output, notes)
+		}
 		return output, nil
 	}
 	if err = graph.AddToolsNode(ownedNodeTools, toolsNode,
@@ -400,6 +412,20 @@ func buildOwnedReturnDirectly(graph *compose.Graph[[]*schema.Message, *schema.Me
 
 	return graph.AddEdge(ownedNodeDirectReturn, compose.END)
 }
+
+// finalizeDirective is the in-band instruction the model receives once the turn is
+// out of time/steps: stop calling tools and write the best final answer now from
+// what it already gathered. It is delivered two ways, both append-only: folded into
+// a tool result as a budget soft-landing nudge before the wall (softLandingNote), and
+// appended to the tool-less finalize node's input at the wall (appendFinalizeDirective).
+const finalizeDirective = "\n\n**BUDGET REACHED — FINAL ANSWER REQUIRED NOW.** You are out of time/steps for this turn. Do NOT call any more tools. Using only the information you have already gathered, write your best, complete final answer to the user right now. If you could not fully finish, briefly state what you found and what still remains so the user can follow up."
+
+// softLandingTimeNumerator/Denominator express the fraction of max_turn_duration at
+// which the budget soft-landing nudge begins firing (9/10 = 90%).
+const (
+	softLandingTimeNumerator   = 9
+	softLandingTimeDenominator = 10
+)
 
 // appendFinalizeDirective appends a system message carrying the finalize
 // directive so the tool-less model call is told, in-band, to answer now from the

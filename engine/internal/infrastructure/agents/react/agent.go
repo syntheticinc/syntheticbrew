@@ -178,6 +178,9 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 	// maxTurnDuration: 0 = use default 120s. maxStepDuration: 0 = watchdog disabled.
 	maxTurnDuration := 0
 	maxStepDuration := 0
+	// urgencyWarning is folded into the owned loop's budget soft-landing nudge (not
+	// the modifier); hoisted so the owned-graph build below can read it.
+	urgencyWarning := ""
 	if config.AgentConfig != nil {
 		maxTurnDuration = config.AgentConfig.MaxTurnDuration
 		maxStepDuration = config.AgentConfig.MaxStepDuration
@@ -209,7 +212,6 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 
 		// Add MessageModifier (AgentPrompts) if system prompt is provided
 		systemPrompt := ""
-		urgencyWarning := ""
 		if config.AgentConfig.Prompts != nil {
 			systemPrompt = config.AgentConfig.Prompts.SystemPrompt
 			urgencyWarning = config.AgentConfig.Prompts.UrgencyWarning
@@ -222,13 +224,11 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 			// Add external providers (e.g., WorkContextReminder)
 			reminderProviders = append(reminderProviders, config.ContextReminderProviders...)
 
-			// Create MessageModifier with reminder providers instead of direct PlanManager dependency
+			// The modifier now builds only the frozen head (system prompt + tools +
+			// HITL + task-focus + reminders, captured once per turn). Budget soft-
+			// landing / urgency moved to the owned loop (folded into tool results).
 			modifier = NewMessageModifier(MessageModifierConfig{
 				SystemPrompt:      systemPrompt,
-				UrgencyWarning:    urgencyWarning,
-				MaxSteps:          config.MaxSteps,
-				MaxTurnDuration:   maxTurnDuration,
-				ContextLogger:     contextLogger,
 				ReminderProviders: reminderProviders,
 				SessionID:         config.SessionID,
 				ToolNames:         toolNames,
@@ -294,6 +294,7 @@ func NewAgent(ctx context.Context, config AgentConfig) (*Agent, error) {
 		maxStep:              ownedBackstopSteps(config.MaxSteps),
 		stepBudget:           ownedStepBudget(config.MaxSteps),
 		maxTurnDuration:      time.Duration(maxTurnDuration) * time.Second,
+		urgencyWarning:       urgencyWarning,
 		messageModifier:      messageModifierFunc,
 		messageRewriter:      messageRewriterFunc,
 		toolReturnDirectly:   ownedReturnDirectlyMap(config.AgentConfig, toolInfos),

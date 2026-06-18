@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.8.6] — 2026-06-18
+
+### Fixed
+
+- **Prompt cache no longer collapses mid-turn on explicit-cache providers
+  (Qwen/DashScope).** Context reminders and the per-step urgency/finalize
+  directives were injected as standalone system messages spliced into the
+  conversation and re-derived every step. On providers that discard the whole
+  explicit-cache prefix when any already-formed message changes, a reminder
+  appearing or changing mid-turn re-billed the entire prompt as fresh input on
+  that step (observed: cached prefix dropping to zero in the middle of a tool
+  loop). The turn context is now an append-only stack: a **frozen head** (system
+  prompt + tool whitelist + HITL directive + task focus + every reminder,
+  captured once per turn) followed only by natural user/assistant/tool turns,
+  never re-derived. Dynamic feedback that must surface mid-turn — the loop
+  breaker's correction nudge and the budget soft-landing — is folded into the
+  tool result the loop already appends, not injected as a new system message.
+  Only context compaction may re-assemble formed context. Verified live on
+  qwen3.7-plus: cached prefix grows monotonically across a 16-step tool loop with
+  zero mid-cycle collapses, including with a reminder whose value changes every
+  step.
+
 ## [1.8.5] — 2026-06-17
 
 ### Fixed

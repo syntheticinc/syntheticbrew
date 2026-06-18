@@ -41,12 +41,11 @@ func TestNewAgent_ClampsOutOfRangeMaxTurnDuration(t *testing.T) {
 	}
 }
 
-// TestNewAgent_OutOfRangeMaxTurnDuration_ModifierDoesNotInsta-SoftLand guards the
-// residual leg of HIGH-1: the clamp must run BEFORE the MessageModifier is built,
-// else an overflow value flows into the modifier's soft-deadline arithmetic
-// (maxTurnDuration*time*9/10 wraps negative) and finalizeDirective fires from the
-// first model call, silently tool-disabling the agent.
-func TestNewAgent_OutOfRangeMaxTurnDuration_ModifierDoesNotInstaSoftLand(t *testing.T) {
+// TestNewAgent_OutOfRangeMaxTurnDuration_DoesNotInstaSoftLand guards the residual leg
+// of HIGH-1: the clamp must run BEFORE the value flows into the owned loop's soft-
+// landing arithmetic (maxTurnDuration * 9/10), else an overflow value wraps negative and
+// nearBudgetWall trips from the first model call, silently tool-disabling the agent.
+func TestNewAgent_OutOfRangeMaxTurnDuration_DoesNotInstaSoftLand(t *testing.T) {
 	a, err := NewAgent(context.Background(), AgentConfig{
 		ChatModel: &toolAwareMock{},
 		MaxSteps:  6,
@@ -58,13 +57,16 @@ func TestNewAgent_OutOfRangeMaxTurnDuration_ModifierDoesNotInstaSoftLand(t *test
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
 	}
-	if a.messageModifier == nil {
-		t.Fatal("expected a MessageModifier to be built for a non-empty system prompt")
+	// The clamp resets the out-of-range value to the engine default (0 = no time wall).
+	if a.maxTurnDuration != 0 {
+		t.Fatalf("out-of-range max_turn_duration must clamp to 0, got %d", a.maxTurnDuration)
 	}
-	// With the clamp applied (→0 = no time budget), the modifier must NOT soft-land
-	// on time at the very start of a turn.
-	if a.messageModifier.shouldFinalize(0, time.Now()) {
-		t.Error("out-of-range max_turn_duration leaked into the modifier: it soft-lands at t≈0")
+	// With the clamped value (no time budget), the owned loop's soft-landing must NOT
+	// trip on time at the very start of a turn — proving the clamp ran before the loop
+	// consumed it.
+	c := ownedGraphConfig{maxTurnDuration: time.Duration(a.maxTurnDuration) * time.Second}
+	if c.nearBudgetWall(&ownedState{turnStart: time.Now()}) {
+		t.Error("out-of-range max_turn_duration leaked into the loop: it soft-lands at t≈0")
 	}
 }
 

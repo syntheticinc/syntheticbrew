@@ -18,12 +18,13 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
-// dynamicTrailingReminder injects a per-call-changing system message at the tail,
-// mirroring the engine's tool-call-history / environment reminders.
-type dynamicTrailingReminder struct{ marker string }
+// headFoldedReminder supplies reminder content the modifier folds into the FROZEN HEAD
+// (out[0]) once per turn. It carries a marker so a test can prove the reminder lands in
+// the head system message, not as a separate trailing message.
+type headFoldedReminder struct{ marker string }
 
-func (d dynamicTrailingReminder) GetContextReminder(_ context.Context, _ string) (string, int, bool) {
-	return d.marker + ": " + strings.Repeat("changing tool history state ", 40), 98, true
+func (d headFoldedReminder) GetContextReminder(_ context.Context, _ string) (string, int, bool) {
+	return d.marker + ": " + strings.Repeat("stable standing tool guidance ", 40), 98, true
 }
 
 // TestOwnedGraph_CacheControlReachesChatNodeWire is the end-to-end routing proof:
@@ -88,13 +89,14 @@ func TestOwnedGraph_CacheControlReachesChatNodeWire(t *testing.T) {
 		"the request leaving the owned-graph chat node must carry cache_control — proves DesignateNode routing + modifier wiring end-to-end")
 }
 
-// TestOwnedGraph_CacheBreakpointOnAppendOnlyTail verifies the history cache breakpoint
-// lands on the LAST message of the append-only request (head + last cacheable message).
-// The MessageModifier appends reminders and turns at the tail and never rewrites earlier
-// ones, so the last message is byte-stable across calls and is the correct breakpoint —
-// marking it caches the whole growing prefix; on the next call it is interior and read.
-func TestOwnedGraph_CacheBreakpointOnAppendOnlyTail(t *testing.T) {
-	const reminderMarker = "DYNAMIC-REMINDER-MARKER"
+// TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail verifies the two cache breakpoints
+// land on the FROZEN HEAD and the LAST natural (cacheable) message. The MessageModifier
+// folds every reminder into the byte-frozen head and appends only natural user/assistant/
+// tool turns after it, never rewriting earlier ones — so the head is the stable front
+// breakpoint and the last natural message is the byte-stable tail breakpoint. The
+// reminder marker therefore appears INSIDE the head, not as a separate trailing message.
+func TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail(t *testing.T) {
+	const reminderMarker = "HEAD-FOLDED-REMINDER-MARKER"
 	var lastBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		lastBody, _ = io.ReadAll(r.Body)
@@ -124,7 +126,7 @@ func TestOwnedGraph_CacheBreakpointOnAppendOnlyTail(t *testing.T) {
 			{Role: schema.User, Content: "Earlier question. " + strings.Repeat("context ", 40)},
 			{Role: schema.Assistant, Content: "Earlier answer. " + strings.Repeat("context ", 40)},
 		},
-		ContextReminderProviders: []ContextReminderProvider{dynamicTrailingReminder{marker: reminderMarker}},
+		ContextReminderProviders: []ContextReminderProvider{headFoldedReminder{marker: reminderMarker}},
 		RequestPayloadModifier:   llm.NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1}),
 	})
 	require.NoError(t, err)
@@ -138,7 +140,7 @@ func TestOwnedGraph_CacheBreakpointOnAppendOnlyTail(t *testing.T) {
 	require.NoError(t, json.Unmarshal(lastBody, &top))
 	var msgs []map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(top["messages"], &msgs))
-	require.GreaterOrEqual(t, len(msgs), 4, "head + history + user + trailing reminder")
+	require.GreaterOrEqual(t, len(msgs), 4, "head + history + user turn")
 
 	hasCC := func(m map[string]json.RawMessage) bool {
 		c, ok := m["content"]
@@ -149,17 +151,35 @@ func TestOwnedGraph_CacheBreakpointOnAppendOnlyTail(t *testing.T) {
 	}
 	contentStr := func(m map[string]json.RawMessage) string { return string(m["content"]) }
 
-	last := msgs[len(msgs)-1]
-	require.Contains(t, contentStr(last), reminderMarker, "the trailing message must be the appended reminder")
-	// Append-increment never rewrites the tail, so the breakpoint belongs ON the last
-	// message: marking it caches the whole growing prefix; next call it is interior and read.
-	assert.True(t, hasCC(last), "the append-only tail message must carry the cache breakpoint")
+	// The reminder is folded into the head system message, not a separate trailing message.
+	head := msgs[0]
+	require.Equal(t, "system", messageRoleOf(head), "msgs[0] must be the frozen head")
+	require.Contains(t, contentStr(head), reminderMarker, "the reminder must be folded into the head, not trailed")
+	assert.True(t, hasCC(head), "head system message must carry a cache breakpoint")
 
-	// head marked too (the large stable block); only head + tail are breakpoints.
-	assert.True(t, hasCC(msgs[0]), "head system message must be marked")
+	// The last natural (cacheable) message is the user turn — the byte-stable tail
+	// breakpoint. It is NOT a reminder; the reminder lives in the head.
+	last := msgs[len(msgs)-1]
+	require.Contains(t, contentStr(last), userInputMarker, "the tail must be the natural user turn, not a reminder")
+	assert.True(t, hasCC(last), "the last cacheable message must carry the tail cache breakpoint")
+
+	// Only head + tail are breakpoints; interior history is read from cache, not marked.
 	for i, m := range msgs[1 : len(msgs)-1] {
 		assert.False(t, hasCC(m), "only head and tail are breakpoints; interior message %d must not be marked", i+1)
 	}
+}
+
+// messageRoleOf extracts the JSON "role" field from a decoded message object.
+func messageRoleOf(m map[string]json.RawMessage) string {
+	raw, ok := m["role"]
+	if !ok {
+		return ""
+	}
+	var role string
+	if json.Unmarshal(raw, &role) != nil {
+		return ""
+	}
+	return role
 }
 
 // jsonKindIsArray reports whether a raw JSON value is an array (first non-space byte '[').
