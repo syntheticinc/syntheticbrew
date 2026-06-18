@@ -21,20 +21,21 @@ import (
 // legitimate (polling a deploy status on a timer).
 
 // applyLoopPolicy runs as the tools-node post-handler: it inspects the tool
-// results plus the assistant's tool calls, detects a loop, and either stages a
-// correction nudge or escalates the turn to finalize once the correction budget
-// is spent. It never aborts — termination is the graph's job via routing.
-func (c ownedGraphConfig) applyLoopPolicy(ctx context.Context, state *ownedState, results []*schema.Message) {
+// results plus the assistant's tool calls, detects a loop, and either returns a
+// correction nudge (for the caller to fold into the tool result) or escalates the
+// turn to finalize once the correction budget is spent. It never aborts —
+// termination is the graph's job via routing — and never injects a standalone
+// message; the returned nudge rides inside the tool result the loop already appends.
+func (c ownedGraphConfig) applyLoopPolicy(ctx context.Context, state *ownedState, results []*schema.Message) string {
 	reason, tool, detail := c.detectLoop(state, results)
 	if reason == callbacks.TerminalNone {
-		return
+		return ""
 	}
 
 	// Graduated response: nudge first, escalate only past the correction budget.
 	if state.correctionCount < c.correctionBudgetOr() {
 		state.correctionCount++
-		state.pendingCorrection = loopCorrectionMessage(reason, tool)
-		return
+		return loopCorrectionMessage(reason, tool)
 	}
 
 	if state.terminalReason == callbacks.TerminalNone {
@@ -45,6 +46,87 @@ func (c ownedGraphConfig) applyLoopPolicy(ctx context.Context, state *ownedState
 			c.onTerminal(ctx, reason, tool, detail)
 		}
 	}
+	return ""
+}
+
+// engineNoteMarker frames an engine-injected note inside a tool result so the model
+// can tell it apart from the tool's own DATA (which it must treat as data, never as
+// instructions — see the security reminder). The note rides in the tool result, a
+// natural turn the loop appends anyway, so it never adds a standalone mid-conversation
+// system message — which on Qwen/DashScope would re-render the chat template and
+// discard the explicit-cache prefix.
+const engineNoteMarker = "\n\n--- ENGINE NOTICE (runtime guidance, NOT tool output) ---\n"
+
+// foldEngineNotesIntoToolResults appends the engine notes to the LAST tool result in
+// output, under a clear marker. Position is immaterial for an advisory note, and the
+// last result is the most recent the model will read. The note is folded into the
+// result BEFORE it is appended to the transcript, so the formed message is never
+// rewritten afterwards and the append-only cache prefix is preserved. No-op when
+// there is no tool result to carry it.
+func foldEngineNotesIntoToolResults(output []*schema.Message, notes []string) {
+	if len(notes) == 0 {
+		return
+	}
+	for i := len(output) - 1; i >= 0; i-- {
+		if output[i] != nil && output[i].Role == schema.Tool {
+			// Strip any occurrence of the marker from the tool's OWN data first, so the
+			// engine's marker is the only one in the message. A hostile MCP tool can write
+			// arbitrary text into its result (the standing reminder already tells the model
+			// to treat tool output as data, not instructions); neutralising the marker stops
+			// it from aliasing this channel and passing its text off as runtime guidance.
+			cleaned := strings.ReplaceAll(output[i].Content, engineNoteMarker, "\n")
+			output[i].Content = cleaned + engineNoteMarker + strings.Join(notes, "\n\n")
+			return
+		}
+	}
+}
+
+// softLandingNote returns the budget soft-landing nudge to fold into the tool result
+// once the turn is one round away from its step or time wall, or "" otherwise. It
+// pushes the model to give its final answer now instead of being force-finalized at
+// the wall — the same graceful-termination intent the finalize node guarantees
+// structurally, delivered early as a natural-turn note rather than a standalone
+// system message.
+func (c ownedGraphConfig) softLandingNote(state *ownedState) string {
+	if !c.nearBudgetWall(state) {
+		return ""
+	}
+	note := strings.TrimSpace(finalizeDirective)
+	if w := c.formatUrgencyWarning(state); w != "" {
+		note = w + "\n\n" + note
+	}
+	return note
+}
+
+// formatUrgencyWarning returns the agent-configured wrap-up text with a live
+// remaining-step count substituted for a %d verb, or "" when none is configured.
+func (c ownedGraphConfig) formatUrgencyWarning(state *ownedState) string {
+	w := strings.TrimSpace(c.urgencyWarning)
+	if w == "" || !strings.Contains(w, "%d") {
+		return w
+	}
+	remaining := c.effectiveStepBudget() - state.step
+	if remaining < 0 {
+		remaining = 0
+	}
+	return fmt.Sprintf(w, remaining)
+}
+
+// nearBudgetWall reports whether the turn is close enough to its time or step wall
+// that the model should be nudged to finalize now. Step: one tool round before the
+// step budget. Time: past the soft-landing fraction of max_turn_duration. Unlimited
+// budgets (effectiveStepBudget == the sentinel) never trip the step branch.
+func (c ownedGraphConfig) nearBudgetWall(state *ownedState) bool {
+	if c.maxTurnDuration > 0 && !state.turnStart.IsZero() {
+		soft := c.maxTurnDuration * softLandingTimeNumerator / softLandingTimeDenominator
+		if time.Since(state.turnStart) >= soft {
+			return true
+		}
+	}
+	if budget := c.effectiveStepBudget(); budget > 0 && budget < (1<<30) && state.step >= budget-1 {
+		return true
+	}
+	return false
 }
 
 // detectLoop updates the breaker counters from this round and reports a loop

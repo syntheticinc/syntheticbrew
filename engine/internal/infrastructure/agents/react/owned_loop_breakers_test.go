@@ -123,14 +123,14 @@ func TestApplyLoopPolicy_NudgeThenEscalate(t *testing.T) {
 	st := stateWithSingleCall("c", "search", `{"q":"same"}`)
 
 	// Drive identical calls until the breaker first fires, then watch the policy.
+	// applyLoopPolicy now RETURNS the correction nudge (the caller folds it into a tool
+	// result); a non-empty return is a nudge, escalation is signalled via terminalReason.
 	nudges := 0
 	escalated := false
 	for i := 0; i < 8; i++ {
 		st.Messages = []*schema.Message{charToolCall("c", "search", `{"q":"same"}`)}
-		cfg.applyLoopPolicy(context.Background(), st, toolResult("c", `{}`))
-		if st.pendingCorrection != "" {
+		if note := cfg.applyLoopPolicy(context.Background(), st, toolResult("c", `{}`)); note != "" {
 			nudges++
-			st.pendingCorrection = ""
 		}
 		if st.terminalReason != callbacks.TerminalNone {
 			escalated = true
