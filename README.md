@@ -7,13 +7,21 @@
 [![Release](https://img.shields.io/github/v/release/syntheticinc/syntheticbrew?style=flat-square&logo=github&label=release)](https://github.com/syntheticinc/syntheticbrew/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/syntheticinc/syntheticbrew?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/syntheticinc/syntheticbrew)
 
-**SyntheticBrew is an open-source, self-hosted AI agent runtime.** Describe what you need in plain English and it builds, deploys, and orchestrates the agents for you — wired to the tools, memory, and knowledge that are specific to your business. One Docker command, any LLM provider, your infrastructure.
+**SyntheticBrew is an open-source, self-hosted AI agent runtime with a no-code dashboard.** Describe what you need in plain English and it builds, deploys, and orchestrates the agents for you — grounded in your business data, not guesswork, and wired to the tools, memory, and knowledge specific to your business. One Docker command, any LLM provider, your infrastructure.
 
 AI is now a baseline expectation for modern software. Customers expect products that understand context, automate work, answer questions, and act on your business logic — and a company without AI is falling behind the ones that have it. But shipping reliable AI isn't just picking a model. It takes infrastructure: RAG and vector search, knowledge bases and knowledge graphs, tool integration, multi-agent orchestration, memory, permissions, and observability. Building that yourself is hard, slow, expensive, and demands expertise most teams don't have to spare.
 
 That's the gap SyntheticBrew closes. The usual options all fall short — build it from scratch (months before the first useful feature), rent a closed cloud platform (per-token markup, vendor lock-in, your data on someone else's servers), or cobble a dozen frameworks together (glue code you now own forever). SyntheticBrew ships the whole runtime in the box instead: self-hosted, no lock-in, and you pay only your own LLM provider. Everything is included — see [Features](#features).
 
+Your agents answer **grounded in your business data, not guesswork** — knowledge-graph taxonomy gives typed, grounded retrieval so they don't make things up. Feed in your data three ways: **upload documents** (RAG over PDFs/DOCX/URLs), **define a knowledge graph** for structured records, or **connect live systems** via MCP tools.
+
 > **No in-house AI team to wire it up?** Synthetic AI Inc also builds custom AI integrations on SyntheticBrew — see [Custom integrations](#custom-integrations).
+
+## Dashboard
+
+Everything runs from a no-code admin dashboard — no config files required. Build and configure agents (model, system prompt, tools, memory), connect LLM providers and MCP tool servers, and load knowledge bases (RAG) and knowledge graphs. Test agents in a live chat playground, schedule tasks and cron triggers, manage API keys and multi-tenant settings, import/export config for GitOps, and watch every run with full session tracing and an immutable audit log.
+
+![SyntheticBrew admin dashboard — agent configuration](https://syntheticbrew.ai/screenshots/admin-agent-detail.png)
 
 ## Features
 
@@ -22,6 +30,7 @@ That's the gap SyntheticBrew closes. The usual options all fall short — build 
 - **Visual Admin Dashboard** — configure agents, models, schemas, and tools from a web UI
 - **Task System** — async background tasks with priorities, dependencies, and approval gates
 - **Knowledge Base / RAG** — vector search over uploaded documents with pgvector
+- **Knowledge Graphs** — typed, grounded retrieval over your structured data via auto-generated `list_/get_` MCP tools (exact answers, not fuzzy similarity)
 - **Agent Memory** — cross-session persistent memory per agent
 - **Headless API** — REST + SSE chat for any frontend (web, mobile, CLI). No proprietary clients.
 - **BYOK** — bring your own keys for any OpenAI-compatible LLM provider
