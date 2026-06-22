@@ -2,6 +2,20 @@
 
 ## [1.9.0] — 2026-06-22
 
+### Fixed
+
+- **The default chat model now survives non-deploy restarts.** At boot the engine
+  resolves the default chat model from the database (the tenant's `is_default`
+  chat model) instead of only from env config. A deployment that configures its
+  model via the API/brewctl (model persisted in the DB, no LLM env vars) used to
+  boot without a default model after any restart that was not a fresh deploy
+  (cluster-autoscaler eviction, node drain, OOM, crash): `agent_service` was
+  skipped and chat returned 502 "no LLM model configured" until a manual config
+  re-apply. The DB is now authoritative for the default — env (`cfg.LLM`) is only
+  a fallback when the DB carries no default (env-only deployments). Only the
+  CE/single-tenant sentinel tenant's default is loaded at boot; Cloud
+  multi-tenant per-tenant resolution at chat time is unchanged.
+
 ### Added
 
 - **`SYNTHETICBREW_KNOWLEDGE_STORAGE` (`none` | `local`, default `none`) controls
