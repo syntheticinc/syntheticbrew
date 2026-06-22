@@ -130,7 +130,13 @@ Default RollingUpdate creates the new pod *before* deleting the old one →
 new pod deadlocks Pending on PVC contention → atomic timeout. Recreate
 avoids this. `auth.mode=external` (HA) keeps RollingUpdate.
 
-If you genuinely need RollingUpdate (e.g. RWX storage), override:
+Chart 0.10.0+ auto-selects `RollingUpdate` when **no** RWO PVC is mounted —
+i.e. keypair from a Secret (`config.auth.existingKeysSecret`) AND knowledge
+`storage: none`. With no RWO volume there is no attach contention, so the
+near-zero-downtime strategy is safe. See "Node-churn stability" below.
+
+If you genuinely need RollingUpdate while a PVC is still mounted (e.g. RWX
+storage), override:
 ```yaml
 deploymentStrategy:
   type: RollingUpdate
@@ -138,6 +144,68 @@ deploymentStrategy:
     maxSurge: 25%
     maxUnavailable: 25%
 ```
+
+---
+
+## Node-churn stability (chart 0.10.0+)
+
+A single-replica engine can sit in `ContainerCreating` for a long time when its
+node is drained or churned, because two RWO PVCs are on the pod's startup
+critical path: the JWT keypair PVC and the knowledge raw-files PVC. On some CSI
+drivers a detach locks for a long time, so the rescheduled pod cannot attach.
+Take both PVCs off the path → the pod reschedules to any node in seconds.
+
+This is single-replica resilience, **NOT HA** — one pod still. A graceful drain
+moves it quickly; a hard node crash mid-request loses the in-flight turn (history
+is in Postgres → the client retries). For HA use `auth.mode=external`.
+
+### 1. Provision the JWT keypair as a read-only Secret
+
+The simplest authoring path is to let the engine generate the keypair once, then
+copy the two files into a Secret. **Reuse the EXISTING keypair** — a new key
+invalidates every current admin session.
+
+```bash
+NS=dev
+# Pull the existing keypair off the current keys PVC (engine generated it on
+# first boot). Run from a pod that has the PVC mounted at jwtKeysPath:
+POD=$(kubectl -n $NS get pod -l app.kubernetes.io/name=syntheticbrew-engine -o name | head -1)
+kubectl -n $NS cp "${POD#pod/}":/var/lib/syntheticbrew/keys/jwt_ed25519.priv ./jwt_ed25519.priv
+kubectl -n $NS cp "${POD#pod/}":/var/lib/syntheticbrew/keys/jwt_ed25519.pub  ./jwt_ed25519.pub
+
+# (Fresh cluster with no keypair yet? Run the engine locally once against an
+# empty SYNTHETICBREW_JWT_KEYS_DIR — it writes the same two files — then use
+# those.)
+
+# Create the Secret (keys MUST be named jwt_ed25519.priv / jwt_ed25519.pub):
+kubectl -n $NS create secret generic syntheticbrew-jwt-keys \
+  --from-file=jwt_ed25519.priv \
+  --from-file=jwt_ed25519.pub
+
+# Then wire the chart and drop the keys PVC:
+#   config.auth.existingKeysSecret: syntheticbrew-jwt-keys
+#   persistence.keys.enabled: false
+rm -f jwt_ed25519.priv jwt_ed25519.pub   # do not leave the private key on disk
+```
+
+The keypair is mounted READ-ONLY (`defaultMode: 0400`); the engine loads it and
+skips generation. No keys PVC is created.
+
+### 2. Knowledge storage mode
+
+```yaml
+config:
+  knowledge:
+    storage: none   # PostgreSQL-only, no raw-files PVC → pod stateless
+    # storage: local  # persist raw files to the knowledge PVC (re-index w/o re-upload)
+    # storage: ""     # derive: local if persistence.knowledge.enabled, else none
+```
+
+**Migrating `local` → `none`:** the engine stops persisting raw files, but the
+chunks and embeddings already in PostgreSQL keep working for search — no data
+loss for existing knowledge. Only **re-indexing old files** needs a re-upload
+(the raw bytes are no longer on disk). New uploads under `none` are embedded into
+Postgres as before; they just are not retained as raw files.
 
 ---
 

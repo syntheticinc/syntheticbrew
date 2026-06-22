@@ -17,16 +17,22 @@ spec:
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   # Deployment strategy.
-  # auth.mode=local pins replicaCount=1 with a ReadWriteOnce PVC for the JWT
-  # keypair. K8s default RollingUpdate creates the new pod BEFORE deleting the
-  # old one — the new pod then deadlocks on Pending because the old pod still
-  # holds the RWO PVC attachment. `helm upgrade --atomic` times out and rolls
-  # back. Default to Recreate for local mode (kill old → release PVC → start
-  # new); users on auth.mode=external (HA) keep RollingUpdate semantics.
-  # Override via .Values.deploymentStrategy when needed (RWX storage etc).
+  # A mounted ReadWriteOnce PVC forces Recreate: the default RollingUpdate
+  # creates the new pod BEFORE deleting the old one — the new pod then deadlocks
+  # on Pending because the old pod still holds the RWO attachment, so
+  # `helm upgrade --atomic` times out and rolls back. Two RWO PVCs can be on the
+  # critical path in local mode: the JWT keypair PVC and the knowledge raw-files
+  # PVC. When NEITHER is mounted (keypair from a Secret + knowledge storage=none)
+  # the pod is stateless, so RollingUpdate is safe and gives near-zero redeploy
+  # downtime. Override via .Values.deploymentStrategy when needed (RWX storage).
+  {{- $keysPVC := and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled (not .Values.config.auth.existingKeysSecret) }}
+  {{- $knowledgePVC := eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
   {{- if .Values.deploymentStrategy }}
   strategy:
     {{- toYaml .Values.deploymentStrategy | nindent 4 }}
+  {{- else if not (or $keysPVC $knowledgePVC) }}
+  strategy:
+    type: RollingUpdate
   {{- else if eq .Values.config.auth.mode "local" }}
   strategy:
     type: Recreate
@@ -40,6 +46,9 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         {{- if not .Values.postgresql.external.existingSecret }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if eq .Values.config.auth.mode "local" }}
+        cluster-autoscaler.kubernetes.io/safe-to-evict: {{ .Values.clusterAutoscaler.safeToEvict | quote }}
         {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -104,7 +113,12 @@ spec:
             - name: EMBED_DIM
               value: {{ .Values.config.embedDim | quote }}
             {{- end }}
-            {{- if .Values.persistence.knowledge.enabled }}
+            # Knowledge raw-file storage mode (none|local). "none" keeps live
+            # knowledge in PostgreSQL only and writes no raw files → no PVC on
+            # the startup critical path. Single-sourced via the helper.
+            - name: SYNTHETICBREW_KNOWLEDGE_STORAGE
+              value: {{ include "syntheticbrew-engine.knowledgeStorage" . | quote }}
+            {{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
             # Engine writes uploaded KB files to {DATA_DIR}/knowledge/{tenant}/{kb}/.
             # Without DATA_DIR set, engine falls back to os.UserConfigDir() — empty
             # in containers with no HOME — which collapses to relative "./data"
@@ -150,11 +164,14 @@ spec:
               subPath: agents.yaml
               readOnly: true
             {{- end }}
-            {{- if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled }}
+            {{- if and (eq .Values.config.auth.mode "local") (or .Values.config.auth.existingKeysSecret .Values.persistence.keys.enabled) }}
             - name: keys
               mountPath: {{ .Values.config.auth.jwtKeysPath | quote }}
+              {{- if .Values.config.auth.existingKeysSecret }}
+              readOnly: true
+              {{- end }}
             {{- end }}
-            {{- if .Values.persistence.knowledge.enabled }}
+            {{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
             - name: knowledge
               mountPath: /etc/syntheticbrew/knowledge
             {{- end }}
@@ -173,12 +190,19 @@ spec:
           configMap:
             name: {{ include "syntheticbrew-engine.fullname" . }}-config
         {{- end }}
-        {{- if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled }}
+        {{- if and (eq .Values.config.auth.mode "local") .Values.config.auth.existingKeysSecret }}
+        # Keypair mounted READ-ONLY from a Secret — no RWO keys PVC, so the pod
+        # reschedules to any node instantly (no block-volume attach/detach).
+        - name: keys
+          secret:
+            secretName: {{ .Values.config.auth.existingKeysSecret | quote }}
+            defaultMode: 0400
+        {{- else if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled }}
         - name: keys
           persistentVolumeClaim:
             claimName: {{ include "syntheticbrew-engine.fullname" . }}-keys
         {{- end }}
-        {{- if .Values.persistence.knowledge.enabled }}
+        {{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
         - name: knowledge
           persistentVolumeClaim:
             claimName: {{ include "syntheticbrew-engine.fullname" . }}-knowledge

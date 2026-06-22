@@ -20,6 +20,8 @@ it has been validated. Pick what your environment supports and treat
 | HTTPRoute (Gateway API v1)             | **Stable**   | CI render-validated + production canary against Envoy Gateway |
 | `containerSecurityContext.readOnlyRootFilesystem: true` (auto /tmp emptyDir) | **Stable** | CI render-validated; smoke runs render-only on kind |
 | `replicaCount=1` enforcement (`auth.mode=local`) | **Stable** | CI gate (template `fail` on `replicaCount > 1`) |
+| `config.auth.existingKeysSecret` (keypair via Secret) | **Beta** | CI render-validated |
+| `config.knowledge.storage` (`none`/`local`) | **Beta** | CI render-validated |
 | AWS IRSA annotations                   | **Beta**     | CI render-validated only — no AWS account in CI; community feedback welcome |
 | GCP Workload Identity annotations      | **Beta**     | CI render-validated only — no GCP account in CI |
 | NetworkPolicy enabled                  | **Beta**     | CI render-validated only — kind default CNI does NOT enforce NetworkPolicy |
@@ -107,6 +109,59 @@ There is intentionally no built-in admin password / login form. A single
 secrets — equivalent to no auth against any attacker that already reached
 the cluster, and it would not buy real defence-in-depth. Use a battle-tested
 identity proxy instead.
+
+## Availability on node churn / autoscaling clusters
+
+A single-replica engine (`auth.mode=local`) can wedge for a long time when its
+node is drained, cordoned, or churned by the cluster-autoscaler. The cause is
+**two ReadWriteOnce PVCs on the pod's startup critical path**:
+
+1. the **JWT keypair PVC** (`persistence.keys`, written by local auth), and
+2. the **knowledge raw-files PVC** (`persistence.knowledge`).
+
+RWO is a block volume bound to one node at a time. When the pod moves, the CSI
+driver must detach from the old node before attaching to the new one — and on
+some drivers (e.g. Hetzner CSE) that detach can lock for a long time. The
+rescheduled pod sits in `ContainerCreating` (→ 502) until the volume frees.
+
+This chart lets you take **both** PVCs off the critical path so the single pod
+reschedules to any node in seconds:
+
+- **`config.auth.existingKeysSecret`** — mount the Ed25519 keypair READ-ONLY
+  from a Secret instead of writing it to a PVC. A Secret is replicated through
+  the API server and mounts on any node with no block-volume attach/detach, so
+  no keys PVC is created. See the RUNBOOK for how to provision the Secret.
+- **`config.knowledge.storage: none`** — keep live knowledge in PostgreSQL only
+  and write no raw files, so no knowledge PVC is created and the pod is
+  stateless. (`local` keeps the raw-files PVC; empty derives the mode from
+  `persistence.knowledge.enabled` for back-compat.)
+
+When neither PVC is mounted the chart auto-selects `strategy: RollingUpdate`
+(near-zero redeploy downtime); with any RWO PVC it stays `Recreate` to avoid the
+upgrade deadlock. `clusterAutoscaler.safeToEvict` (default `false`) also renders
+`cluster-autoscaler.kubernetes.io/safe-to-evict` on the pod so the autoscaler
+does not proactively evict the single stateful pod during node optimisation —
+set `true` once both PVCs are off the path and you want the pod freely movable.
+
+```yaml
+config:
+  auth:
+    mode: local
+    existingKeysSecret: syntheticbrew-jwt-keys   # keypair from a read-only Secret
+  knowledge:
+    storage: none                                # stateless — Postgres-only
+persistence:
+  keys:
+    enabled: false                               # no keys PVC
+clusterAutoscaler:
+  safeToEvict: true                              # allow the autoscaler to move the pod
+```
+
+This is **single-replica resilience, NOT high availability** — there is still
+one pod. A graceful node drain reschedules it quickly; a hard node crash
+mid-request loses the in-flight turn (the conversation history lives in
+PostgreSQL, so the client simply retries). For real HA (multiple replicas) use
+`auth.mode=external` with an external JWT IdP, which is out of scope for CE.
 
 ## Integrations
 
