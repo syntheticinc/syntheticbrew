@@ -96,6 +96,12 @@ type toolCallEntry struct {
 	Output string `json:"output,omitempty"`
 }
 
+// maxChatBodyBytes caps the chat request body (a message + optional
+// headers/BYOK). Every other write endpoint bounds its intake; chat was the
+// one unbounded JSON decode, letting a single authenticated client exhaust
+// memory with an oversized body.
+const maxChatBodyBytes = 1 << 20 // 1 MB
+
 // Chat handles SSE streaming or non-streaming chat.
 //
 // URL `{name}` is the operator-declared schema name (engine 1.1.0+).
@@ -109,6 +115,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxChatBodyBytes)
 	var req chatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
