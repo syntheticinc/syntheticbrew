@@ -2,8 +2,6 @@ package knowledge
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -12,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
-	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // mockDocumentRepository is an in-memory DocumentRepository that tolerates the
@@ -106,120 +103,91 @@ func (stubKBEmbeddingResolver) ResolveByModelID(_ context.Context, _ string) (*E
 	}, nil
 }
 
-func newTestUploadService(t *testing.T, persistRaw bool) (*UploadService, *mockDocumentRepository, string) {
+func newTestUploadService(t *testing.T) (*UploadService, *mockDocumentRepository) {
 	t.Helper()
 	repo := newMockDocumentRepository()
-	dataDir := t.TempDir()
-	svc := NewUploadService(repo, dataDir, persistRaw)
+	svc := NewUploadService(repo)
 	svc.SetKBEmbeddingResolver(stubKBEmbeddingResolver{})
-	return svc, repo, dataDir
+	return svc, repo
 }
 
-// countFiles returns the number of regular files under root.
-func countFiles(t *testing.T, root string) int {
+func uploadToKB(t *testing.T, svc *UploadService, fileName string) {
 	t.Helper()
-	count := 0
-	err := filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			count++
-		}
-		return nil
-	})
-	require.NoError(t, err)
-	return count
-}
-
-func TestUploadFileToKB_StatelessWritesNoFile(t *testing.T) {
-	svc, repo, dataDir := newTestUploadService(t, false)
-
-	resp, err := svc.UploadFileToKB(
+	content := []byte("hello world")
+	_, err := svc.UploadFileToKB(
 		context.Background(),
 		"00000000-0000-0000-0000-000000000001",
 		"kb-1",
 		"embed-model-1",
-		"notes.txt",
+		fileName,
 		"txt",
-		int64(len("hello world")),
+		int64(len(content)),
 		"hash-1",
-		[]byte("hello world"),
+		content,
 	)
 	require.NoError(t, err)
-	require.NotNil(t, resp)
+}
 
-	// No raw file persisted anywhere under the temp data dir.
-	assert.Equal(t, 0, countFiles(t, dataDir), "stateless upload must not write any raw file")
+// TestUploadFileToKB_StatelessStoresName is the regression guard for the
+// filename-display bug: in the stateless model no raw file is persisted
+// (FilePath==""), so the displayed name MUST come from the stored file_name
+// metadata, not filepath.Base(FilePath) (which returns "." for an empty path).
+func TestUploadFileToKB_StatelessStoresName(t *testing.T) {
+	svc, repo := newTestUploadService(t)
 
-	// The synchronously-saved document has an empty FilePath and is queued for indexing.
+	uploadToKB(t, svc, "notes.txt")
+
 	saved := repo.firstSavedDoc()
 	require.NotNil(t, saved)
+	// No raw file path is recorded — storage is stateless.
 	assert.Equal(t, "", saved.FilePath)
-	assert.Equal(t, "indexing", saved.Status)
+	// The original name is kept as metadata and is what the API/UI displays.
+	assert.Equal(t, "notes.txt", saved.OriginalName)
+	assert.Equal(t, "notes.txt", saved.FileName(), `displayed name must be the original file name, not "."`)
+	assert.Equal(t, "indexing", saved.Status, "upload queues the document for automatic indexing")
 }
 
-func TestUploadFileToKB_LocalWritesFile(t *testing.T) {
-	svc, repo, dataDir := newTestUploadService(t, true)
+// TestUploadFileToKB_UnicodeName verifies non-ASCII file names round-trip intact.
+func TestUploadFileToKB_UnicodeName(t *testing.T) {
+	svc, repo := newTestUploadService(t)
 
-	tenantID := "00000000-0000-0000-0000-000000000001"
-	kbID := "kb-1"
-	resp, err := svc.UploadFileToKB(
-		context.Background(),
-		tenantID,
-		kbID,
-		"embed-model-1",
-		"notes.txt",
-		"txt",
-		int64(len("hello world")),
-		"hash-1",
-		[]byte("hello world"),
-	)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
+	const name = "résumé—naïve_Ω.txt"
+	uploadToKB(t, svc, name)
 
 	saved := repo.firstSavedDoc()
 	require.NotNil(t, saved)
-	assert.NotEmpty(t, saved.FilePath, "local storage must record a non-empty FilePath")
-
-	// File lives under <dataDir>/knowledge/<tenant>/<kb>/.
-	expectedDir := filepath.Join(dataDir, "knowledge", tenantID, kbID)
-	assert.True(t, strings.HasPrefix(saved.FilePath, expectedDir),
-		"file %q must be under %q", saved.FilePath, expectedDir)
-	_, statErr := os.Stat(saved.FilePath)
-	require.NoError(t, statErr, "the raw file must exist on disk")
-	assert.GreaterOrEqual(t, countFiles(t, dataDir), 1)
+	assert.Equal(t, name, saved.FileName())
 }
 
-func TestReindexFileByKB_StatelessReturnsReuploadError(t *testing.T) {
-	svc, repo, _ := newTestUploadService(t, false)
+// TestUploadFileToKB_OverlongNameClamped verifies a file name longer than the
+// file_name column width (varchar(255)) is truncated to fit rather than left to
+// blow up the DB insert with a 500 (SCC-03: invalid input must not 500).
+func TestUploadFileToKB_OverlongNameClamped(t *testing.T) {
+	svc, repo := newTestUploadService(t)
 
-	tenantID := "00000000-0000-0000-0000-000000000001"
-	kbID := "kb-1"
-	ctx := context.Background()
+	longName := strings.Repeat("a", 300) + ".txt"
+	uploadToKB(t, svc, longName)
 
-	// Seed a stored doc with empty FilePath (as a stateless upload would).
-	require.NoError(t, repo.SaveDocument(ctx, &models.KnowledgeDocument{
-		ID:              "doc-1",
-		KnowledgeBaseID: kbID,
-		TenantID:        tenantID,
-		FilePath:        "",
-		Status:          "ready",
-	}))
+	saved := repo.firstSavedDoc()
+	require.NotNil(t, saved)
+	assert.LessOrEqual(t, len([]rune(saved.OriginalName)), 255,
+		"stored name must fit varchar(255)")
+	assert.NotEmpty(t, saved.FileName())
+}
 
-	err := svc.ReindexFileByKB(ctx, kbID, "embed-model-1", "doc-1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "re-upload")
+// TestKnowledgeDocumentFileName_PrefersStored verifies FileName() returns the
+// stored original name when present.
+func TestKnowledgeDocumentFileName_PrefersStored(t *testing.T) {
+	doc := &models.KnowledgeDocument{OriginalName: "report.pdf", FilePath: ""}
+	assert.Equal(t, "report.pdf", doc.FileName())
+}
 
-	// Must map to HTTP 400 (InvalidInput), not 500 — re-index-without-raw is a
-	// client-actionable condition (re-upload), not a server error (SCC-03).
-	var de *pkgerrors.DomainError
-	require.ErrorAs(t, err, &de)
-	assert.Equal(t, pkgerrors.CodeInvalidInput, de.Code)
-
-	// Status must NOT have been flipped to "error".
-	doc, getErr := repo.GetDocumentByID(ctx, "doc-1")
-	require.NoError(t, getErr)
-	require.NotNil(t, doc)
-	assert.Equal(t, "ready", doc.Status)
+// TestKnowledgeDocumentFileName_LegacyFallback verifies FileName() falls back to
+// the FilePath basename for legacy rows that predate the file_name column.
+func TestKnowledgeDocumentFileName_LegacyFallback(t *testing.T) {
+	doc := &models.KnowledgeDocument{
+		OriginalName: "",
+		FilePath:     "/data/knowledge/tenant/kb/8f3a_report.pdf",
+	}
+	assert.Equal(t, "8f3a_report.pdf", doc.FileName())
 }

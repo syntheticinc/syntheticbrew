@@ -102,7 +102,6 @@ export default function KnowledgePage() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
-  const [reindexingFile, setReindexingFile] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Agent linking state ──
@@ -146,10 +145,10 @@ export default function KnowledgePage() {
   }, [selected, agents]);
 
   // ── Files loader ──
-  const loadFiles = useCallback(async (kbId: string) => {
+  const loadFiles = useCallback(async (kbName: string) => {
     setFilesLoading(true);
     try {
-      const result = await api.listKBFiles(kbId);
+      const result = await api.listKBFiles(kbName);
       setFiles(result);
     } catch {
       setFiles([]);
@@ -164,10 +163,10 @@ export default function KnowledgePage() {
     const hasInProgress = files.some(f => f.status === 'indexing' || f.status === 'uploading');
     if (!hasInProgress) return;
     const timer = setInterval(() => {
-      api.listKBFiles(selected.id).then((updated) => {
+      api.listKBFiles(selected.name).then((updated) => {
         setFiles(updated);
         // Also refresh the KB row to update file_count
-        api.getKnowledgeBase(selected.id).then((kb) => {
+        api.getKnowledgeBase(selected.name).then((kb) => {
           setSelected(kb);
           refetch();
         }).catch(() => {});
@@ -181,7 +180,7 @@ export default function KnowledgePage() {
     setSelected(kb);
     setActionError(null);
     setLinkingAgent('');
-    loadFiles(kb.id);
+    loadFiles(kb.name);
   }
 
   function handleClosePanel() {
@@ -198,7 +197,7 @@ export default function KnowledgePage() {
     const updated = updatedList.find((kb) => kb.id === kbId);
     if (updated) {
       setSelected(updated);
-      loadFiles(updated.id);
+      loadFiles(updated.name);
     }
   }
 
@@ -230,7 +229,7 @@ export default function KnowledgePage() {
     setSaving(true);
     try {
       if (editTarget) {
-        await api.updateKnowledgeBase(editTarget.id, form);
+        await api.updateKnowledgeBase(editTarget.name, form);
       } else {
         await api.createKnowledgeBase(form);
       }
@@ -248,7 +247,7 @@ export default function KnowledgePage() {
   async function handleDelete() {
     if (!deleteTarget) return;
     try {
-      await api.deleteKnowledgeBase(deleteTarget.id);
+      await api.deleteKnowledgeBase(deleteTarget.name);
       setDeleteTarget(null);
       setSelected(null);
       setFiles([]);
@@ -265,7 +264,7 @@ export default function KnowledgePage() {
     setActionError(null);
     try {
       for (let i = 0; i < fileList.length; i++) {
-        await api.uploadKBFile(selected.id, fileList[i]!);
+        await api.uploadKBFile(selected.name, fileList[i]!);
       }
       await refreshSelected(selected.id);
     } catch (err: unknown) {
@@ -289,26 +288,12 @@ export default function KnowledgePage() {
     setDeletingFile(fileId);
     setActionError(null);
     try {
-      await api.deleteKBFile(selected.id, fileId);
+      await api.deleteKBFile(selected.name, fileId);
       await refreshSelected(selected.id);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : 'Failed to delete file');
     } finally {
       setDeletingFile(null);
-    }
-  }
-
-  async function handleReindexFile(fileId: string) {
-    if (!selected || reindexingFile) return;
-    setReindexingFile(fileId);
-    setActionError(null);
-    try {
-      await api.reindexKBFile(selected.id, fileId);
-      await refreshSelected(selected.id);
-    } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Failed to reindex file');
-    } finally {
-      setReindexingFile(null);
     }
   }
 
@@ -318,7 +303,7 @@ export default function KnowledgePage() {
     setLinkingSaving(true);
     setActionError(null);
     try {
-      await api.linkAgentToKB(selected.id, linkingAgent);
+      await api.linkAgentToKB(selected.name, linkingAgent);
       setLinkingAgent('');
       await refreshSelected(selected.id);
     } catch (err: unknown) {
@@ -332,7 +317,7 @@ export default function KnowledgePage() {
     if (!selected) return;
     setActionError(null);
     try {
-      await api.unlinkAgentFromKB(selected.id, agentName);
+      await api.unlinkAgentFromKB(selected.name, agentName);
       await refreshSelected(selected.id);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : 'Failed to unlink agent');
@@ -440,16 +425,6 @@ export default function KnowledgePage() {
       header: '',
       render: (row: KnowledgeFile) => (
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (row.id) handleReindexFile(row.id);
-            }}
-            disabled={reindexingFile === row.id || row.status === 'indexing' || row.status === 'uploading'}
-            className="px-2 py-0.5 text-[11px] text-brand-shade2 border border-brand-shade3/30 rounded-btn hover:bg-brand-dark-alt hover:text-brand-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {reindexingFile === row.id ? '...' : 'Reindex'}
-          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();

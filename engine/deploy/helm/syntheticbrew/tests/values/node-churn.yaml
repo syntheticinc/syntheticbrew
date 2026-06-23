@@ -1,7 +1,8 @@
 # Test scenario: node-churn stability — no ReadWriteOnce PVC on the pod's
-# startup critical path. The JWT keypair is mounted READ-ONLY from a Secret
-# (config.auth.existingKeysSecret) and knowledge raw-file storage is "none"
-# (PostgreSQL-only), so neither the keys PVC nor the knowledge PVC is created.
+# startup critical path. The engine is always stateless for knowledge (live
+# data in PostgreSQL only), so the only RWO PVC that can exist is the JWT
+# keypair PVC — and that is avoided here by mounting the keypair READ-ONLY from
+# a Secret (config.auth.existingKeysSecret + persistence.keys.enabled=false).
 # The single pod can reschedule to any node in seconds (no CSI attach/detach).
 # Single-replica resilience — NOT HA (replicaCount stays 1).
 replicaCount: 1
@@ -22,9 +23,6 @@ config:
     jwtKeysPath: /var/lib/syntheticbrew/keys
     # Keypair mounted read-only from this Secret → no keys PVC.
     existingKeysSecret: jwt-keys-secret
-  knowledge:
-    # Stateless knowledge — live data in PostgreSQL only, no raw-files PVC.
-    storage: none
 
 persistence:
   keys:

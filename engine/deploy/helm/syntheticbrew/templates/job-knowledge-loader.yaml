@@ -5,9 +5,6 @@
 {{- if not .Values.knowledgeLoader.existingConfigMap }}
 {{- fail "knowledgeLoader.enabled=true requires knowledgeLoader.existingConfigMap (ConfigMap with knowledge files as data keys; create with `kubectl create configmap NAME --from-file=./dir/`, or render via helmfile/Kustomize)" -}}
 {{- end }}
-{{- if not .Values.persistence.knowledge.enabled }}
-{{- fail "knowledgeLoader.enabled=true requires persistence.knowledge.enabled=true (engine needs a writable PVC at /etc/syntheticbrew/knowledge to store uploaded files; without it engine returns 500 'create knowledge directory: permission denied')" -}}
-{{- end }}
 {{- $tokenSecret := .Values.knowledgeLoader.tokenSecret | default .Values.configApply.tokenSecret -}}
 {{- if not $tokenSecret }}
 {{- fail "knowledgeLoader.enabled=true requires either knowledgeLoader.tokenSecret or configApply.tokenSecret (Secret with admin Bearer token under key 'token')" -}}

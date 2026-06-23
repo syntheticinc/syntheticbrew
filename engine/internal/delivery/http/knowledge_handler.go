@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -21,16 +20,10 @@ type KnowledgeStats interface {
 	GetStats(ctx context.Context, agentName string) (docCount int, chunkCount int, lastIndexed *time.Time, err error)
 }
 
-// KnowledgeReindexer triggers re-indexing for an agent's knowledge base.
-type KnowledgeReindexer interface {
-	Reindex(ctx context.Context, agentName string) error
-}
-
-// KnowledgeFileLister lists knowledge files for an agent (AC-KB-LIST-01..05).
+// KnowledgeFileLister lists knowledge files for an agent (AC-KB-LIST-01..04).
 type KnowledgeFileLister interface {
 	ListFiles(ctx context.Context, agentName string) ([]KnowledgeFileResponse, error)
 	DeleteFile(ctx context.Context, agentName, fileID string) error
-	ReindexFile(ctx context.Context, agentName, fileID string) error
 }
 
 // KnowledgeFileResponse represents a knowledge file in the API response (AC-KB-LIST-02).
@@ -49,16 +42,14 @@ type KnowledgeFileResponse struct {
 // KnowledgeHandler serves /api/v1/agents/{name}/knowledge endpoints.
 type KnowledgeHandler struct {
 	stats        KnowledgeStats
-	reindexer    KnowledgeReindexer
 	fileLister   KnowledgeFileLister
 	fileUploader KnowledgeFileUploader
 }
 
 // NewKnowledgeHandler creates a KnowledgeHandler.
-func NewKnowledgeHandler(stats KnowledgeStats, reindexer KnowledgeReindexer) *KnowledgeHandler {
+func NewKnowledgeHandler(stats KnowledgeStats) *KnowledgeHandler {
 	return &KnowledgeHandler{
-		stats:     stats,
-		reindexer: reindexer,
+		stats: stats,
 	}
 }
 
@@ -136,32 +127,6 @@ func (h *KnowledgeHandler) Status(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Reindex handles POST /api/v1/agents/{name}/knowledge/reindex.
-func (h *KnowledgeHandler) Reindex(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	if name == "" {
-		writeJSONError(w, http.StatusBadRequest, "agent name is required")
-		return
-	}
-
-	if h.reindexer == nil {
-		writeJSONError(w, http.StatusNotImplemented, "Knowledge indexing requires an embedding model. Configure one in Models → select type Embeddings.")
-		return
-	}
-
-	// Launch async reindex
-	go func() {
-		ctx := context.Background()
-		if err := h.reindexer.Reindex(ctx, name); err != nil {
-			slog.ErrorContext(ctx, "reindex failed", "agent", name, "error", err)
-		}
-	}()
-
-	writeJSON(w, http.StatusAccepted, map[string]string{
-		"status": "indexing_started",
-	})
-}
-
 // ListFiles handles GET /api/v1/agents/{name}/knowledge (AC-KB-LIST-01..02).
 func (h *KnowledgeHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
@@ -208,28 +173,6 @@ func (h *KnowledgeHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-}
-
-// ReindexFile handles POST /api/v1/agents/{name}/knowledge/{file_id}/reindex (AC-KB-LIST-05).
-func (h *KnowledgeHandler) ReindexFile(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	fileID := chi.URLParam(r, "file_id")
-	if name == "" || fileID == "" {
-		writeJSONError(w, http.StatusBadRequest, "agent name and file_id are required")
-		return
-	}
-
-	if h.fileLister == nil {
-		writeJSONError(w, http.StatusNotImplemented, "Knowledge indexing requires an embedding model. Configure one in Models → select type Embeddings.")
-		return
-	}
-
-	if err := h.fileLister.ReindexFile(r.Context(), name, fileID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "reindex_started"})
 }
 
 // --- WP-3: File Upload ---

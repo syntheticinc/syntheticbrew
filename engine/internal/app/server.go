@@ -25,7 +25,6 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/flowregistry"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/kgtools"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/lsp"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence"
@@ -297,9 +296,8 @@ func Run(sc ServerConfig) error {
 		return fmt.Errorf("create infrastructure components: %w", err)
 	}
 
-	// Knowledge indexing infrastructure (created before HTTP so endpoints can use it)
+	// Knowledge embeddings infrastructure (created before HTTP so endpoints can use it)
 	var knowledgeRepo *configrepo.GORMKnowledgeRepository
-	var knowledgeIndexer *knowledge.Indexer
 	var embeddingsClient *indexing.EmbeddingsClient
 	if pgDB != nil {
 		knowledgeRepo = configrepo.NewGORMKnowledgeRepository(pgDB)
@@ -308,7 +306,6 @@ func Run(sc ServerConfig) error {
 			embedCfg = bootstrapCfg.Embeddings
 		}
 		embeddingsClient = indexing.NewClient(embedCfg)
-		knowledgeIndexer = knowledge.NewIndexer(embeddingsClient, knowledgeRepo, slog.Default())
 	}
 
 	// Initialize MCP Manager — owns per-tenant ClientRegistry instances.
@@ -689,7 +686,6 @@ func Run(sc ServerConfig) error {
 			TaskRepo:             taskRepo,
 			APITokenRepo:         apiTokenRepo,
 			KnowledgeRepo:        knowledgeRepo,
-			KnowledgeIndexer:     knowledgeIndexer,
 			EmbeddingsClient:     embeddingsClient,
 			MCPManager:           mcpManager,
 			CBRegistry:           cbRegistry,
@@ -709,8 +705,6 @@ func Run(sc ServerConfig) error {
 			ExternalRouter:       r,
 			InternalRouter:       internalRouter,
 			HasInternalServer:    internalHTTPServer != nil,
-			KnowledgeDataDir:     bootstrapCfg.Knowledge.DataDir,
-			KnowledgeStorageMode: bootstrapCfg.Knowledge.Storage,
 			KGToolProvider:       kgToolProvider,
 		})
 

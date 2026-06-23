@@ -30,14 +30,6 @@ persistence:
     enabled: true
     size: 1Mi
     storageClass: standard
-  # Required by knowledgeLoader: engine writes uploaded files to
-  # {DATA_DIR=/etc/syntheticbrew}/knowledge/{tenant}/{kb}/. Without this PVC
-  # engine returns HTTP 500 on every upload.
-  knowledge:
-    enabled: true
-    size: 100Mi
-    storageClass: standard
-    accessMode: ReadWriteOnce
 
 ingress: { enabled: false }
 httpRoute: { enabled: false }

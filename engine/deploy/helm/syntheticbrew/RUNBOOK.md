@@ -137,9 +137,11 @@ new pod deadlocks Pending on PVC contention → atomic timeout. Recreate
 avoids this. `auth.mode=external` (HA) keeps RollingUpdate.
 
 Chart 0.10.0+ auto-selects `RollingUpdate` when **no** RWO PVC is mounted —
-i.e. keypair from a Secret (`config.auth.existingKeysSecret`) AND knowledge
-`storage: none`. With no RWO volume there is no attach contention, so the
-near-zero-downtime strategy is safe. See "Node-churn stability" below.
+i.e. the keypair comes from a Secret (`config.auth.existingKeysSecret`). The
+engine is always stateless for knowledge (live data in PostgreSQL/pgvector), so
+the keypair PVC is the only RWO volume that can exist. With no RWO volume there
+is no attach contention, so the near-zero-downtime strategy is safe. See
+"Node-churn stability" below.
 
 If you genuinely need RollingUpdate while a PVC is still mounted (e.g. RWX
 storage), override:
@@ -156,16 +158,18 @@ deploymentStrategy:
 ## Node-churn stability (chart 0.10.0+)
 
 A single-replica engine can sit in `ContainerCreating` for a long time when its
-node is drained or churned, because two RWO PVCs are on the pod's startup
-critical path: the JWT keypair PVC and the knowledge raw-files PVC. On some CSI
-drivers a detach locks for a long time, so the rescheduled pod cannot attach.
-Take both PVCs off the path → the pod reschedules to any node in seconds.
+node is drained or churned, because a RWO PVC is on the pod's startup critical
+path: the JWT keypair PVC. (Knowledge is never a factor — the engine is always
+stateless for knowledge, with live data in PostgreSQL/pgvector and no raw-files
+PVC.) On some CSI drivers a detach locks for a long time, so the rescheduled pod
+cannot attach. Take the keypair PVC off the path → the pod reschedules to any
+node in seconds.
 
 This is single-replica resilience, **NOT HA** — one pod still. A graceful drain
 moves it quickly; a hard node crash mid-request loses the in-flight turn (history
 is in Postgres → the client retries). For HA use `auth.mode=external`.
 
-### 1. Provision the JWT keypair as a read-only Secret
+### Provision the JWT keypair as a read-only Secret
 
 The simplest authoring path is to let the engine generate the keypair once, then
 copy the two files into a Secret. **Reuse the EXISTING keypair** — a new key
@@ -197,21 +201,13 @@ rm -f jwt_ed25519.priv jwt_ed25519.pub   # do not leave the private key on disk
 The keypair is mounted READ-ONLY (`defaultMode: 0400`); the engine loads it and
 skips generation. No keys PVC is created.
 
-### 2. Knowledge storage mode
+### Knowledge is stateless — nothing to configure
 
-```yaml
-config:
-  knowledge:
-    storage: none   # PostgreSQL-only, no raw-files PVC → pod stateless
-    # storage: local  # persist raw files to the knowledge PVC (re-index w/o re-upload)
-    # storage: ""     # derive: local if persistence.knowledge.enabled, else none
-```
-
-**Migrating `local` → `none`:** the engine stops persisting raw files, but the
-chunks and embeddings already in PostgreSQL keep working for search — no data
-loss for existing knowledge. Only **re-indexing old files** needs a re-upload
-(the raw bytes are no longer on disk). New uploads under `none` are embedded into
-Postgres as before; they just are not retained as raw files.
+The engine never persists raw knowledge files: uploaded documents are chunked
+into PostgreSQL/pgvector and the raw bytes are discarded. There is no knowledge
+PVC and no storage mode to set. Re-indexing a document requires a re-upload (the
+raw bytes are no longer on disk); search over already-ingested chunks keeps
+working regardless.
 
 ---
 

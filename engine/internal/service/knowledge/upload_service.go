@@ -15,7 +15,6 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
 	infknowledge "github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
-	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // tenantFromCtx extracts tenant_id from context, falling back to CETenantID for CE mode.
@@ -76,26 +75,19 @@ type FileResponse struct {
 	IndexedAt       string `json:"indexed_at,omitempty"`
 }
 
-// UploadService handles file uploads, storage, and async indexing.
+// UploadService handles file uploads and async indexing. Knowledge is
+// stateless: no raw file is written, the live knowledge (chunks+embeddings)
+// lives in PostgreSQL and the file name is kept as document metadata.
 type UploadService struct {
 	repo              DocumentRepository
 	embeddingResolver EmbeddingModelResolver // legacy: resolves from agent capability config
 	kbEmbedResolver   KBEmbeddingResolver    // resolves from KB's embedding_model_id
-	dataDir           string
-	// persistRaw, when true, writes the raw uploaded file under dataDir so a
-	// later re-index can read it without a re-upload. When false (stateless
-	// default) no raw file is written — the live knowledge (chunks+embeddings)
-	// lives in PostgreSQL and async indexing uses the in-memory content.
-	persistRaw bool
 }
 
-// NewUploadService creates a new knowledge upload service. persistRaw selects
-// whether raw uploaded files are written to disk (see UploadService.persistRaw).
-func NewUploadService(repo DocumentRepository, dataDir string, persistRaw bool) *UploadService {
+// NewUploadService creates a new knowledge upload service.
+func NewUploadService(repo DocumentRepository) *UploadService {
 	return &UploadService{
-		repo:       repo,
-		dataDir:    dataDir,
-		persistRaw: persistRaw,
+		repo: repo,
 	}
 }
 
@@ -111,6 +103,19 @@ func (s *UploadService) SetKBEmbeddingResolver(resolver KBEmbeddingResolver) {
 
 // UploadFileToKB stores a file on disk, creates a DB record, and triggers async indexing.
 // Files are scoped to a KnowledgeBase, not an agent.
+// clampFileName caps the stored file name at the file_name column width
+// (varchar(255)). Over-long names — rare, since filesystems already cap at
+// 255 — are truncated rather than rejected so the upload still succeeds with a
+// usable label instead of failing the DB insert with a 500.
+func clampFileName(name string) string {
+	const maxFileNameLen = 255
+	r := []rune(name)
+	if len(r) <= maxFileNameLen {
+		return name
+	}
+	return string(r[:maxFileNameLen])
+}
+
 func (s *UploadService) UploadFileToKB(ctx context.Context, tenantID, kbID, embeddingModelID, fileName, fileType string, fileSize int64, fileHash string, content []byte) (*FileResponse, error) {
 	// Guard: verify embedding model is available.
 	if embeddingModelID == "" {
@@ -124,27 +129,14 @@ func (s *UploadService) UploadFileToKB(ctx context.Context, tenantID, kbID, embe
 
 	docID := uuid.New().String()
 
-	// When stateless (persistRaw==false) no raw file is written and FilePath
-	// stays empty; the live knowledge (chunks+embeddings) lives in PostgreSQL
-	// and async indexing uses the in-memory content below.
-	var filePath string
-	if s.persistRaw {
-		// Create storage directory: data/knowledge/{tenant_id}/{kb_id}/
-		dir := filepath.Join(s.dataDir, "knowledge", tenantID, kbID)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("create knowledge directory: %w", err)
-		}
-		filePath = filepath.Join(dir, docID+"_"+fileName)
-		if err := os.WriteFile(filePath, content, 0o644); err != nil {
-			return nil, fmt.Errorf("write file: %w", err)
-		}
-	}
-
+	// Stateless: no raw file is written (FilePath stays empty). The file name is
+	// kept as document metadata and the live knowledge (chunks+embeddings) lives
+	// in PostgreSQL; async indexing uses the in-memory content below.
 	doc := &models.KnowledgeDocument{
 		ID:              docID,
 		KnowledgeBaseID: kbID,
 		TenantID:        tenantID,
-		FilePath:        filePath,
+		OriginalName:    clampFileName(fileName),
 		FileType:        fileType,
 		FileSize:        fileSize,
 		FileHash:        fileHash,
@@ -154,9 +146,6 @@ func (s *UploadService) UploadFileToKB(ctx context.Context, tenantID, kbID, embe
 	}
 
 	if err := s.repo.SaveDocument(ctx, doc); err != nil {
-		if filePath != "" {
-			_ = os.Remove(filePath)
-		}
 		return nil, fmt.Errorf("save document record: %w", err)
 	}
 
@@ -181,35 +170,21 @@ func (s *UploadService) UploadFile(ctx context.Context, tenantID, agentName, fil
 
 	docID := uuid.New().String()
 
-	// See UploadFileToKB: FilePath stays empty when stateless.
-	var filePath string
-	if s.persistRaw {
-		dir := filepath.Join(s.dataDir, "knowledge", tenantID, agentName)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("create knowledge directory: %w", err)
-		}
-		filePath = filepath.Join(dir, docID+"_"+fileName)
-		if err := os.WriteFile(filePath, content, 0o644); err != nil {
-			return nil, fmt.Errorf("write file: %w", err)
-		}
-	}
-
+	// See UploadFileToKB: stateless, FilePath stays empty and the file name is
+	// kept as document metadata.
 	doc := &models.KnowledgeDocument{
-		ID:        docID,
-		TenantID:  tenantID,
-		FilePath:  filePath,
-		FileType:  fileType,
-		FileSize:  fileSize,
-		FileHash:  fileHash,
-		Status:    "indexing",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:           docID,
+		TenantID:     tenantID,
+		OriginalName: clampFileName(fileName),
+		FileType:     fileType,
+		FileSize:     fileSize,
+		FileHash:     fileHash,
+		Status:       "indexing",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	if err := s.repo.SaveDocument(ctx, doc); err != nil {
-		if filePath != "" {
-			_ = os.Remove(filePath)
-		}
 		return nil, fmt.Errorf("save document record: %w", err)
 	}
 
@@ -507,39 +482,6 @@ func (s *UploadService) deleteDocFull(ctx context.Context, doc *models.Knowledge
 	if err := s.repo.DeleteDocument(ctx, doc.ID); err != nil {
 		return fmt.Errorf("delete document: %w", err)
 	}
-	return nil
-}
-
-// ReindexFileByKB re-indexes a file belonging to a KB.
-func (s *UploadService) ReindexFileByKB(ctx context.Context, kbID, embeddingModelID, fileID string) error {
-	doc, err := s.repo.GetDocumentByID(ctx, fileID)
-	if err != nil || doc == nil || doc.KnowledgeBaseID != kbID {
-		return fmt.Errorf("file not found")
-	}
-	tenantID := tenantFromCtx(ctx)
-	if doc.TenantID != tenantID {
-		return fmt.Errorf("file not found")
-	}
-
-	// No raw file was persisted (stateless storage) — re-index is impossible
-	// without the original content. Don't flip status to "error"; the document
-	// is still valid, the caller just needs to re-upload.
-	if doc.FilePath == "" {
-		return pkgerrors.InvalidInput("re-index requires the original file, which is not stored when knowledge storage is \"none\"; re-upload the file to re-index")
-	}
-
-	content, err := os.ReadFile(doc.FilePath)
-	if err != nil {
-		s.updateDocStatus(ctx, fileID, "error", fmt.Sprintf("read file failed: %v", err), 0)
-		return fmt.Errorf("read file: %w", err)
-	}
-
-	if err := s.repo.DeleteChunksByDocument(ctx, fileID); err != nil {
-		return fmt.Errorf("delete old chunks: %w", err)
-	}
-
-	s.updateDocStatus(ctx, fileID, "indexing", "", 0)
-	go s.indexFileAsyncKB(fileID, doc.TenantID, kbID, embeddingModelID, doc.FileName(), string(content))
 	return nil
 }
 

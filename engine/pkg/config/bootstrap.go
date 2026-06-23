@@ -33,7 +33,6 @@ type BootstrapConfig struct {
 	Embeddings EmbeddingsConfig   `mapstructure:"embeddings"`
 	Debug      DebugConfig        `mapstructure:"debug"`
 	MCP        MCPBootstrap       `mapstructure:"mcp"`
-	Knowledge  KnowledgeBootstrap `mapstructure:"knowledge"`
 	LSP        LSPBootstrap       `mapstructure:"lsp"`
 	Updates    UpdatesConfig      `mapstructure:"updates"`
 	Seed       SeedConfig         `mapstructure:"seed"`
@@ -114,16 +113,6 @@ type DebugConfig struct {
 // syntheticbrew-docs catalog entry — useful in tests / staging).
 type MCPBootstrap struct {
 	DocsURL string `mapstructure:"docs_url"`
-}
-
-// KnowledgeBootstrap holds settings for the file-backed knowledge upload store.
-type KnowledgeBootstrap struct {
-	DataDir string `mapstructure:"data_dir"`
-	// Storage selects whether raw uploaded files are persisted to disk.
-	// "none" (default) — don't persist raw uploaded files; the live knowledge
-	// (chunks+embeddings) lives in PostgreSQL, so re-index requires re-upload.
-	// "local" — persist raw files under DataDir so re-index works without re-upload.
-	Storage string `mapstructure:"storage"`
 }
 
 // LSPBootstrap holds language-server installer toggles.
@@ -260,8 +249,6 @@ func bindEnvVars(v *viper.Viper) {
 		"embeddings.dim":              EnvEmbedDim,
 		"debug.model_debug_dir":       EnvDebugModel,
 		"mcp.docs_url":                EnvDocsMCPURL,
-		"knowledge.data_dir":          EnvDataDir,
-		"knowledge.storage":           EnvKnowledgeStorage,
 		"lsp.disable_download":           EnvDisableLSPDownload,
 		"updates.versions_url":           EnvVersionsURL,
 		"seed.bootstrap_admin_token":     EnvBootstrapAdminToken,
@@ -285,8 +272,6 @@ func bindEnvVars(v *viper.Viper) {
 func setBootstrapDefaults(v *viper.Viper) {
 	v.SetDefault("security.auth_mode", AuthModeLocal)
 	v.SetDefault("security.local_session_ttl", time.Hour)
-	v.SetDefault("knowledge.data_dir", "data")
-	v.SetDefault("knowledge.storage", "none")
 	// Embeddings defaults intentionally omitted — the indexing package owns
 	// the canonical defaults (DefaultOllamaURL / DefaultEmbedModel /
 	// DefaultDimension); the consumer fills them when the field is empty.
@@ -320,8 +305,6 @@ func expandBootstrapEnvVars(cfg *BootstrapConfig) {
 	cfg.Embeddings.Model = expandEnvVars(cfg.Embeddings.Model)
 	cfg.Debug.ModelDebugDir = expandEnvVars(cfg.Debug.ModelDebugDir)
 	cfg.MCP.DocsURL = expandEnvVars(cfg.MCP.DocsURL)
-	cfg.Knowledge.DataDir = expandEnvVars(cfg.Knowledge.DataDir)
-	cfg.Knowledge.Storage = expandEnvVars(cfg.Knowledge.Storage)
 	cfg.Updates.VersionsURL = expandEnvVars(cfg.Updates.VersionsURL)
 	cfg.Seed.BootstrapAdminToken = expandEnvVars(cfg.Seed.BootstrapAdminToken)
 }
@@ -353,13 +336,6 @@ func validateBootstrap(cfg *BootstrapConfig) error {
 		return fmt.Errorf("invalid auth_mode %q (expected %q or %q)",
 			cfg.Security.AuthMode, AuthModeLocal, AuthModeExternal)
 	}
-	// Knowledge storage mode: "" is treated as "none" (stateless default).
-	switch cfg.Knowledge.Storage {
-	case "", "none", "local":
-	default:
-		return fmt.Errorf("invalid knowledge.storage %q (expected %q or %q)",
-			cfg.Knowledge.Storage, "none", "local")
-	}
 	return nil
 }
 
@@ -380,10 +356,6 @@ func DefaultBootstrapConfig() *BootstrapConfig {
 		Security: BootstrapSecurity{
 			AuthMode:        AuthModeLocal,
 			LocalSessionTTL: time.Hour,
-		},
-		Knowledge: KnowledgeBootstrap{
-			DataDir: "data",
-			Storage: "none",
 		},
 	}
 }

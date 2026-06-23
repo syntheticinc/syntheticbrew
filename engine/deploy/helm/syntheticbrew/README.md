@@ -21,7 +21,6 @@ it has been validated. Pick what your environment supports and treat
 | `containerSecurityContext.readOnlyRootFilesystem: true` (auto /tmp emptyDir) | **Stable** | CI render-validated; smoke runs render-only on kind |
 | `replicaCount=1` enforcement (`auth.mode=local`) | **Stable** | CI gate (template `fail` on `replicaCount > 1`) |
 | `config.auth.existingKeysSecret` (keypair via Secret) | **Beta** | CI render-validated |
-| `config.knowledge.storage` (`none`/`local`) | **Beta** | CI render-validated |
 | AWS IRSA annotations                   | **Beta**     | CI render-validated only — no AWS account in CI; community feedback welcome |
 | GCP Workload Identity annotations      | **Beta**     | CI render-validated only — no GCP account in CI |
 | NetworkPolicy enabled                  | **Beta**     | CI render-validated only — kind default CNI does NOT enforce NetworkPolicy |
@@ -134,43 +133,40 @@ untrusted clients:
 ## Availability on node churn / autoscaling clusters
 
 A single-replica engine (`auth.mode=local`) can wedge for a long time when its
-node is drained, cordoned, or churned by the cluster-autoscaler. The cause is
-**two ReadWriteOnce PVCs on the pod's startup critical path**:
+node is drained, cordoned, or churned by the cluster-autoscaler. The cause is a
+**ReadWriteOnce PVC on the pod's startup critical path** — the **JWT keypair
+PVC** (`persistence.keys`, written by local auth).
 
-1. the **JWT keypair PVC** (`persistence.keys`, written by local auth), and
-2. the **knowledge raw-files PVC** (`persistence.knowledge`).
+Knowledge is never a factor: the engine is always stateless for knowledge — live
+data (chunks + embeddings) lives in PostgreSQL/pgvector and raw upload bytes are
+not persisted, so no knowledge PVC exists.
 
 RWO is a block volume bound to one node at a time. When the pod moves, the CSI
 driver must detach from the old node before attaching to the new one — and on
 some drivers (e.g. Hetzner CSE) that detach can lock for a long time. The
 rescheduled pod sits in `ContainerCreating` (→ 502) until the volume frees.
 
-This chart lets you take **both** PVCs off the critical path so the single pod
+This chart lets you take the keypair PVC off the critical path so the single pod
 reschedules to any node in seconds:
 
 - **`config.auth.existingKeysSecret`** — mount the Ed25519 keypair READ-ONLY
   from a Secret instead of writing it to a PVC. A Secret is replicated through
   the API server and mounts on any node with no block-volume attach/detach, so
   no keys PVC is created. See the RUNBOOK for how to provision the Secret.
-- **`config.knowledge.storage: none`** — keep live knowledge in PostgreSQL only
-  and write no raw files, so no knowledge PVC is created and the pod is
-  stateless. (`local` keeps the raw-files PVC; empty derives the mode from
-  `persistence.knowledge.enabled` for back-compat.)
 
-When neither PVC is mounted the chart auto-selects `strategy: RollingUpdate`
-(near-zero redeploy downtime); with any RWO PVC it stays `Recreate` to avoid the
-upgrade deadlock. `clusterAutoscaler.safeToEvict` (default `false`) also renders
-`cluster-autoscaler.kubernetes.io/safe-to-evict` on the pod so the autoscaler
-does not proactively evict the single stateful pod during node optimisation —
-set `true` once both PVCs are off the path and you want the pod freely movable.
+When no PVC is mounted the chart auto-selects `strategy: RollingUpdate`
+(near-zero redeploy downtime); with the keys PVC mounted it stays `Recreate` to
+avoid the upgrade deadlock. `clusterAutoscaler.safeToEvict` (default `false`)
+also renders `cluster-autoscaler.kubernetes.io/safe-to-evict` on the pod so the
+autoscaler does not proactively evict the single stateful pod during node
+optimisation — set `true` once the keys PVC is off the path and you want the pod
+freely movable.
 
 ```yaml
 config:
   auth:
     mode: local
     existingKeysSecret: syntheticbrew-jwt-keys   # keypair from a read-only Secret
-  knowledge:
-    storage: none                                # stateless — Postgres-only
 persistence:
   keys:
     enabled: false                               # no keys PVC
@@ -374,16 +370,11 @@ no hand-rolled bash on top of `helmfile sync`.
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-3. **Loader values.** Enable the hook + the writable PVC engine needs to
-   store uploaded files:
+3. **Loader values.** Enable the hook. The engine is stateless — uploaded
+   files are chunked into PostgreSQL (pgvector) and the raw bytes are not
+   persisted, so no PVC is required:
 
     ```yaml
-    persistence:
-      knowledge:
-        enabled: true                             # required (engine writes
-        size: 1Gi                                 # to {DATA_DIR}/knowledge/)
-        storageClass: ""                          # cluster default
-
     knowledgeLoader:
       enabled: true
       kb: handbook                                # MUST match knowledge_bases[].name
@@ -436,12 +427,13 @@ is the single source of truth for the KB.
 **Required envelope:**
 
 - `configApply.enabled=true` with a matching `knowledge_bases:` entry
-- `persistence.knowledge.enabled=true` (chart fail-fasts at render
-  otherwise — engine writes to `{DATA_DIR}/knowledge/{tenant}/{kb}/`,
-  no PVC means HTTP 500 on every upload)
 - `configApply.apiKeysSecret` with a real key bound to the embedding
   model. Embeddings run async after upload — placeholder keys leave
   files in `status: error` (visible in Admin UI / `GET /files`).
+
+The engine is stateless: uploaded files are chunked into PostgreSQL
+(pgvector) and the raw bytes are not persisted, so the loader needs no PVC.
+Re-indexing requires a re-upload (the raw bytes are no longer on disk).
 
 **ConfigMap size limit.** Stock k8s caps a ConfigMap at ~1 MB of total
 data. For larger corpora, switch `existingConfigMap` to a CSI-driver

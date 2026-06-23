@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.9.0] — 2026-06-22
+## [1.9.0] — 2026-06-23
 
 ### Fixed
 
@@ -15,22 +15,38 @@
   a fallback when the DB carries no default (env-only deployments). Only the
   CE/single-tenant sentinel tenant's default is loaded at boot; Cloud
   multi-tenant per-tenant resolution at chat time is unchanged.
+- **Knowledge file names display correctly.** The uploaded file name is now stored
+  as a dedicated `file_name` column on `knowledge_documents` and returned in the
+  API/admin file list. Previously the name was derived from the raw-file path; once
+  raw files stopped being persisted the path was empty and `filepath.Base("")`
+  surfaced every file as `"."`. Legacy rows fall back to the path basename, so
+  existing deployments are unaffected.
+- **Admin knowledge file upload/list/manage now works.** The admin dashboard
+  addressed knowledge-base sub-resources (files, agent links, edit/delete) by the
+  KB UUID, but the engine resolves those routes by name and rejects UUID-shaped
+  path segments — so every upload/list/link call returned 400. The admin now
+  addresses them by name, matching how it already addresses agents, models, and
+  schemas.
 
-### Added
+### Changed
 
-- **`SYNTHETICBREW_KNOWLEDGE_STORAGE` (`none` | `local`, default `none`) controls
-  raw knowledge-file persistence.** The searchable knowledge (chunks + embeddings)
-  always lives in PostgreSQL/pgvector; the raw uploaded file is only a cold cache
-  used for re-index. With `none` (default) the engine no longer writes raw files to
-  disk at all — uploads still index normally (the async indexer uses the in-memory
-  upload content), search is unaffected, and the deployment needs no writable
-  knowledge volume. With `local` the engine persists raw files under `DATA_DIR` so
-  re-index works without re-upload (previous behavior). Motivation: a
-  ReadWriteOnce knowledge volume on the pod's startup critical path turns a routine
-  node move into a multi-hour outage when the CSI detach wedges; `none` removes the
-  volume entirely so the single-replica pod reschedules to any node in seconds.
-  Re-index of a file uploaded under `none` returns a clear "re-upload required"
-  error instead of failing on a missing file.
+- **Knowledge storage is now always stateless.** The engine never writes raw
+  knowledge files to disk — the searchable knowledge (chunks + embeddings) in
+  PostgreSQL/pgvector is the only persisted form, and the original file name is
+  kept as metadata. Uploads index automatically (the async indexer uses the
+  in-memory upload content) and the deployment needs no knowledge volume, so a
+  ReadWriteOnce knowledge PVC can no longer wedge a node move into a multi-hour
+  outage. (This supersedes the never-released `SYNTHETICBREW_KNOWLEDGE_STORAGE`
+  toggle — there is no storage-mode choice anymore.)
+
+### Removed
+
+- **Knowledge re-index removed.** Indexing happens automatically on upload; to
+  re-index a document, re-upload it. The
+  `POST /api/v1/agents/{name}/knowledge/reindex`,
+  `POST /api/v1/agents/{name}/knowledge/files/{file_id}/reindex`, and
+  `POST /api/v1/knowledge-bases/{name}/files/{file_id}/reindex` endpoints are gone
+  (404), and the admin re-index button is removed.
 
 ### Notes
 

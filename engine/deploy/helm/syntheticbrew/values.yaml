@@ -93,17 +93,6 @@ config:
     # these files and skips generation. Mutually exclusive with persistence.keys.
     existingKeysSecret: ""
 
-  # Knowledge raw-file storage mode: "none" | "local".
-  # Empty derives the mode: "local" if persistence.knowledge.enabled, else
-  # "none" (back-compat — existing knowledge deployments keep persisting).
-  #   none  — engine keeps live knowledge in PostgreSQL only and writes NO raw
-  #           files → no knowledge PVC → pod stateless (re-index requires
-  #           re-upload).
-  #   local — persist raw files to the knowledge PVC so re-index works without
-  #           re-upload.
-  knowledge:
-    storage: ""
-
   # Embedding model
   embedURL: ""
   embedModel: nomic-embed-text
@@ -122,13 +111,6 @@ persistence:
   keys:
     enabled: true
     size: 1Mi
-    storageClass: ""
-    accessMode: ReadWriteOnce
-
-  # Knowledge base storage
-  knowledge:
-    enabled: false
-    size: 1Gi
     storageClass: ""
     accessMode: ReadWriteOnce
 
@@ -380,13 +362,11 @@ bootstrapAdminToken:
 # engine REST API (POST /api/v1/knowledge-bases/{id}/files). Idempotent
 # across helmfile sync runs.
 #
+# The engine is stateless: uploaded files are chunked into PostgreSQL
+# (pgvector) and the raw bytes are not persisted, so the loader needs no PVC.
+#
 # REQUIREMENTS:
 #   - configApply.enabled=true with a knowledge_bases entry matching .kb
-#   - persistence.knowledge.enabled=true (engine writes uploaded files to
-#     {DATA_DIR}/knowledge/{tenant}/{kb}/ on disk; without a PVC mounted
-#     at /etc/syntheticbrew/knowledge engine returns 500 on every upload).
-#     The chart fail-fasts at template render with a clear error if this
-#     is missing.
 #   - configApply.apiKeysSecret with a real OPENROUTER/OpenAI key bound
 #     to the embedding model declared in the bundle (embeddings run async
 #     after upload; placeholder keys leave files in status=error).
@@ -397,8 +377,6 @@ bootstrapAdminToken:
 #      <name> --from-file=./configs/knowledge/` as a CI step before sync.
 #   2. Set knowledgeLoader.existingConfigMap to that name and .kb to the
 #      KB declared in your bundle.
-#   3. Enable persistence.knowledge so engine has somewhere to write the
-#      uploaded files.
 knowledgeLoader:
   enabled: false
 
