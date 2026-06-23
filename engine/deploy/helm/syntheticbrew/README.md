@@ -110,6 +110,27 @@ secrets — equivalent to no auth against any attacker that already reached
 the cluster, and it would not buy real defence-in-depth. Use a battle-tested
 identity proxy instead.
 
+## Security prerequisites for production (self-hosted)
+
+Install prerequisites the engine assumes — verify before exposing it to
+untrusted clients:
+
+- **Rate limiting + request-size limits live at the edge.** The engine
+  delegates per-IP rate limiting to a reverse proxy by design and has no global
+  in-process throttle. Put a proxy (nginx / Caddy / Envoy) in front with a
+  request rate limit and a body-size cap. (The chat endpoint additionally bounds
+  its own body at 1 MB as a backstop, but per-IP throttling is the edge's job.)
+- **Secrets are stored at rest in the engine database.** Provider API keys —
+  and, when the chart-managed Secret is used, the PostgreSQL password — are
+  stored plaintext-at-rest in the DB / k8s Secrets. Enable encryption-at-rest
+  for the database volume and etcd, and prefer
+  `postgresql.external.existingSecret` + `config.auth.existingKeysSecret` over
+  chart-generated secrets.
+- **Model `base_url` is operator-controlled.** A model's `base_url` is validated
+  for URL format only; an operator with model-write scope can point it at any
+  reachable host (intended — on-prem gateways, ollama on localhost). Restrict
+  who holds model-write scope.
+
 ## Availability on node churn / autoscaling clusters
 
 A single-replica engine (`auth.mode=local`) can wedge for a long time when its

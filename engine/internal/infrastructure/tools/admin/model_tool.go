@@ -76,7 +76,7 @@ func (t *adminCreateModelTool) Info(_ context.Context) (*schema.ToolInfo, error)
 			"type":       {Type: schema.String, Desc: "Provider type: openai_compatible, anthropic, etc.", Required: true},
 			"model_name": {Type: schema.String, Desc: "Model identifier (e.g. gpt-4, claude-3)", Required: true},
 			"base_url":   {Type: schema.String, Desc: "Base URL for the API endpoint", Required: false},
-			"api_key":    {Type: schema.String, Desc: "API key (stored encrypted, never returned)", Required: false},
+			"api_key":    {Type: schema.String, Desc: "API key (stored at rest in the engine database; never returned in API responses)", Required: false},
 			"is_default": {Type: schema.Boolean, Desc: "Mark this model as the tenant default chat model", Required: false},
 		}),
 	}, nil
