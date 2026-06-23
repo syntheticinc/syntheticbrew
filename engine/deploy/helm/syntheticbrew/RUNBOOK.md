@@ -102,6 +102,12 @@ This is intentional: zero-downtime rotation. Step 6 cleans the orphan.
 #      image.tag: "1.0.3"
 #      migrations.image.tag: "1.0.3"
 
+# ⚠️ BEFORE upgrading: back up the database. Migrations are forward-only
+#    (Liquibase `update`); `helm rollback` reverts the Deployment but NOT the
+#    schema, so rolling an engine version back without a pre-upgrade snapshot
+#    can crash on the newer schema (see Rollback section). Snapshot first:
+#        kubectl exec <pg-pod> -- pg_dump -U <user> <db> > backup-pre-upgrade.sql
+
 # 3. Apply
 helmfile -e <env> -l name=syntheticbrew-engine sync
 # OR plain helm:
