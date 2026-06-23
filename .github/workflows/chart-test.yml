@@ -411,6 +411,18 @@ jobs:
         with:
           version: v3.15.0
 
+      # Build the engine + migrations images from THIS commit and load them into
+      # kind. The knowledgeLoader uploads files into a KB, which under the
+      # stateless model needs the engine from this PR — a published image would
+      # be a different (stateful) engine version. Building from source decouples
+      # the chart test from the publish cycle (no post-publish fixture pin).
+      - name: Build engine + migrations images from source
+        run: |
+          docker build -t local/syntheticbrew-engine:ci -f engine/Dockerfile engine
+          docker build -t local/syntheticbrew-migrations:ci -f engine/Dockerfile.migrations engine
+          kind load docker-image local/syntheticbrew-engine:ci local/syntheticbrew-migrations:ci \
+            --name chart-test-knowledge-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Apply postgres-pgvector + knowledge-files fixtures
         run: |
           kubectl apply -f engine/deploy/helm/syntheticbrew/tests/fixtures/postgres-pgvector.yaml
@@ -423,6 +435,8 @@ jobs:
         run: |
           helm install bb engine/deploy/helm/syntheticbrew \
             -f engine/deploy/helm/syntheticbrew/tests/values/knowledge.yaml \
+            --set image.repository=local/syntheticbrew-engine --set image.tag=ci --set image.pullPolicy=Never \
+            --set migrations.image.repository=local/syntheticbrew-migrations --set migrations.image.tag=ci --set migrations.image.pullPolicy=Never \
             --wait --timeout 15m
 
       # NOTE: no explicit `Verify knowledgeLoader Job ran` step. The Job
