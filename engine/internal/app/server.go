@@ -710,6 +710,7 @@ func Run(sc ServerConfig) error {
 			InternalRouter:       internalRouter,
 			HasInternalServer:    internalHTTPServer != nil,
 			KnowledgeDataDir:     bootstrapCfg.Knowledge.DataDir,
+			KnowledgeStorageMode: bootstrapCfg.Knowledge.Storage,
 			KGToolProvider:       kgToolProvider,
 		})
 

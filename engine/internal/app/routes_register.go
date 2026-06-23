@@ -65,6 +65,11 @@ type routesDeps struct {
 	// are stored. Sourced from BootstrapConfig.Knowledge.DataDir
 	// (env DATA_DIR). Empty string defaults to "data".
 	KnowledgeDataDir string
+	// KnowledgeStorageMode selects whether raw uploaded files are persisted to
+	// disk. Sourced from BootstrapConfig.Knowledge.Storage (env
+	// SYNTHETICBREW_KNOWLEDGE_STORAGE). "local" persists raw files; anything
+	// else (incl. "" / "none") is stateless and writes no raw files.
+	KnowledgeStorageMode string
 	// KGToolProvider is the per-tenant Knowledge Graph tool resolver shared
 	// between the strategy registry (capability dispatch) and the apply usecase
 	// (collision detection). Constructed once in server.go.
@@ -267,7 +272,8 @@ func registerHTTPRoutes(deps routesDeps) {
 				dataDir = "data"
 			}
 
-			uploadSvc := svcknowledge.NewUploadService(knowledgeRepo, dataDir)
+			persistRaw := deps.KnowledgeStorageMode == "local"
+			uploadSvc := svcknowledge.NewUploadService(knowledgeRepo, dataDir, persistRaw)
 			uploadSvc.SetEmbeddingResolver(&embeddingModelResolver{db: pgDB})
 			uploadSvc.SetKBEmbeddingResolver(&kbEmbeddingResolver{db: pgDB})
 			knowledgeHandler.SetFileUploader(&knowledgeUploadHTTPAdapter{svc: uploadSvc})

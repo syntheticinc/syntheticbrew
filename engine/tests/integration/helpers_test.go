@@ -238,12 +238,25 @@ func tamperedToken(good string) string {
 	if len(good) == 0 {
 		return good
 	}
-	last := good[len(good)-1]
-	var replacement byte = 'A'
-	if last == 'A' {
+	// Tamper the FIRST byte of the signature segment, which carries 6
+	// significant base64url bits. The previous impl flipped the LAST char of
+	// the token: for a 64-byte Ed25519 signature that final base64url char
+	// encodes only 2 significant bits, so replacing it with 'A' was a no-op
+	// whenever those bits were already zero — the "tampered" token was then
+	// byte-identical to the valid one and (correctly) verified, making the
+	// test intermittently return 200. Flipping a full-significance char
+	// guarantees the decoded signature changes, so a tampered token is always
+	// rejected.
+	dot := strings.LastIndexByte(good, '.')
+	if dot < 0 || dot+1 >= len(good) {
+		return good
+	}
+	sigStart := dot + 1
+	replacement := byte('A')
+	if good[sigStart] == 'A' {
 		replacement = 'B'
 	}
-	return good[:len(good)-1] + string(replacement)
+	return good[:sigStart] + string(replacement) + good[sigStart+1:]
 }
 
 // algNoneToken builds a JWT with alg=none and an empty signature. A

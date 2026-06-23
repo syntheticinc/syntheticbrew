@@ -121,6 +121,41 @@ jobs:
           grep -A1 '            - name: DATA_DIR' "$R" | grep -q 'value: /etc/syntheticbrew'
           echo "OK: knowledgeLoader render + value guards"
 
+      - name: Render — node-churn (no RWO PVC on critical path)
+        run: |
+          set -euo pipefail
+          R=/tmp/r-node-churn.yaml
+          helm template smoke engine/deploy/helm/syntheticbrew \
+            -f engine/deploy/helm/syntheticbrew/tests/values/node-churn.yaml > "$R"
+          # existingKeysSecret → keys volume is a Secret, not a PVC.
+          grep -q 'secretName: "jwt-keys-secret"' "$R"
+          # No keys PVC when the keypair comes from a Secret.
+          if grep -E '^  name: smoke-syntheticbrew-engine-keys$' "$R"; then
+            echo "FAIL: keys PVC rendered despite existingKeysSecret"; exit 1
+          fi
+          # storage=none → no knowledge PVC.
+          if grep -E '^  name: smoke-syntheticbrew-engine-knowledge$' "$R"; then
+            echo "FAIL: knowledge PVC rendered despite storage=none"; exit 1
+          fi
+          # storage=none → SYNTHETICBREW_KNOWLEDGE_STORAGE env present with value none.
+          grep -A1 '            - name: SYNTHETICBREW_KNOWLEDGE_STORAGE' "$R" | grep -q 'value: "none"'
+          # safe-to-evict annotation present (default false).
+          grep -q 'cluster-autoscaler.kubernetes.io/safe-to-evict: "false"' "$R"
+          # No RWO PVC mounted → RollingUpdate (near-zero redeploy downtime).
+          grep -A1 '^  strategy:' "$R" | grep -q 'type: RollingUpdate'
+          echo "OK: node-churn render (Secret keypair, no PVC, storage=none, RollingUpdate)"
+
+      - name: Render — default still uses keys PVC + Recreate (node-churn regression guard)
+        run: |
+          set -euo pipefail
+          R=/tmp/r-default-strategy.yaml
+          helm template smoke engine/deploy/helm/syntheticbrew \
+            -f engine/deploy/helm/syntheticbrew/tests/values/default.yaml > "$R"
+          # Default uses persistence.keys PVC → keys PVC present and Recreate.
+          grep -qE '^  name: smoke-syntheticbrew-engine-keys$' "$R"
+          grep -A1 '^  strategy:' "$R" | grep -q 'type: Recreate'
+          echo "OK: default keeps keys PVC + Recreate"
+
       - name: replicaCount=local guard
         run: |
           set -euo pipefail

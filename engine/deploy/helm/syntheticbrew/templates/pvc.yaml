@@ -1,4 +1,4 @@
-{{- if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled }}
+{{- if and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled (not .Values.config.auth.existingKeysSecret) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -16,7 +16,7 @@ spec:
       storage: {{ .Values.persistence.keys.size }}
 {{- end }}
 ---
-{{- if .Values.persistence.knowledge.enabled }}
+{{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

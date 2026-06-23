@@ -15,6 +15,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
 	infknowledge "github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // tenantFromCtx extracts tenant_id from context, falling back to CETenantID for CE mode.
@@ -81,13 +82,20 @@ type UploadService struct {
 	embeddingResolver EmbeddingModelResolver // legacy: resolves from agent capability config
 	kbEmbedResolver   KBEmbeddingResolver    // resolves from KB's embedding_model_id
 	dataDir           string
+	// persistRaw, when true, writes the raw uploaded file under dataDir so a
+	// later re-index can read it without a re-upload. When false (stateless
+	// default) no raw file is written — the live knowledge (chunks+embeddings)
+	// lives in PostgreSQL and async indexing uses the in-memory content.
+	persistRaw bool
 }
 
-// NewUploadService creates a new knowledge upload service.
-func NewUploadService(repo DocumentRepository, dataDir string) *UploadService {
+// NewUploadService creates a new knowledge upload service. persistRaw selects
+// whether raw uploaded files are written to disk (see UploadService.persistRaw).
+func NewUploadService(repo DocumentRepository, dataDir string, persistRaw bool) *UploadService {
 	return &UploadService{
-		repo:    repo,
-		dataDir: dataDir,
+		repo:       repo,
+		dataDir:    dataDir,
+		persistRaw: persistRaw,
 	}
 }
 
@@ -114,18 +122,22 @@ func (s *UploadService) UploadFileToKB(ctx context.Context, tenantID, kbID, embe
 	}
 	_ = embedder // validated; will re-resolve in async
 
-	// Create storage directory: data/knowledge/{tenant_id}/{kb_id}/
-	dir := filepath.Join(s.dataDir, "knowledge", tenantID, kbID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create knowledge directory: %w", err)
-	}
-
 	docID := uuid.New().String()
-	storedName := docID + "_" + fileName
-	filePath := filepath.Join(dir, storedName)
 
-	if err := os.WriteFile(filePath, content, 0o644); err != nil {
-		return nil, fmt.Errorf("write file: %w", err)
+	// When stateless (persistRaw==false) no raw file is written and FilePath
+	// stays empty; the live knowledge (chunks+embeddings) lives in PostgreSQL
+	// and async indexing uses the in-memory content below.
+	var filePath string
+	if s.persistRaw {
+		// Create storage directory: data/knowledge/{tenant_id}/{kb_id}/
+		dir := filepath.Join(s.dataDir, "knowledge", tenantID, kbID)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create knowledge directory: %w", err)
+		}
+		filePath = filepath.Join(dir, docID+"_"+fileName)
+		if err := os.WriteFile(filePath, content, 0o644); err != nil {
+			return nil, fmt.Errorf("write file: %w", err)
+		}
 	}
 
 	doc := &models.KnowledgeDocument{
@@ -142,7 +154,9 @@ func (s *UploadService) UploadFileToKB(ctx context.Context, tenantID, kbID, embe
 	}
 
 	if err := s.repo.SaveDocument(ctx, doc); err != nil {
-		_ = os.Remove(filePath)
+		if filePath != "" {
+			_ = os.Remove(filePath)
+		}
 		return nil, fmt.Errorf("save document record: %w", err)
 	}
 
@@ -165,17 +179,19 @@ func (s *UploadService) UploadFile(ctx context.Context, tenantID, agentName, fil
 		return nil, fmt.Errorf("cannot upload: %w", err)
 	}
 
-	dir := filepath.Join(s.dataDir, "knowledge", tenantID, agentName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create knowledge directory: %w", err)
-	}
-
 	docID := uuid.New().String()
-	storedName := docID + "_" + fileName
-	filePath := filepath.Join(dir, storedName)
 
-	if err := os.WriteFile(filePath, content, 0o644); err != nil {
-		return nil, fmt.Errorf("write file: %w", err)
+	// See UploadFileToKB: FilePath stays empty when stateless.
+	var filePath string
+	if s.persistRaw {
+		dir := filepath.Join(s.dataDir, "knowledge", tenantID, agentName)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create knowledge directory: %w", err)
+		}
+		filePath = filepath.Join(dir, docID+"_"+fileName)
+		if err := os.WriteFile(filePath, content, 0o644); err != nil {
+			return nil, fmt.Errorf("write file: %w", err)
+		}
 	}
 
 	doc := &models.KnowledgeDocument{
@@ -191,7 +207,9 @@ func (s *UploadService) UploadFile(ctx context.Context, tenantID, agentName, fil
 	}
 
 	if err := s.repo.SaveDocument(ctx, doc); err != nil {
-		_ = os.Remove(filePath)
+		if filePath != "" {
+			_ = os.Remove(filePath)
+		}
 		return nil, fmt.Errorf("save document record: %w", err)
 	}
 
@@ -501,6 +519,13 @@ func (s *UploadService) ReindexFileByKB(ctx context.Context, kbID, embeddingMode
 	tenantID := tenantFromCtx(ctx)
 	if doc.TenantID != tenantID {
 		return fmt.Errorf("file not found")
+	}
+
+	// No raw file was persisted (stateless storage) — re-index is impossible
+	// without the original content. Don't flip status to "error"; the document
+	// is still valid, the caller just needs to re-upload.
+	if doc.FilePath == "" {
+		return pkgerrors.InvalidInput("re-index requires the original file, which is not stored when knowledge storage is \"none\"; re-upload the file to re-index")
 	}
 
 	content, err := os.ReadFile(doc.FilePath)

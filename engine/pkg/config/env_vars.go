@@ -24,6 +24,7 @@ const (
 	EnvDebugModel         = "SYNTHETICBREW_DEBUG_MODEL"
 	EnvDocsMCPURL         = "SYNTHETICBREW_DOCS_MCP_URL"
 	EnvDataDir            = "DATA_DIR"
+	EnvKnowledgeStorage   = "SYNTHETICBREW_KNOWLEDGE_STORAGE"
 	EnvDisableLSPDownload    = "SYNTHETICBREW_DISABLE_LSP_DOWNLOAD"
 	EnvVersionsURL           = "SYNTHETICBREW_VERSIONS_URL"
 	EnvBootstrapAdminToken   = "SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN"

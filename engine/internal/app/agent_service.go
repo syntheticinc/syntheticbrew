@@ -53,14 +53,14 @@ type InfraComponentsConfig struct {
 func NewInfraComponents(icc InfraComponentsConfig) (*InfraComponents, error) {
 	cfg := icc.Config
 
-	// 1. Create LLM model
-	chatModel, err := createChatModel(cfg)
+	// 1. Resolve the boot default chat model. The DB is the source of truth:
+	// env (cfg.LLM) is only a fallback when the DB has no default set. This
+	// keeps DB-only deployments chat-capable across non-deploy restarts
+	// (eviction/drain/OOM/crash) without a manual re-apply.
+	chatModel, modelName, err := resolveBootChatModel(cfg, icc.DB)
 	if err != nil {
 		return nil, err
 	}
-
-	modelName := getModelName(cfg)
-	slog.InfoContext(context.Background(), "agent service initialized", "model", modelName, "provider", cfg.LLM.DefaultProvider)
 
 	chatModel = wrapWithDebugModel(chatModel, icc.ModelDebugDir)
 	plug := icc.Plugin
@@ -123,6 +123,7 @@ func NewInfraComponents(icc InfraComponentsConfig) (*InfraComponents, error) {
 			return nil, errors.Wrap(svcErr, errors.CodeInternal, "failed to create agent service")
 		}
 		slog.InfoContext(context.Background(), "agent service created with multi-agent support",
+			"model", modelName,
 			"task_manager", storageCmp.TaskManager != nil,
 			"agent_pool", agentPool != nil,
 			"engine", ec.Engine != nil)

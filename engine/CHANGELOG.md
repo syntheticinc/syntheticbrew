@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.9.0] — 2026-06-22
+
+### Fixed
+
+- **The default chat model now survives non-deploy restarts.** At boot the engine
+  resolves the default chat model from the database (the tenant's `is_default`
+  chat model) instead of only from env config. A deployment that configures its
+  model via the API/brewctl (model persisted in the DB, no LLM env vars) used to
+  boot without a default model after any restart that was not a fresh deploy
+  (cluster-autoscaler eviction, node drain, OOM, crash): `agent_service` was
+  skipped and chat returned 502 "no LLM model configured" until a manual config
+  re-apply. The DB is now authoritative for the default — env (`cfg.LLM`) is only
+  a fallback when the DB carries no default (env-only deployments). Only the
+  CE/single-tenant sentinel tenant's default is loaded at boot; Cloud
+  multi-tenant per-tenant resolution at chat time is unchanged.
+
+### Added
+
+- **`SYNTHETICBREW_KNOWLEDGE_STORAGE` (`none` | `local`, default `none`) controls
+  raw knowledge-file persistence.** The searchable knowledge (chunks + embeddings)
+  always lives in PostgreSQL/pgvector; the raw uploaded file is only a cold cache
+  used for re-index. With `none` (default) the engine no longer writes raw files to
+  disk at all — uploads still index normally (the async indexer uses the in-memory
+  upload content), search is unaffected, and the deployment needs no writable
+  knowledge volume. With `local` the engine persists raw files under `DATA_DIR` so
+  re-index works without re-upload (previous behavior). Motivation: a
+  ReadWriteOnce knowledge volume on the pod's startup critical path turns a routine
+  node move into a multi-hour outage when the CSI detach wedges; `none` removes the
+  volume entirely so the single-replica pod reschedules to any node in seconds.
+  Re-index of a file uploaded under `none` returns a clear "re-upload required"
+  error instead of failing on a missing file.
+
+### Notes
+
+- The local-mode JWT keypair loader already loads a pre-provisioned keypair from
+  `SYNTHETICBREW_JWT_KEYS_DIR` without writing when both key files are present, so
+  the keypair can be mounted from a read-only Secret (no PVC). This release adds a
+  regression test pinning that behavior; the Helm chart adds first-class support
+  (`config.auth.existingKeysSecret`).
+
 ## [1.8.6] — 2026-06-18
 
 ### Fixed

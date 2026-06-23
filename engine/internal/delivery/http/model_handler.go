@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -169,6 +170,27 @@ func (h *ModelHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/models.
+// validateModelBaseURL rejects a malformed base_url so bad input returns 400
+// rather than a deferred 500 or an outbound request to a garbage target
+// (SCC-03). It enforces a well-formed absolute http/https URL; it intentionally
+// does NOT block private/localhost hosts — self-hosted CE legitimately points
+// at ollama on localhost, on-prem gateways, and Azure private endpoints.
+// Destination/egress policy for multi-tenant Cloud belongs in the plugin layer,
+// not in the CE engine.
+func validateModelBaseURL(raw string) string {
+	u, err := url.ParseRequestURI(raw)
+	if err != nil {
+		return "base_url must be a valid absolute URL (http:// or https://)"
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "base_url scheme must be http or https"
+	}
+	if u.Host == "" {
+		return "base_url must include a host"
+	}
+	return ""
+}
+
 func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateModelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -256,6 +278,13 @@ func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.BaseURL != "" {
+		if msg := validateModelBaseURL(req.BaseURL); msg != "" {
+			writeJSONError(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
+
 	model, err := h.service.CreateModel(r.Context(), req)
 	if err != nil {
 		writeDomainError(w, err)
@@ -310,6 +339,13 @@ func (h *ModelHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.APIKey == "" {
 			writeJSONError(w, http.StatusBadRequest, "api_key is required for embedding models")
+			return
+		}
+	}
+
+	if req.BaseURL != "" {
+		if msg := validateModelBaseURL(req.BaseURL); msg != "" {
+			writeJSONError(w, http.StatusBadRequest, msg)
 			return
 		}
 	}
@@ -372,6 +408,13 @@ func (h *ModelHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	if req.IsDefault != nil && !*req.IsDefault {
 		writeJSONError(w, http.StatusBadRequest, "cannot clear is_default; set another model's is_default=true instead")
 		return
+	}
+
+	if req.BaseURL != nil && *req.BaseURL != "" {
+		if msg := validateModelBaseURL(*req.BaseURL); msg != "" {
+			writeJSONError(w, http.StatusBadRequest, msg)
+			return
+		}
 	}
 
 	result, err := h.service.PatchModel(r.Context(), name, req)

@@ -8,10 +8,13 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	"github.com/syntheticinc/syntheticbrew/pkg/errors"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
+	"gorm.io/gorm"
 )
 
 // createChatModel creates a ToolCallingChatModel based on provider config.
@@ -34,6 +37,53 @@ func createChatModel(cfg config.Config) (model.ToolCallingChatModel, error) {
 	default:
 		return nil, errors.New(errors.CodeInvalidInput, "unsupported LLM provider: "+cfg.LLM.DefaultProvider)
 	}
+}
+
+// resolveBootChatModel resolves the default chat model used at boot. The DB is
+// authoritative: when the CE sentinel tenant has a default chat model, it wins.
+// The env-derived model (cfg.LLM) is only a fallback for env-only deployments
+// whose DB carries no default.
+//
+// CE/Cloud safety: only the CE sentinel tenant's default is loaded here. In
+// Cloud (--mode cloud, multi-tenant) the sentinel has no default, so this
+// returns the env/nil fallback and per-tenant model resolution at chat time is
+// unchanged.
+func resolveBootChatModel(cfg config.Config, db *gorm.DB) (model.ToolCallingChatModel, string, error) {
+	if db == nil {
+		return envChatModel(cfg)
+	}
+
+	repo := configrepo.NewGORMLLMProviderRepository(db)
+	ctx := domain.WithTenantID(context.Background(), domain.CETenantID)
+
+	m, err := repo.GetDefault(ctx, "chat")
+	if err != nil {
+		slog.WarnContext(ctx, "failed to load default chat model from DB; falling back to env config", "error", err)
+		return envChatModel(cfg)
+	}
+	if m == nil {
+		return envChatModel(cfg)
+	}
+
+	client, err := llm.CreateClientFromDBModel(*m)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to build chat model from DB default; falling back to env config",
+			"model", m.ModelName, "type", m.Type, "error", err)
+		return envChatModel(cfg)
+	}
+
+	slog.InfoContext(ctx, "default chat model loaded from DB", "model", m.ModelName, "type", m.Type)
+	return client, m.ModelName, nil
+}
+
+// envChatModel builds the env-derived chat model paired with its model name.
+// Returns (nil, "", nil) when no provider is configured (configless mode).
+func envChatModel(cfg config.Config) (model.ToolCallingChatModel, string, error) {
+	chatModel, err := createChatModel(cfg)
+	if err != nil {
+		return nil, "", err
+	}
+	return chatModel, getModelName(cfg), nil
 }
 
 func createOpenRouterModel(ctx context.Context, cfg config.OpenRouterConfig) (model.ToolCallingChatModel, error) {
