@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -160,4 +161,52 @@ func TestKB11_UnsupportedTypeRejected(t *testing.T) {
 	_ = readBody(t, resp)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
 		"unsupported file type must be 400, not 500 (SCC-03)")
+}
+
+// TC-KB-12: an in-place upgrade from a pre-1.9.0 (stateful) deployment must keep
+// showing correct names for ALREADY-uploaded knowledge. Pre-1.9.0 rows have
+// file_path set (the raw file used to be persisted) and, after migration 014
+// adds file_name with DEFAULT '', file_name=''. FileName() must fall back to the
+// path basename — NOT "." and NOT empty. This is the document-side guarantee of
+// the stateful->stateless upgrade path.
+func TestKB12_LegacyRowDisplaysViaBasenameFallback(t *testing.T) {
+	requireSuite(t)
+	t.Cleanup(func() { truncateTables(t) })
+
+	embedID := seedEmbeddingModelForKB(t, "tc-kb-12-embed")
+	kb := createKBWithEmbedding(t, "tc-kb-12-kb", embedID)
+	require.NotEmpty(t, kb.ID)
+
+	// Insert a legacy document row directly: file_path set, file_name='' (the
+	// exact state of an existing row after migration 014 runs on upgrade).
+	ctx := context.Background()
+	const docID = "11111111-1111-1111-1111-111111111111"
+	legacyPath := "/data/knowledge/00000000-0000-0000-0000-000000000001/" + kb.ID + "/8f3a1b2c_legacy-report.pdf"
+	err := testDB.WithContext(ctx).Exec(
+		`INSERT INTO knowledge_documents
+		   (id, knowledge_base_id, tenant_id, file_path, file_name, file_type, file_size, file_hash, status, chunk_count, created_at, updated_at)
+		 VALUES (?, ?, '00000000-0000-0000-0000-000000000001', ?, '', 'pdf', 1024, 'deadbeef', 'ready', 3, now(), now())`,
+		docID, kb.ID, legacyPath).Error
+	require.NoError(t, err, "seed legacy knowledge_documents row")
+
+	listResp := do(t, http.MethodGet, "/api/v1/knowledge-bases/"+kb.Name+"/files", nil, adminToken)
+	listRaw := readBody(t, listResp)
+	require.Equal(t, http.StatusOK, listResp.StatusCode)
+	var files []struct {
+		ID       string `json:"id"`
+		FileName string `json:"file_name"`
+	}
+	require.NoError(t, json.Unmarshal(listRaw, &files), "parse list: %s", listRaw)
+
+	var found bool
+	for _, f := range files {
+		if f.ID == docID {
+			found = true
+			assert.Equal(t, "8f3a1b2c_legacy-report.pdf", f.FileName,
+				"legacy row must display the FilePath basename")
+			assert.NotEqual(t, ".", f.FileName)
+			assert.NotEmpty(t, f.FileName)
+		}
+	}
+	require.True(t, found, "seeded legacy document must appear in the file list")
 }
