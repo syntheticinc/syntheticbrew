@@ -11,7 +11,6 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/audit"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/indexing"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/kgtools"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/knowledge"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm/registry"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence"
@@ -41,7 +40,6 @@ type routesDeps struct {
 	TaskRepo             *configrepo.GORMTaskRepository
 	APITokenRepo         *configrepo.GORMAPITokenRepository
 	KnowledgeRepo        *configrepo.GORMKnowledgeRepository
-	KnowledgeIndexer     *knowledge.Indexer
 	EmbeddingsClient     *indexing.EmbeddingsClient
 	MCPManager           *mcp.Manager
 	CBRegistry           *resilience.CircuitBreakerRegistry
@@ -61,15 +59,6 @@ type routesDeps struct {
 	ExternalRouter       chi.Router
 	InternalRouter       chi.Router
 	HasInternalServer    bool // true in two-port mode
-	// KnowledgeDataDir is the directory under which uploaded knowledge files
-	// are stored. Sourced from BootstrapConfig.Knowledge.DataDir
-	// (env DATA_DIR). Empty string defaults to "data".
-	KnowledgeDataDir string
-	// KnowledgeStorageMode selects whether raw uploaded files are persisted to
-	// disk. Sourced from BootstrapConfig.Knowledge.Storage (env
-	// SYNTHETICBREW_KNOWLEDGE_STORAGE). "local" persists raw files; anything
-	// else (incl. "" / "none") is stateless and writes no raw files.
-	KnowledgeStorageMode string
 	// KGToolProvider is the per-tenant Knowledge Graph tool resolver shared
 	// between the strategy registry (capability dispatch) and the apply usecase
 	// (collision detection). Constructed once in server.go.
@@ -90,7 +79,6 @@ func registerHTTPRoutes(deps routesDeps) {
 	taskRepo := deps.TaskRepo
 	apiTokenRepo := deps.APITokenRepo
 	knowledgeRepo := deps.KnowledgeRepo
-	knowledgeIndexer := deps.KnowledgeIndexer
 	mcpManager := deps.MCPManager
 	cbRegistry := deps.CBRegistry
 	lifecycleManager := deps.LifecycleManager
@@ -254,26 +242,12 @@ func registerHTTPRoutes(deps routesDeps) {
 
 		// Knowledge
 		if knowledgeRepo != nil {
-			var reindexer deliveryhttp.KnowledgeReindexer
-			if knowledgeIndexer != nil {
-				reindexer = &knowledgeReindexerHTTPAdapter{
-					indexer:  knowledgeIndexer,
-					registry: agentRegistry,
-				}
-			}
 			kbRepo := configrepo.NewGORMKnowledgeBaseRepository(pgDB)
 			knowledgeHandler := deliveryhttp.NewKnowledgeHandler(
 				&knowledgeStatsHTTPAdapter{repo: knowledgeRepo, kbRepo: kbRepo},
-				reindexer,
 			)
 
-			dataDir := deps.KnowledgeDataDir
-			if dataDir == "" {
-				dataDir = "data"
-			}
-
-			persistRaw := deps.KnowledgeStorageMode == "local"
-			uploadSvc := svcknowledge.NewUploadService(knowledgeRepo, dataDir, persistRaw)
+			uploadSvc := svcknowledge.NewUploadService(knowledgeRepo)
 			uploadSvc.SetEmbeddingResolver(&embeddingModelResolver{db: pgDB})
 			uploadSvc.SetKBEmbeddingResolver(&kbEmbeddingResolver{db: pgDB})
 			knowledgeHandler.SetFileUploader(&knowledgeUploadHTTPAdapter{svc: uploadSvc})
@@ -294,10 +268,8 @@ func registerHTTPRoutes(deps routesDeps) {
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAgentsWrite))
-				r.Post("/api/v1/agents/{name}/knowledge/reindex", knowledgeHandler.Reindex)
 				r.Post("/api/v1/agents/{name}/knowledge/files", knowledgeHandler.UploadFile)
 				r.Delete("/api/v1/agents/{name}/knowledge/files/{file_id}", knowledgeHandler.DeleteFile)
-				r.Post("/api/v1/agents/{name}/knowledge/files/{file_id}/reindex", knowledgeHandler.ReindexFile)
 			})
 
 			// Knowledge Base CRUD + file management endpoints
@@ -318,7 +290,6 @@ func registerHTTPRoutes(deps routesDeps) {
 				r.Delete("/api/v1/knowledge-bases/{name}/agents/{agent_name}", kbHandler.UnlinkAgent)
 				r.Post("/api/v1/knowledge-bases/{name}/files", kbHandler.UploadFile)
 				r.Delete("/api/v1/knowledge-bases/{name}/files/{file_id}", kbHandler.DeleteFile)
-				r.Post("/api/v1/knowledge-bases/{name}/files/{file_id}/reindex", kbHandler.ReindexFile)
 			})
 
 			// Knowledge Graphs (Этап 2 — engine 1.3.0). Wire repos → usecases →

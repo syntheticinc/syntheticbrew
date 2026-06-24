@@ -20,17 +20,16 @@ spec:
   # A mounted ReadWriteOnce PVC forces Recreate: the default RollingUpdate
   # creates the new pod BEFORE deleting the old one — the new pod then deadlocks
   # on Pending because the old pod still holds the RWO attachment, so
-  # `helm upgrade --atomic` times out and rolls back. Two RWO PVCs can be on the
-  # critical path in local mode: the JWT keypair PVC and the knowledge raw-files
-  # PVC. When NEITHER is mounted (keypair from a Secret + knowledge storage=none)
-  # the pod is stateless, so RollingUpdate is safe and gives near-zero redeploy
-  # downtime. Override via .Values.deploymentStrategy when needed (RWX storage).
+  # `helm upgrade --atomic` times out and rolls back. Only the JWT keypair PVC
+  # can be on the critical path in local mode. When it is not mounted (keypair
+  # from a Secret) the pod is stateless, so RollingUpdate is safe and gives
+  # near-zero redeploy downtime. Override via .Values.deploymentStrategy when
+  # needed (RWX storage).
   {{- $keysPVC := and (eq .Values.config.auth.mode "local") .Values.persistence.keys.enabled (not .Values.config.auth.existingKeysSecret) }}
-  {{- $knowledgePVC := eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
   {{- if .Values.deploymentStrategy }}
   strategy:
     {{- toYaml .Values.deploymentStrategy | nindent 4 }}
-  {{- else if not (or $keysPVC $knowledgePVC) }}
+  {{- else if not $keysPVC }}
   strategy:
     type: RollingUpdate
   {{- else if eq .Values.config.auth.mode "local" }}
@@ -113,22 +112,6 @@ spec:
             - name: EMBED_DIM
               value: {{ .Values.config.embedDim | quote }}
             {{- end }}
-            # Knowledge raw-file storage mode (none|local). "none" keeps live
-            # knowledge in PostgreSQL only and writes no raw files → no PVC on
-            # the startup critical path. Single-sourced via the helper.
-            - name: SYNTHETICBREW_KNOWLEDGE_STORAGE
-              value: {{ include "syntheticbrew-engine.knowledgeStorage" . | quote }}
-            {{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
-            # Engine writes uploaded KB files to {DATA_DIR}/knowledge/{tenant}/{kb}/.
-            # Without DATA_DIR set, engine falls back to os.UserConfigDir() — empty
-            # in containers with no HOME — which collapses to relative "./data"
-            # and fails on readOnlyRootFilesystem (or non-root cwd) with
-            # "create knowledge directory: mkdir data: permission denied".
-            # Pinning DATA_DIR to the parent of the mounted PVC keeps every
-            # write inside persistent storage.
-            - name: DATA_DIR
-              value: /etc/syntheticbrew
-            {{- end }}
             {{- if .Values.bootstrapAdminToken.enabled }}
             - name: SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN
               valueFrom:
@@ -171,10 +154,6 @@ spec:
               readOnly: true
               {{- end }}
             {{- end }}
-            {{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
-            - name: knowledge
-              mountPath: /etc/syntheticbrew/knowledge
-            {{- end }}
             {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
             # Auto-mounted when readOnlyRootFilesystem is enabled. Engine writes
             # server.port discovery file (HOME=/tmp), Liquibase + GORM stage temp.
@@ -201,11 +180,6 @@ spec:
         - name: keys
           persistentVolumeClaim:
             claimName: {{ include "syntheticbrew-engine.fullname" . }}-keys
-        {{- end }}
-        {{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
-        - name: knowledge
-          persistentVolumeClaim:
-            claimName: {{ include "syntheticbrew-engine.fullname" . }}-knowledge
         {{- end }}
         {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
         - name: tmp

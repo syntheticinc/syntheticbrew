@@ -79,12 +79,6 @@ persistence:
     storageClass: ""                              # leave empty to use default
     accessMode: ReadWriteOnce
 
-  knowledge:
-    enabled: false                                # enable if using Knowledge Base
-    size: 10Gi
-    storageClass: ""
-    accessMode: ReadWriteOnce
-
 resources:
   limits:
     cpu: 2000m

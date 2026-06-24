@@ -105,20 +105,6 @@ jobs:
             echo "FAIL: should have rejected empty knowledgeLoader.existingConfigMap"; exit 1
           fi
           grep -q 'requires knowledgeLoader.existingConfigMap' /tmp/err-cm.txt
-          # Without persistence.knowledge.enabled the engine can't store
-          # uploaded files (writes to relative ./data, fails 500). Guard
-          # this at template time so operators get a clear error instead
-          # of a runtime CrashLoop on first upload.
-          if helm template smoke engine/deploy/helm/syntheticbrew \
-              -f engine/deploy/helm/syntheticbrew/tests/values/knowledge.yaml \
-              --set persistence.knowledge.enabled=false >/dev/null 2>/tmp/err-pvc.txt; then
-            echo "FAIL: should have rejected knowledgeLoader without persistence.knowledge"; exit 1
-          fi
-          grep -q 'requires persistence.knowledge.enabled=true' /tmp/err-pvc.txt
-          # When persistence.knowledge.enabled, deployment MUST set DATA_DIR
-          # env so engine writes inside the mounted PVC instead of falling
-          # back to UserConfigDir / cwd-relative ./data.
-          grep -A1 '            - name: DATA_DIR' "$R" | grep -q 'value: /etc/syntheticbrew'
           echo "OK: knowledgeLoader render + value guards"
 
       - name: Render — node-churn (no RWO PVC on critical path)
@@ -133,17 +119,15 @@ jobs:
           if grep -E '^  name: smoke-syntheticbrew-engine-keys$' "$R"; then
             echo "FAIL: keys PVC rendered despite existingKeysSecret"; exit 1
           fi
-          # storage=none → no knowledge PVC.
+          # Engine is always stateless for knowledge → no knowledge PVC.
           if grep -E '^  name: smoke-syntheticbrew-engine-knowledge$' "$R"; then
-            echo "FAIL: knowledge PVC rendered despite storage=none"; exit 1
+            echo "FAIL: knowledge PVC rendered"; exit 1
           fi
-          # storage=none → SYNTHETICBREW_KNOWLEDGE_STORAGE env present with value none.
-          grep -A1 '            - name: SYNTHETICBREW_KNOWLEDGE_STORAGE' "$R" | grep -q 'value: "none"'
           # safe-to-evict annotation present (default false).
           grep -q 'cluster-autoscaler.kubernetes.io/safe-to-evict: "false"' "$R"
           # No RWO PVC mounted → RollingUpdate (near-zero redeploy downtime).
           grep -A1 '^  strategy:' "$R" | grep -q 'type: RollingUpdate'
-          echo "OK: node-churn render (Secret keypair, no PVC, storage=none, RollingUpdate)"
+          echo "OK: node-churn render (Secret keypair, no PVC, RollingUpdate)"
 
       - name: Render — default still uses keys PVC + Recreate (node-churn regression guard)
         run: |
@@ -427,6 +411,18 @@ jobs:
         with:
           version: v3.15.0
 
+      # Build the engine + migrations images from THIS commit and load them into
+      # kind. The knowledgeLoader uploads files into a KB, which under the
+      # stateless model needs the engine from this PR — a published image would
+      # be a different (stateful) engine version. Building from source decouples
+      # the chart test from the publish cycle (no post-publish fixture pin).
+      - name: Build engine + migrations images from source
+        run: |
+          docker build -t local/syntheticbrew-engine:ci -f engine/Dockerfile engine
+          docker build -t local/syntheticbrew-migrations:ci -f engine/Dockerfile.migrations engine
+          kind load docker-image local/syntheticbrew-engine:ci local/syntheticbrew-migrations:ci \
+            --name chart-test-knowledge-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Apply postgres-pgvector + knowledge-files fixtures
         run: |
           kubectl apply -f engine/deploy/helm/syntheticbrew/tests/fixtures/postgres-pgvector.yaml
@@ -439,6 +435,8 @@ jobs:
         run: |
           helm install bb engine/deploy/helm/syntheticbrew \
             -f engine/deploy/helm/syntheticbrew/tests/values/knowledge.yaml \
+            --set image.repository=local/syntheticbrew-engine --set image.tag=ci --set image.pullPolicy=Never \
+            --set migrations.image.repository=local/syntheticbrew-migrations --set migrations.image.tag=ci --set migrations.image.pullPolicy=Never \
             --wait --timeout 15m
 
       # NOTE: no explicit `Verify knowledgeLoader Job ran` step. The Job

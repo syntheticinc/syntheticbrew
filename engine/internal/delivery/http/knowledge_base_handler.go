@@ -67,7 +67,6 @@ type KBFileManager interface {
 	GetFile(ctx context.Context, kbID, fileID string) (*KnowledgeFileResponse, error)
 	UploadFile(ctx context.Context, tenantID, kbID, embeddingModelID, fileName, fileType string, fileSize int64, fileHash string, content []byte) (*KnowledgeFileResponse, error)
 	DeleteFile(ctx context.Context, kbID, fileID string) error
-	ReindexFile(ctx context.Context, kbID, embeddingModelID, fileID string) error
 	DeleteAllFiles(ctx context.Context, kbID string) error
 }
 
@@ -471,30 +470,5 @@ func (h *KnowledgeBaseHandler) DeleteFile(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-}
-
-// ReindexFile handles POST /api/v1/knowledge-bases/{id}/files/{file_id}/reindex.
-func (h *KnowledgeBaseHandler) ReindexFile(w http.ResponseWriter, r *http.Request) {
-	kbID, ok := h.resolveKBName(w, r)
-	if !ok {
-		return
-	}
-	fileID := chi.URLParam(r, "file_id")
-	if h.fileManager == nil {
-		writeJSONError(w, http.StatusNotImplemented, "Knowledge indexing requires an embedding model. Configure one in Models → select type Embeddings.")
-		return
-	}
-
-	kb, err := h.store.GetByID(r.Context(), kbID)
-	if err != nil || kb == nil {
-		writeJSONError(w, http.StatusNotFound, "knowledge base not found")
-		return
-	}
-
-	if err := h.fileManager.ReindexFile(r.Context(), kbID, kb.EmbeddingModelID, fileID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "reindex_started"})
 }
 

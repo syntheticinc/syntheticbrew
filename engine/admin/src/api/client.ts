@@ -834,16 +834,6 @@ class APIClient {
     return this.request<void>('DELETE', `/agents/${encodeURIComponent(agentName)}/knowledge/files/${encodeURIComponent(fileId)}`);
   }
 
-  async reindexKnowledge(agentName: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('POST', `/agents/${encodeURIComponent(agentName)}/knowledge/reindex`);
-  }
-
-  async reindexKnowledgeFile(agentName: string, fileId: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('POST', `/agents/${encodeURIComponent(agentName)}/knowledge/files/${encodeURIComponent(fileId)}/reindex`);
-  }
-
   async uploadKnowledgeFile(agentName: string, file: File): Promise<KnowledgeFile> {
     if (this.isPrototype) {
       return this.mock<KnowledgeFile>({
@@ -1003,11 +993,6 @@ class APIClient {
   async deleteKBFile(kbName: string, fileId: string): Promise<void> {
     if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(kbName)}/files/${encodeURIComponent(fileId)}`);
-  }
-
-  async reindexKBFile(kbName: string, fileId: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
-    return this.request<void>('POST', `/knowledge-bases/${encodeURIComponent(kbName)}/files/${encodeURIComponent(fileId)}/reindex`);
   }
 
   // ─── Resilience ──────────────────────────────────────────────────────────────

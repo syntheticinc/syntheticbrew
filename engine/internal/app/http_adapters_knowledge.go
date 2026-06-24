@@ -84,11 +84,6 @@ func (a *knowledgeFileListerHTTPAdapter) DeleteFile(ctx context.Context, agentNa
 	return fmt.Errorf("file not found")
 }
 
-func (a *knowledgeFileListerHTTPAdapter) ReindexFile(ctx context.Context, agentName, fileID string) error {
-	// Legacy reindex not supported without KB context
-	return fmt.Errorf("reindex requires KB-scoped endpoint")
-}
-
 // --- KB-scoped adapters (new many-to-many architecture) ---
 
 // kbStoreAdapter bridges GORMKnowledgeBaseRepository to deliveryhttp.KBStore.
@@ -368,10 +363,6 @@ func (a *kbFileManagerAdapter) UploadFile(ctx context.Context, tenantID, kbID, e
 
 func (a *kbFileManagerAdapter) DeleteFile(ctx context.Context, kbID, fileID string) error {
 	return a.svc.DeleteFileByKB(ctx, kbID, fileID)
-}
-
-func (a *kbFileManagerAdapter) ReindexFile(ctx context.Context, kbID, embeddingModelID, fileID string) error {
-	return a.svc.ReindexFileByKB(ctx, kbID, embeddingModelID, fileID)
 }
 
 func (a *kbFileManagerAdapter) DeleteAllFiles(ctx context.Context, kbID string) error {

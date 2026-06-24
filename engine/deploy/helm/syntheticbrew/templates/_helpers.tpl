@@ -84,22 +84,6 @@ database-url
 {{- end }}
 
 {{/*
-Return the derived knowledge raw-file storage mode: "none" or "local".
-When config.knowledge.storage is set, use it verbatim. Otherwise derive:
-"local" if persistence.knowledge.enabled, else "none" (back-compat).
-Single-sourced so the deployment env, volume gating, and PVC agree.
-*/}}
-{{- define "syntheticbrew-engine.knowledgeStorage" -}}
-{{- if .Values.config.knowledge.storage -}}
-{{- .Values.config.knowledge.storage -}}
-{{- else if .Values.persistence.knowledge.enabled -}}
-local
-{{- else -}}
-none
-{{- end -}}
-{{- end }}
-
-{{/*
 Return the ServiceAccount name.
 */}}
 {{- define "syntheticbrew-engine.serviceAccountName" -}}

@@ -15,21 +15,3 @@ spec:
     requests:
       storage: {{ .Values.persistence.keys.size }}
 {{- end }}
----
-{{- if eq (include "syntheticbrew-engine.knowledgeStorage" .) "local" }}
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ include "syntheticbrew-engine.fullname" . }}-knowledge
-  labels:
-    {{- include "syntheticbrew-engine.labels" . | nindent 4 }}
-spec:
-  accessModes:
-    - {{ .Values.persistence.knowledge.accessMode }}
-  {{- if .Values.persistence.knowledge.storageClass }}
-  storageClassName: {{ .Values.persistence.knowledge.storageClass | quote }}
-  {{- end }}
-  resources:
-    requests:
-      storage: {{ .Values.persistence.knowledge.size }}
-{{- end }}

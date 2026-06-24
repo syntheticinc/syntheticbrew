@@ -36,6 +36,10 @@ type KnowledgeDocument struct {
 	KnowledgeBaseID string    `gorm:"type:uuid;not null;index:idx_knowledge_docs_kb"`
 	TenantID        string    `gorm:"type:uuid;not null;default:'00000000-0000-0000-0000-000000000001';index:idx_knowledge_docs_tenant"`
 	FilePath        string    `gorm:"type:text;not null"`
+	// OriginalName is the uploaded file name kept as document metadata,
+	// decoupled from FilePath. Empty for legacy rows — FileName() falls back to
+	// the FilePath basename in that case. DB column: file_name.
+	OriginalName    string    `gorm:"column:file_name;type:varchar(255);not null;default:''"`
 	FileType        string    `gorm:"type:varchar(20);not null;default:txt"` // pdf, docx, doc, txt, md, csv
 	FileSize        int64     `gorm:"not null;default:0"`
 	FileHash        string    `gorm:"type:varchar(64);not null"`
@@ -49,8 +53,12 @@ type KnowledgeDocument struct {
 
 func (KnowledgeDocument) TableName() string { return "knowledge_documents" }
 
-// FileName returns the base name of the file path (derived, not stored).
+// FileName returns the stored original file name, falling back to the FilePath
+// basename for legacy rows that predate the file_name column.
 func (d *KnowledgeDocument) FileName() string {
+	if d.OriginalName != "" {
+		return d.OriginalName
+	}
 	return filepath.Base(d.FilePath)
 }
 

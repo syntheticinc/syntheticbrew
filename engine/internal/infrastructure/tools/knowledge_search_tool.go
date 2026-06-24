@@ -148,7 +148,7 @@ func (t *KnowledgeSearchTool) InvokableRun(ctx context.Context, argumentsInJSON 
 
 	for i, chunk := range chunks {
 		source := t.agentName
-		if fn := chunk.Document.FileName(); fn != "" && fn != "." {
+		if fn := chunk.Document.FileName(); fn != "" {
 			source = fn
 		}
 		sb.WriteString(fmt.Sprintf("### Result %d (Source: %s)\n", i+1, source))

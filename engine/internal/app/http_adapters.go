@@ -344,24 +344,4 @@ func (a *knowledgeStatsHTTPAdapter) GetStats(ctx context.Context, agentName stri
 	return a.repo.GetStatsByKBs(ctx, kbIDs)
 }
 
-// knowledgeReindexerHTTPAdapter bridges knowledge.Indexer to the http.KnowledgeReindexer interface.
-type knowledgeReindexerHTTPAdapter struct {
-	indexer  knowledgeIndexer
-	registry *agentregistry.AgentRegistry
-}
-
-// knowledgeIndexer is the consumer-side interface for indexing.
-type knowledgeIndexer interface {
-	IndexFolder(ctx context.Context, kbID string, folderPath string) error
-}
-
-func (a *knowledgeReindexerHTTPAdapter) Reindex(ctx context.Context, agentName string) error {
-	agent, err := a.registry.Get(agentName)
-	if err != nil {
-		return fmt.Errorf("agent not found: %s", agentName)
-	}
-	_ = agent
-	return fmt.Errorf("agent %s: legacy knowledge_path reindex is no longer supported; use capability Knowledge + knowledge base instead", agentName)
-}
-
 // chatServiceHTTPAdapter and chatTriggerCheckerAdapter live in chat_http_adapter.go.

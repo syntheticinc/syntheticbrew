@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014_add_knowledge_document_file_name
+      author: syntheticbrew
+      comment: |
+        Stores the uploaded file name as a document metadata field, decoupled
+        from the (now optional) raw file path. Knowledge is stateless: the live
+        knowledge (chunks+embeddings) lives in PostgreSQL and no raw file is
+        written, so the previous derive-from-FilePath name surfaced as "."
+        once FilePath was empty. Additive upgrade: NOT NULL DEFAULT '' backfills
+        existing rows with the empty sentinel — legacy rows fall back to the
+        path basename via FileName(), so no backfill SQL is needed. Rollback is
+        a clean DROP of the column.
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE knowledge_documents ADD COLUMN file_name varchar(255) NOT NULL DEFAULT '';
+        - rollback:
+            sql: |
+              ALTER TABLE knowledge_documents DROP COLUMN IF EXISTS file_name;

@@ -10,37 +10,38 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [0.10.0] - 2026-06-22
 
 ### Added
-- **Node-churn stability — remove both ReadWriteOnce PVCs from the pod's
+- **Node-churn stability — keep the only ReadWriteOnce PVC off the pod's
   startup critical path.** A single-replica engine could wedge for hours when a
-  node was drained or churned: the JWT keypair PVC and the knowledge raw-files
-  PVC are RWO block volumes, and a CSI detach can lock for a long time, leaving
-  the rescheduled pod stuck in `ContainerCreating` (→ 502). This release lets
-  operators take both PVCs off that path so the single pod reschedules to any
-  node in seconds. This is single-replica resilience, **NOT HA** (replicaCount
-  stays 1; for HA use `auth.mode=external`, out of CE).
+  node was drained or churned: the JWT keypair PVC is an RWO block volume, and a
+  CSI detach can lock for a long time, leaving the rescheduled pod stuck in
+  `ContainerCreating` (→ 502). This release lets operators take that PVC off the
+  path so the single pod reschedules to any node in seconds. This is
+  single-replica resilience, **NOT HA** (replicaCount stays 1; for HA use
+  `auth.mode=external`, out of CE).
   - `config.auth.existingKeysSecret` — mount the Ed25519 keypair READ-ONLY from
     a Secret (`jwt_ed25519.priv` + `jwt_ed25519.pub`) instead of generating it
     onto a PVC. When set, no keys PVC is created. Mutually exclusive with
     `persistence.keys`.
-  - `config.knowledge.storage` (`none` | `local`) — `none` keeps live knowledge
-    in PostgreSQL only and writes no raw files, so no knowledge PVC is created
-    and the pod is stateless (re-index requires re-upload). `local` persists raw
-    files to the knowledge PVC so re-index works without re-upload. Empty derives
-    the mode (`local` if `persistence.knowledge.enabled`, else `none`) for
-    back-compat — existing knowledge deployments keep persisting.
   - `clusterAutoscaler.safeToEvict` — renders the
     `cluster-autoscaler.kubernetes.io/safe-to-evict` pod annotation (local mode).
     `false` (default) keeps the cluster-autoscaler from proactively evicting the
     single stateful pod during node optimisation.
   - Deployment strategy auto-selects `RollingUpdate` when no RWO PVC is mounted
-    (keypair from a Secret + knowledge `none`), giving near-zero redeploy
-    downtime; with any RWO PVC mounted it stays `Recreate` (avoids the RWO
-    upgrade deadlock).
+    (keypair from a Secret), giving near-zero redeploy downtime; with the keys
+    PVC mounted it stays `Recreate` (avoids the RWO upgrade deadlock).
+
+### Removed
+- **Knowledge raw-file storage machinery.** The engine is now always stateless
+  for knowledge — live data (chunks + embeddings) lives in PostgreSQL/pgvector
+  and raw upload bytes are not persisted. Dropped `config.knowledge.storage`, the
+  knowledge PVC (`persistence.knowledge`), the `DATA_DIR` env, and the
+  `SYNTHETICBREW_KNOWLEDGE_STORAGE` env. `knowledgeLoader` no longer requires
+  `persistence.knowledge` — it uploads files over the REST API, which the engine
+  chunks into pgvector; re-indexing requires a re-upload.
 
 ### Changed
-- Bumps `appVersion` to **1.9.0** — the engine version that introduces
-  `SYNTHETICBREW_KNOWLEDGE_STORAGE` (the env the chart sets from
-  `config.knowledge.storage`).
+- Bumps `appVersion` to **1.9.0** — the engine version that drops raw-file
+  knowledge persistence and is always stateless for knowledge.
 
 ## [0.9.6] - 2026-06-11
 
