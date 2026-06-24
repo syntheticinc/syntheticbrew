@@ -30,7 +30,7 @@ import (
 // Returns an error only for hard misconfiguration (e.g. invalid bootstrap
 // admin token format). Soft seed failures (DB list/create errors on
 // non-essential rows) are logged as warnings and do not propagate.
-func bootstrapSeeds(ctx context.Context, db *gorm.DB, byok config.BYOKConfig, docsMCPURL, bootstrapAdminToken string) error {
+func bootstrapSeeds(ctx context.Context, db *gorm.DB, byok config.BYOKConfig, bootstrapBYOK config.BootstrapBYOK, docsMCPURL, bootstrapAdminToken string) error {
 	if db == nil {
 		return nil
 	}
@@ -47,6 +47,10 @@ func bootstrapSeeds(ctx context.Context, db *gorm.DB, byok config.BYOKConfig, do
 	// the `settings` table (jsonb) once on first boot. Admin UI edits
 	// supersede this on subsequent boots.
 	seedBYOKConfig(ctx, db, byok)
+	// GitOps declarative path: when the operator supplies BYOK env/chart
+	// values, reconcile overwrites the rows on every boot so the declared
+	// state wins over prior Admin-UI edits. No-op when unmanaged.
+	reconcileBYOKConfig(ctx, db, bootstrapBYOK)
 	if err := seedBootstrapAdminToken(ctx, db, bootstrapAdminToken); err != nil {
 		return fmt.Errorf("bootstrap admin token: %w", err)
 	}

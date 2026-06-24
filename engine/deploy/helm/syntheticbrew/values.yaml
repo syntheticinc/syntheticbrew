@@ -98,6 +98,28 @@ config:
   embedModel: nomic-embed-text
   embedDim: 768
 
+  # BYOK (Bring Your Own Key) — declarative GitOps enablement (optional).
+  # End users may override the agent's model per request with their own
+  # credentials via the X-BYOK-Provider / X-BYOK-API-Key / X-BYOK-Model /
+  # X-BYOK-Base-URL headers on the chat endpoint.
+  #
+  # When this block is set, the engine RECONCILES byok.enabled and
+  # byok.allowed_providers in its settings store on EVERY boot — the values
+  # below are the source of truth and supersede any Admin → Settings edits
+  # (to hand control back to the Admin UI, remove this block). Omit the block
+  # entirely to manage BYOK only through the Admin Dashboard.
+  #
+  # byok:
+  #   enabled: true
+  #   # Providers end users may bring keys for. Empty / omitted = all supported
+  #   # providers (openai, anthropic, openrouter, openai_compatible, ollama).
+  #   allowedProviders:
+  #     - openai
+  #     - anthropic
+  #     - openrouter
+  #     - openai_compatible
+  #     - ollama
+
 secrets:
   # LLM provider credentials are not supplied via Helm — configure them
   # post-install through the Admin Dashboard onboarding wizard or

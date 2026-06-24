@@ -7,6 +7,22 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-24
+
+### Added
+- **Declarative BYOK enablement via chart values.** New optional `config.byok`
+  block lets operators manage Bring-Your-Own-Key per environment through GitOps
+  instead of the imperative Admin Settings API:
+  - `config.byok.enabled` (bool) → `SYNTHETICBREW_BYOK_ENABLED`.
+  - `config.byok.allowedProviders` (list) → `SYNTHETICBREW_BYOK_ALLOWED_PROVIDERS`
+    (comma-separated; empty/omitted = all supported providers: openai, anthropic,
+    openrouter, openai_compatible, ollama).
+  When the block is set the engine **reconciles** these settings on every boot —
+  the declared state supersedes Admin-UI edits (remove the block to hand control
+  back to the Admin Dashboard). The env vars are emitted only when `config.byok`
+  is present, so existing releases that don't set it are unaffected. Requires
+  engine appVersion ≥ 1.10.0.
+
 ## [0.10.0] - 2026-06-22
 
 ### Added

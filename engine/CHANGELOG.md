@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.10.0] — 2026-06-24
+
+### Added
+
+- **Declarative BYOK enablement via environment / Helm values.** Two new env
+  vars let operators manage per-end-user BYOK through GitOps instead of the
+  imperative Admin Settings API:
+  - `SYNTHETICBREW_BYOK_ENABLED` — allow per-request `X-BYOK-*` headers.
+  - `SYNTHETICBREW_BYOK_ALLOWED_PROVIDERS` — comma-separated provider allowlist
+    (empty = all supported: openai, anthropic, openrouter, openai_compatible,
+    ollama).
+  When set, the engine **reconciles** the `byok.enabled` / `byok.allowed_providers`
+  settings rows on every boot — the declared state supersedes prior Admin-UI
+  edits (the GitOps "declared state wins" contract). Only the keys actually
+  supplied are overwritten; unset means BYOK stays managed through the Admin
+  Settings API exactly as before. The reconcile writes the CE sentinel tenant's
+  rows only — Cloud multi-tenant per-tenant BYOK is unaffected.
+
+### Fixed
+
+- **The BYOK provider allowlist is now settable through the Settings API and the
+  Admin UI.** `byok.allowed_providers` was only ever read as a JSON array, but the
+  Settings API stores values as JSON strings — so setting the allowlist via the
+  API (or the Admin dashboard) silently had no effect; only first-boot YAML
+  seeding could populate it. `loadBYOKConfig` now also accepts the string form
+  (CSV or JSON-array string), mirroring the existing `byok.enabled` dual-parse.
+  The Admin Settings page now writes the real `byok.allowed_providers` key (it
+  previously wrote dead `byok.allow_*` keys the engine never read) and exposes
+  all five supported providers (previously only three).
+
 ## [1.9.0] — 2026-06-23
 
 ### Fixed
