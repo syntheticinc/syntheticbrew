@@ -364,6 +364,28 @@ func TestLoadBootstrapFromEnv_CORSOrigins(t *testing.T) {
 	assert.Equal(t, "https://c.com", cfg.Engine.CORSOrigins[2])
 }
 
+func TestLoadBootstrapFromEnv_BYOK(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("SYNTHETICBREW_BYOK_ENABLED", "true")
+	t.Setenv("SYNTHETICBREW_BYOK_ALLOWED_PROVIDERS", "openai, anthropic , openrouter")
+
+	cfg, err := LoadBootstrap("/nonexistent/config.yaml")
+	require.NoError(t, err)
+	assert.True(t, cfg.BYOK.Enabled)
+	assert.Equal(t, []string{"openai", "anthropic", "openrouter"}, cfg.BYOK.AllowedProviders)
+	assert.True(t, cfg.BYOK.ManagedEnabled)
+	assert.True(t, cfg.BYOK.ManagedProviders)
+}
+
+func TestLoadBootstrapFromEnv_BYOK_Unset(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+
+	cfg, err := LoadBootstrap("/nonexistent/config.yaml")
+	require.NoError(t, err)
+	assert.False(t, cfg.BYOK.ManagedEnabled)
+	assert.False(t, cfg.BYOK.ManagedProviders)
+}
+
 func TestBootstrapValidation_TwoPortYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")

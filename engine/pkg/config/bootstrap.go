@@ -26,16 +26,17 @@ import (
 //   - a default in setBootstrapDefaults if applicable,
 //   - a line in .env.example.
 type BootstrapConfig struct {
-	Engine     EngineBootstrap    `mapstructure:"engine"`
-	Database   BootstrapDatabase  `mapstructure:"database"`
-	Security   BootstrapSecurity  `mapstructure:"security"`
-	Logging    BootstrapLogging   `mapstructure:"logging"`
-	Embeddings EmbeddingsConfig   `mapstructure:"embeddings"`
-	Debug      DebugConfig        `mapstructure:"debug"`
-	MCP        MCPBootstrap       `mapstructure:"mcp"`
-	LSP        LSPBootstrap       `mapstructure:"lsp"`
-	Updates    UpdatesConfig      `mapstructure:"updates"`
-	Seed       SeedConfig         `mapstructure:"seed"`
+	Engine     EngineBootstrap   `mapstructure:"engine"`
+	Database   BootstrapDatabase `mapstructure:"database"`
+	Security   BootstrapSecurity `mapstructure:"security"`
+	Logging    BootstrapLogging  `mapstructure:"logging"`
+	Embeddings EmbeddingsConfig  `mapstructure:"embeddings"`
+	Debug      DebugConfig       `mapstructure:"debug"`
+	MCP        MCPBootstrap      `mapstructure:"mcp"`
+	LSP        LSPBootstrap      `mapstructure:"lsp"`
+	Updates    UpdatesConfig     `mapstructure:"updates"`
+	Seed       SeedConfig        `mapstructure:"seed"`
+	BYOK       BootstrapBYOK     `mapstructure:"byok"`
 }
 
 // EngineBootstrap holds the minimal engine settings needed at startup.
@@ -138,6 +139,21 @@ type SeedConfig struct {
 	BootstrapAdminToken string `mapstructure:"bootstrap_admin_token"`
 }
 
+// BootstrapBYOK holds env/YAML-driven BYOK enablement for GitOps-declarative
+// control. When an operator supplies these (chart values → env), they are
+// reconciled into the settings table on every boot (see reconcileBYOKConfig)
+// so the declared state wins over Admin-UI edits. When unset, BYOK is managed
+// entirely through the Admin Settings API (Managed* stay false).
+type BootstrapBYOK struct {
+	Enabled          bool     `mapstructure:"enabled"`
+	AllowedProviders []string `mapstructure:"allowed_providers"`
+	// ManagedEnabled / ManagedProviders record whether the operator explicitly
+	// set the corresponding env var. Not mapstructure-decoded — set in
+	// LoadBootstrap via os.LookupEnv. They gate whether reconcile overwrites.
+	ManagedEnabled   bool `mapstructure:"-"`
+	ManagedProviders bool `mapstructure:"-"`
+}
+
 // LoadBootstrap loads the bootstrap config from a YAML file plus environment
 // variables. Env vars are bound via Viper (see bindEnvVars) and take
 // precedence over YAML; YAML wins over built-in defaults.
@@ -157,28 +173,16 @@ func LoadBootstrap(path string) (*BootstrapConfig, error) {
 	bindEnvVars(v)
 	setBootstrapDefaults(v)
 
-	readErr := v.ReadInConfig()
-	if readErr != nil {
-		// Config file not found — env-only mode. Validation still runs because
-		// DATABASE_URL is required regardless of source.
-		var cfg BootstrapConfig
-		if err := unmarshalBootstrap(v, &cfg); err != nil {
-			return nil, fmt.Errorf("unmarshal env-only bootstrap: %w", err)
-		}
-		if cfg.Database.URL == "" {
-			return nil, fmt.Errorf("no config file found and DATABASE_URL environment variable is not set")
-		}
-		applySecurityDefaults(&cfg)
-		if err := validateBootstrap(&cfg); err != nil {
-			return nil, fmt.Errorf("validate env-based config: %w", err)
-		}
-		return &cfg, nil
+	if readErr := v.ReadInConfig(); readErr != nil {
+		// Config file not found — fall back to env-only mode.
+		return loadBootstrapEnvOnly(v)
 	}
 
 	var cfg BootstrapConfig
 	if err := unmarshalBootstrap(v, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal bootstrap config: %w", err)
 	}
+	applyBYOKManaged(&cfg)
 
 	expandBootstrapEnvVars(&cfg)
 	applySecurityDefaults(&cfg)
@@ -196,6 +200,26 @@ func LoadBootstrap(path string) (*BootstrapConfig, error) {
 	return &cfg, nil
 }
 
+// loadBootstrapEnvOnly builds the bootstrap config from env vars + defaults
+// when no YAML config file is present — zero-config Docker deploys where
+// DATABASE_URL is the only mandatory input. Validation still runs because
+// DATABASE_URL is required regardless of source.
+func loadBootstrapEnvOnly(v *viper.Viper) (*BootstrapConfig, error) {
+	var cfg BootstrapConfig
+	if err := unmarshalBootstrap(v, &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal env-only bootstrap: %w", err)
+	}
+	applyBYOKManaged(&cfg)
+	if cfg.Database.URL == "" {
+		return nil, fmt.Errorf("no config file found and DATABASE_URL environment variable is not set")
+	}
+	applySecurityDefaults(&cfg)
+	if err := validateBootstrap(&cfg); err != nil {
+		return nil, fmt.Errorf("validate env-based config: %w", err)
+	}
+	return &cfg, nil
+}
+
 // unmarshalBootstrap decodes Viper state into BootstrapConfig with the
 // hooks needed to handle slice-from-env (CORSOrigins) and duration parsing
 // (LocalSessionTTL).
@@ -208,6 +232,14 @@ func unmarshalBootstrap(v *viper.Viper, cfg *BootstrapConfig) error {
 		// "1h" / "30m" → time.Duration for LocalSessionTTL.
 		mapstructure.StringToTimeDurationHookFunc(),
 	)))
+}
+
+// applyBYOKManaged records whether the operator explicitly supplied the BYOK
+// env vars. Presence (not value) decides reconcile — os.LookupEnv is the
+// unambiguous signal and is policy-allowed inside pkg/config.
+func applyBYOKManaged(cfg *BootstrapConfig) {
+	_, cfg.BYOK.ManagedEnabled = os.LookupEnv(EnvBYOKEnabled)
+	_, cfg.BYOK.ManagedProviders = os.LookupEnv(EnvBYOKAllowedProviders)
 }
 
 // stringToTrimmedSliceHookFunc returns a mapstructure DecodeHookFunc that
@@ -235,23 +267,25 @@ func stringToTrimmedSliceHookFunc(sep string) mapstructure.DecodeHookFunc {
 // the single registry that must stay in sync with env_vars.go.
 func bindEnvVars(v *viper.Viper) {
 	bindings := map[string]string{
-		"database.url":                EnvDatabaseURL,
-		"engine.host":                 EnvEngineHost,
-		"engine.port":                 EnvEnginePort,
-		"engine.internal_port":        EnvInternalPort,
-		"engine.cors_origins":         EnvCORSOrigins,
-		"security.auth_mode":          EnvAuthMode,
-		"security.jwt_keys_dir":       EnvJWTKeysDir,
+		"database.url":                 EnvDatabaseURL,
+		"engine.host":                  EnvEngineHost,
+		"engine.port":                  EnvEnginePort,
+		"engine.internal_port":         EnvInternalPort,
+		"engine.cors_origins":          EnvCORSOrigins,
+		"security.auth_mode":           EnvAuthMode,
+		"security.jwt_keys_dir":        EnvJWTKeysDir,
 		"security.jwt_public_key_path": EnvJWTPublicKeyPath,
-		"security.local_session_ttl":  EnvLocalSessionTTL,
-		"embeddings.url":              EnvEmbedURL,
-		"embeddings.model":            EnvEmbedModel,
-		"embeddings.dim":              EnvEmbedDim,
-		"debug.model_debug_dir":       EnvDebugModel,
-		"mcp.docs_url":                EnvDocsMCPURL,
-		"lsp.disable_download":           EnvDisableLSPDownload,
-		"updates.versions_url":           EnvVersionsURL,
-		"seed.bootstrap_admin_token":     EnvBootstrapAdminToken,
+		"security.local_session_ttl":   EnvLocalSessionTTL,
+		"embeddings.url":               EnvEmbedURL,
+		"embeddings.model":             EnvEmbedModel,
+		"embeddings.dim":               EnvEmbedDim,
+		"debug.model_debug_dir":        EnvDebugModel,
+		"mcp.docs_url":                 EnvDocsMCPURL,
+		"lsp.disable_download":         EnvDisableLSPDownload,
+		"updates.versions_url":         EnvVersionsURL,
+		"seed.bootstrap_admin_token":   EnvBootstrapAdminToken,
+		"byok.enabled":                 EnvBYOKEnabled,
+		"byok.allowed_providers":       EnvBYOKAllowedProviders,
 	}
 	for key, env := range bindings {
 		// BindEnv associates a Viper key with one or more env var names.
@@ -379,4 +413,3 @@ func (e *EngineBootstrap) DataDirOrDefault() string {
 	}
 	return filepath.Join(dir, "syntheticbrew")
 }
-

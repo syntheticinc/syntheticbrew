@@ -366,7 +366,11 @@ func Run(sc ServerConfig) error {
 	if bootstrapCfg != nil {
 		bootstrapAdminToken = bootstrapCfg.Seed.BootstrapAdminToken
 	}
-	if err := bootstrapSeeds(ctx, pgDB, cfg.BYOK, docsMCPURL, bootstrapAdminToken); err != nil {
+	var bootstrapBYOK config.BootstrapBYOK
+	if bootstrapCfg != nil {
+		bootstrapBYOK = bootstrapCfg.BYOK
+	}
+	if err := bootstrapSeeds(ctx, pgDB, cfg.BYOK, bootstrapBYOK, docsMCPURL, bootstrapAdminToken); err != nil {
 		return fmt.Errorf("bootstrap seed: %w", err)
 	}
 

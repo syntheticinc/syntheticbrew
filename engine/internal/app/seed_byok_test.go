@@ -117,3 +117,102 @@ func TestLoadBYOKConfig_NilDBReturnsFallback(t *testing.T) {
 	loaded := loadBYOKConfig(context.Background(), nil, fallback)
 	assert.Equal(t, fallback, loaded)
 }
+
+// TestReconcileBYOKConfig_OverwritesExisting is the GitOps "declared state
+// wins" guard: operator-supplied env values must overwrite rows that the
+// seeder/admin already wrote. RED without the SetJSON overwrite in
+// reconcileBYOKConfig — the pre-set values would survive and the asserts on
+// the reconciled values would fail.
+func TestReconcileBYOKConfig_OverwritesExisting(t *testing.T) {
+	db := setupSettingsTestDB(t)
+	ctx := context.Background()
+
+	// Prior state (first-boot seed + an admin edit).
+	seedBYOKConfig(ctx, db, config.BYOKConfig{
+		Enabled:          false,
+		AllowedProviders: []string{"openai"},
+	})
+
+	reconcileBYOKConfig(ctx, db, config.BootstrapBYOK{
+		Enabled:          true,
+		AllowedProviders: []string{"anthropic", "ollama"},
+		ManagedEnabled:   true,
+		ManagedProviders: true,
+	})
+
+	loaded := loadBYOKConfig(ctx, db, config.BYOKConfig{})
+	assert.True(t, loaded.Enabled, "operator-declared enabled must win")
+	assert.Equal(t, []string{"anthropic", "ollama"}, loaded.AllowedProviders)
+}
+
+// TestReconcileBYOKConfig_Unmanaged_NoOp: with both managed flags false the
+// reconcile must not touch the existing rows.
+func TestReconcileBYOKConfig_Unmanaged_NoOp(t *testing.T) {
+	db := setupSettingsTestDB(t)
+	ctx := context.Background()
+
+	seedBYOKConfig(ctx, db, config.BYOKConfig{
+		Enabled:          true,
+		AllowedProviders: []string{"openai", "anthropic"},
+	})
+
+	reconcileBYOKConfig(ctx, db, config.BootstrapBYOK{
+		Enabled:          false,
+		AllowedProviders: []string{"ollama"},
+		ManagedEnabled:   false,
+		ManagedProviders: false,
+	})
+
+	loaded := loadBYOKConfig(ctx, db, config.BYOKConfig{})
+	assert.True(t, loaded.Enabled, "unmanaged reconcile must not flip enabled")
+	assert.ElementsMatch(t, []string{"openai", "anthropic"}, loaded.AllowedProviders)
+}
+
+// TestReconcileBYOKConfig_PartialManaged: only ManagedEnabled is set, so the
+// providers row stays untouched.
+func TestReconcileBYOKConfig_PartialManaged(t *testing.T) {
+	db := setupSettingsTestDB(t)
+	ctx := context.Background()
+
+	seedBYOKConfig(ctx, db, config.BYOKConfig{
+		Enabled:          false,
+		AllowedProviders: []string{"openai"},
+	})
+
+	reconcileBYOKConfig(ctx, db, config.BootstrapBYOK{
+		Enabled:          true,
+		AllowedProviders: []string{"anthropic"}, // must be ignored — not managed
+		ManagedEnabled:   true,
+		ManagedProviders: false,
+	})
+
+	loaded := loadBYOKConfig(ctx, db, config.BYOKConfig{})
+	assert.True(t, loaded.Enabled, "managed enabled must be overwritten")
+	assert.Equal(t, []string{"openai"}, loaded.AllowedProviders, "unmanaged providers must stay")
+}
+
+// TestLoadBYOKConfig_AllowedProvidersStringForms covers the HTTP Settings API
+// write path: the value lands as a jsonb STRING (json.Marshal(value)) rather
+// than a jsonb array. loadBYOKConfig must accept both CSV and JSON-array string
+// forms so the admin/API can set the allowlist.
+func TestLoadBYOKConfig_AllowedProvidersStringForms(t *testing.T) {
+	t.Run("csv string", func(t *testing.T) {
+		db := setupSettingsTestDB(t)
+		ctx := context.Background()
+		repo := configrepo.NewGORMSettingRepository(db)
+		require.NoError(t, repo.Set(ctx, settingKeyBYOKAllowedProviders, "openai,anthropic"))
+
+		loaded := loadBYOKConfig(ctx, db, config.BYOKConfig{})
+		assert.Equal(t, []string{"openai", "anthropic"}, loaded.AllowedProviders)
+	})
+
+	t.Run("json array string", func(t *testing.T) {
+		db := setupSettingsTestDB(t)
+		ctx := context.Background()
+		repo := configrepo.NewGORMSettingRepository(db)
+		require.NoError(t, repo.Set(ctx, settingKeyBYOKAllowedProviders, `["openai"]`))
+
+		loaded := loadBYOKConfig(ctx, db, config.BYOKConfig{})
+		assert.Equal(t, []string{"openai"}, loaded.AllowedProviders)
+	})
+}

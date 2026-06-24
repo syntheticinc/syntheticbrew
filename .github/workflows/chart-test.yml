@@ -140,6 +140,25 @@ jobs:
           grep -A1 '^  strategy:' "$R" | grep -q 'type: Recreate'
           echo "OK: default keeps keys PVC + Recreate"
 
+      - name: Render — BYOK declarative enablement (config.byok → env)
+        run: |
+          set -euo pipefail
+          R=/tmp/r-byok.yaml
+          helm template smoke engine/deploy/helm/syntheticbrew \
+            -f engine/deploy/helm/syntheticbrew/tests/values/default.yaml \
+            --set config.byok.enabled=true \
+            --set 'config.byok.allowedProviders={openai,anthropic,openrouter,openai_compatible,ollama}' > "$R"
+          grep -q 'name: SYNTHETICBREW_BYOK_ENABLED' "$R"
+          grep -A1 'name: SYNTHETICBREW_BYOK_ENABLED' "$R" | grep -q 'value: "true"'
+          grep -A1 'name: SYNTHETICBREW_BYOK_ALLOWED_PROVIDERS' "$R" | grep -q 'openai,anthropic,openrouter,openai_compatible,ollama'
+          # Gated: no BYOK env when config.byok is absent (existing releases unaffected).
+          helm template smoke engine/deploy/helm/syntheticbrew \
+            -f engine/deploy/helm/syntheticbrew/tests/values/default.yaml > /tmp/r-byok-off.yaml
+          if grep -q 'SYNTHETICBREW_BYOK_ENABLED' /tmp/r-byok-off.yaml; then
+            echo "FAIL: BYOK env rendered without config.byok"; exit 1
+          fi
+          echo "OK: BYOK env gated on config.byok"
+
       - name: replicaCount=local guard
         run: |
           set -euo pipefail

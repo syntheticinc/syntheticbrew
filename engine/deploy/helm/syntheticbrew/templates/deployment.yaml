@@ -112,6 +112,14 @@ spec:
             - name: EMBED_DIM
               value: {{ .Values.config.embedDim | quote }}
             {{- end }}
+            {{- with .Values.config.byok }}
+            - name: SYNTHETICBREW_BYOK_ENABLED
+              value: {{ .enabled | default false | quote }}
+            {{- with .allowedProviders }}
+            - name: SYNTHETICBREW_BYOK_ALLOWED_PROVIDERS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.bootstrapAdminToken.enabled }}
             - name: SYNTHETICBREW_BOOTSTRAP_ADMIN_TOKEN
               valueFrom:

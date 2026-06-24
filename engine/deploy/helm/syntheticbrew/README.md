@@ -21,6 +21,7 @@ it has been validated. Pick what your environment supports and treat
 | `containerSecurityContext.readOnlyRootFilesystem: true` (auto /tmp emptyDir) | **Stable** | CI render-validated; smoke runs render-only on kind |
 | `replicaCount=1` enforcement (`auth.mode=local`) | **Stable** | CI gate (template `fail` on `replicaCount > 1`) |
 | `config.auth.existingKeysSecret` (keypair via Secret) | **Beta** | CI render-validated |
+| `config.byok` (declarative BYOK enablement, engine 1.10.0+) | **Beta** | CI render-validated (env emitted when set, gated when absent); engine reconcile + allowlist parse unit-tested |
 | AWS IRSA annotations                   | **Beta**     | CI render-validated only — no AWS account in CI; community feedback welcome |
 | GCP Workload Identity annotations      | **Beta**     | CI render-validated only — no GCP account in CI |
 | NetworkPolicy enabled                  | **Beta**     | CI render-validated only — kind default CNI does NOT enforce NetworkPolicy |
@@ -58,8 +59,8 @@ it has been validated. Pick what your environment supports and treat
 
 ```bash
 helm install syntheticbrew-engine oci://ghcr.io/syntheticinc/charts/syntheticbrew-engine \
-  --version 0.9.5 \
-  --set image.tag=1.7.0 \
+  --version 0.11.0 \
+  --set image.tag=1.10.0 \
   --set postgresql.external.host=my-postgres \
   --set postgresql.external.password=secret
 ```
@@ -71,6 +72,8 @@ helm install syntheticbrew-engine oci://ghcr.io/syntheticinc/charts/syntheticbre
 | `image.tag` | Engine image tag (pin to specific version) | `latest` |
 | `replicaCount` | Number of replicas (local auth mode: 1 only) | `1` |
 | `config.auth.mode` | Auth mode: `local` or `external` | `local` |
+| `config.byok.enabled` | Allow per-request BYOK (`X-BYOK-*` headers). Reconciled on every boot when set (declared state wins over Admin UI). Omit `config.byok` to manage via Admin → Settings. | _unset_ |
+| `config.byok.allowedProviders` | Allowlist of providers users may bring keys for; empty/omitted = all supported (openai, anthropic, openrouter, openai_compatible, ollama) | _unset_ |
 | `postgresql.external.host` | PostgreSQL host | `""` |
 | `postgresql.external.existingSecret` | Existing Secret with `DATABASE_URL` key | `""` |
 | `migrations.enabled` | Run Liquibase migrations Job on install/upgrade | `true` |
