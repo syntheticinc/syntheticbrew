@@ -26,9 +26,10 @@ import (
 //
 //  1. consecutive bodies are prefix-extensions — every message at an index that existed
 //     in the prior body is BYTE-IDENTICAL in the next (no formed message is ever mutated);
-//  2. every body has exactly ONE system message, at index 0 (the frozen head) — there is
-//     no standalone mid-conversation system message that would re-render Qwen's chat
-//     template and discard the explicit-cache prefix;
+//  2. every body's system messages form the frozen head — contiguous at the front
+//     (the stable cache-marked head + an optional volatile head), with NO system message
+//     after the conversation starts; a mid-conversation system message would re-render
+//     Qwen's chat template and discard the explicit-cache prefix;
 //  3. the loop-correction note rides INSIDE a tool message (never a system/user message).
 //
 // The agent is attached WITHOUT a RequestPayloadModifier so the bodies are clean (no
@@ -129,17 +130,24 @@ func TestOwnedGraph_AppendOnlyPrefixInvariant(t *testing.T) {
 		msgs := parse(body)
 		require.NotEmpty(t, msgs, "body %d has no messages", bi)
 
-		// (2) exactly one system message, at index 0 (the frozen head). No standalone
-		// mid-conversation system message.
-		require.Equal(t, "system", msgs[0].Role, "body %d: index 0 must be the head system message", bi)
-		systemCount := 0
-		for _, m := range msgs {
-			if m.Role == "system" {
-				systemCount++
+		// (2) the system messages form the frozen head: contiguous at the front (the
+		// stable cache-marked head + an optional volatile head), with NO system message
+		// after the conversation starts (a mid-conversation system message would re-render
+		// Qwen's chat template and discard the explicit-cache prefix).
+		require.Equal(t, "system", msgs[0].Role, "body %d: index 0 must be the stable head system message", bi)
+		firstNonSystem := len(msgs)
+		for i, m := range msgs {
+			if m.Role != "system" {
+				firstNonSystem = i
+				break
 			}
 		}
-		require.Equal(t, 1, systemCount,
-			"body %d: exactly one system message (the head) — no mid-conversation system message", bi)
+		for i := firstNonSystem; i < len(msgs); i++ {
+			require.NotEqual(t, "system", msgs[i].Role,
+				"body %d: no system message may appear after the conversation starts (found at index %d)", bi, i)
+		}
+		require.LessOrEqual(t, firstNonSystem, 2,
+			"body %d: the head is at most two system messages (stable + volatile)", bi)
 
 		// (1) strict prefix-extension: every message present in the prior body is
 		// byte-identical here, in the same position; the body only grows at the tail.
