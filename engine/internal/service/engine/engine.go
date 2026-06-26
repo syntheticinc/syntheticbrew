@@ -170,11 +170,8 @@ func (e *Engine) Execute(ctx context.Context, cfg ExecutionConfig) (*ExecutionRe
 	collector := NewMessageCollector(ctx, cfg.SessionID, cfg.AgentID, e.historyRepo)
 	wrappedEventCb := collector.WrapEventCallback(cfg.EventCallback)
 
-	// 3b. Persist user message to history. Skip on HITL resume — widget's
-	// answered state already represents the user's answer.
-	if !domain.IsResumeTurn(ctx) {
-		collector.CollectUserMessage(ctx, cfg.Input)
-	}
+	// 3b. Persist the user's turn into the transcript (and history on normal turns).
+	persistUserTurn(ctx, collector, cfg.Input)
 
 	// 4. Create and run agent
 	agent, err := react.NewAgent(ctx, *agentConfig)
@@ -226,6 +223,23 @@ func (e *Engine) Execute(ctx context.Context, cfg ExecutionConfig) (*ExecutionRe
 		Answer:      answer,
 		SuspendedAt: suspendedAt,
 	}, execErr
+}
+
+// persistUserTurn records the user's input into the turn's transcript so it lands
+// in the snapshot the next turn loads.
+//   - Normal turn: CollectUserMessage writes the user message to BOTH the
+//     in-memory transcript (→ snapshot) and the messages table.
+//   - HITL resume: the answer is already mirrored to the messages table as an
+//     interrupt_resume row (and the widget's answered state shows it), so writing
+//     it again would duplicate the row. RecordResumeAnswer adds the rendered Q+A
+//     to the transcript only — without it the answer lives solely in the live
+//     resume turn and the agent loses the submitted value on the next turn.
+func persistUserTurn(ctx context.Context, collector *MessageCollector, input string) {
+	if domain.IsResumeTurn(ctx) {
+		collector.RecordResumeAnswer(input)
+		return
+	}
+	collector.CollectUserMessage(ctx, input)
 }
 
 // RecoverInterrupted marks all active snapshots as interrupted
