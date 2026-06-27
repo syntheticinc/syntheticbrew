@@ -152,23 +152,30 @@ func TestStartTurn_RebuildsFrozenHead(t *testing.T) {
 	input := []*schema.Message{{Role: schema.User, Content: "hi"}}
 
 	m.StartTurn()
-	first := m.Modify(context.Background(), input)[0].Content
+	out1 := m.Modify(context.Background(), input)
+	stable, first := out1[0].Content, out1[1].Content // [0] stable head, [1] volatile head (reminder)
 	// Within the turn the head is frozen — the changing reminder does not re-poll.
-	again := m.Modify(context.Background(), input)[0].Content
+	again := m.Modify(context.Background(), input)[1].Content
 	if first != again {
-		t.Fatal("head must stay frozen within a turn")
+		t.Fatal("volatile head must stay frozen within a turn")
 	}
 	if !strings.Contains(first, "Only 1 left.") {
 		t.Fatalf("first turn must capture the reminder's first value, got %q", first)
 	}
 
-	// A new turn rebuilds the head, re-polling the (now-changed) reminder.
+	// A new turn rebuilds the head, re-polling the (now-changed) reminder. The reminder
+	// lives in the VOLATILE head; the STABLE head stays turn-invariant (the cross-turn
+	// cache anchor).
 	m.StartTurn()
-	second := m.Modify(context.Background(), input)[0].Content
+	out2 := m.Modify(context.Background(), input)
+	second := out2[1].Content
 	if second == first {
-		t.Fatal("StartTurn must rebuild the frozen head so the next turn re-polls reminders")
+		t.Fatal("StartTurn must rebuild the volatile head so the next turn re-polls reminders")
 	}
 	if !strings.Contains(second, "Only 2 left.") {
-		t.Fatalf("the rebuilt head must reflect the reminder's new value, got %q", second)
+		t.Fatalf("the rebuilt volatile head must reflect the reminder's new value, got %q", second)
+	}
+	if out2[0].Content != stable {
+		t.Fatal("the stable head must stay byte-identical across turns (cross-turn cache anchor)")
 	}
 }

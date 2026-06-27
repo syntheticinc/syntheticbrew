@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -905,6 +906,227 @@ func TestSaveSnapshot_EmptyInput(t *testing.T) {
 	}
 	require.Len(t, userMessages, 1, "only the history user message should exist")
 	assert.Equal(t, "Earlier question", userMessages[0].Content)
+}
+
+// TestEngine_ResumeTurn_PersistsAnswerIntoSnapshot reproduces the HITL widget
+// data-loss bug: when the user answers a show_structured_output form, the engine
+// runs a RESUME turn (domain.WithResumeTurn) with the rendered Q+A as cfg.Input,
+// but CollectUserMessage is skipped on resume and handleInterruptEvent writes only
+// to the messages table — never to the in-memory transcript that feeds the
+// snapshot. The snapshot is the SOLE history source for the next turn, so the
+// submitted value (here a LoRaWAN AppKey) vanishes from the agent's context on the
+// following turn and the model hallucinates it from earlier examples.
+//
+// RED before the fix (the answer is absent from the saved snapshot); GREEN once the
+// resume answer is recorded into the snapshot transcript.
+func TestEngine_ResumeTurn_PersistsAnswerIntoSnapshot(t *testing.T) {
+	// Resume turn: the widget answer is delivered as cfg.Input, not a fresh chat.
+	ctx := domain.WithResumeTurn(context.Background())
+	snapshotRepo := newMockSnapshotRepo()
+	historyRepo := newMockHistoryRepo()
+	eng := New(snapshotRepo, historyRepo)
+
+	// Prior snapshot = the turn that SHOWED the AppKey form: assistant calls the
+	// HITL widget (return-directly), the tool emits a placeholder result, the turn
+	// halts. No answer is captured yet — it arrives on this resume turn.
+	priorTurn := []*schema.Message{
+		{Role: schema.User, Content: "connect my Dragino LDS02 over LoRaWAN"},
+		{
+			Role:    schema.Assistant,
+			Content: " ",
+			ToolCalls: []schema.ToolCall{{
+				ID: "call-appkey",
+				Function: schema.FunctionCall{
+					Name:      "show_structured_output",
+					Arguments: `{"output_type":"form","questions":[{"id":"app_key","label":"AppKey","type":"text"}]}`,
+				},
+			}},
+		},
+		{Role: schema.Tool, Content: "Structured output displayed to user.", ToolCallID: "call-appkey", Name: "show_structured_output"},
+	}
+	contextData, err := adapters.SerializeSchemaMessages(priorTurn)
+	require.NoError(t, err)
+	snapshotRepo.snapshots["supervisor"] = &domain.AgentContextSnapshot{
+		SessionID:     "session-1",
+		AgentID:       "supervisor",
+		SchemaVersion: domain.CurrentSchemaVersion,
+		ContextData:   contextData,
+		StepNumber:    1,
+		Status:        domain.AgentContextStatusExpired,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	const appKey = "f5803ff7d332c01facbc3f3a7e42864a"
+	cfg := ExecutionConfig{
+		SessionID:   "session-1",
+		AgentID:     "supervisor",
+		Flow:        testFlow(),
+		ChatModel:   &mockChatModel{},
+		Input:       "User submitted the form:\nQ: AppKey A: " + appKey + "\n",
+		Streaming:   false,
+		AgentConfig: &config.AgentConfig{},
+	}
+
+	_, err = eng.Execute(ctx, cfg)
+	require.NoError(t, err)
+
+	snap := snapshotRepo.snapshots["supervisor"]
+	require.NotNil(t, snap)
+	messages, err := adapters.DeserializeSchemaMessages(snap.ContextData)
+	require.NoError(t, err)
+
+	found := false
+	for _, m := range messages {
+		if strings.Contains(m.Content, appKey) {
+			found = true
+			break
+		}
+	}
+	require.True(t, found,
+		"the submitted AppKey must be persisted into the snapshot so the NEXT turn still has it; "+
+			"otherwise the agent loses the user's widget answer and hallucinates the value")
+}
+
+// capturingChatModel records the input it was last asked to generate from, so a
+// test can assert what the agent actually SEES on a given turn (e.g. that prior
+// HITL answers reached the model's context).
+type capturingChatModel struct {
+	mu        sync.Mutex
+	lastInput []*schema.Message
+}
+
+func (m *capturingChatModel) record(input []*schema.Message) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastInput = append([]*schema.Message(nil), input...)
+}
+
+func (m *capturingChatModel) lastInputText() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var b strings.Builder
+	for _, msg := range m.lastInput {
+		b.WriteString(msg.Content)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func (m *capturingChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	m.record(input)
+	return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+}
+
+func (m *capturingChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	m.record(input)
+	sr, sw := schema.Pipe[*schema.Message](1)
+	go func() {
+		sw.Send(&schema.Message{Role: schema.Assistant, Content: "ok"}, nil)
+		sw.Close()
+	}()
+	return sr, nil
+}
+
+func (m *capturingChatModel) BindTools(tools []*schema.ToolInfo) error { return nil }
+
+func (m *capturingChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m, nil
+}
+
+// TestEngine_MultiStepHITLFlow_AccumulatesAnswers reproduces the partner's exact
+// failure: a multi-field LoRaWAN provisioning wizard (device name → DevEUI →
+// AppKey) collected through sequential show_structured_output widgets. Each answer
+// arrives on its own HITL resume turn. The agent needs ALL three when it finally
+// calls device_provision_lorawan — but before the fix every widget answer was
+// dropped from the snapshot, so by the AppKey step the name and DevEUI were gone
+// from context and the model hallucinated them.
+//
+// This drives three resume turns through the real engine.Execute path and asserts
+// (a) every answer is persisted into the snapshot, and (b) the model actually SEES
+// the earlier answers on the final turn. RED before the fix, GREEN after.
+func TestEngine_MultiStepHITLFlow_AccumulatesAnswers(t *testing.T) {
+	snapshotRepo := newMockSnapshotRepo()
+	historyRepo := newMockHistoryRepo()
+	eng := New(snapshotRepo, historyRepo)
+	model := &capturingChatModel{}
+
+	// Seed the snapshot with the opening turn that showed the first widget.
+	opening := []*schema.Message{
+		{Role: schema.User, Content: "connect my Dragino LDS02 over LoRaWAN"},
+		{
+			Role:    schema.Assistant,
+			Content: " ",
+			ToolCalls: []schema.ToolCall{{
+				ID:       "w-name",
+				Function: schema.FunctionCall{Name: "show_structured_output", Arguments: `{"output_type":"form"}`},
+			}},
+		},
+		{Role: schema.Tool, Content: "Structured output displayed to user.", ToolCallID: "w-name", Name: "show_structured_output"},
+	}
+	contextData, err := adapters.SerializeSchemaMessages(opening)
+	require.NoError(t, err)
+	snapshotRepo.snapshots["supervisor"] = &domain.AgentContextSnapshot{
+		SessionID:     "session-1",
+		AgentID:       "supervisor",
+		SchemaVersion: domain.CurrentSchemaVersion,
+		ContextData:   contextData,
+		StepNumber:    1,
+		Status:        domain.AgentContextStatusExpired,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	const (
+		deviceName = "Входная дверь магазина"
+		devEUI     = "A850418FA177B95B"
+		appKey     = "f5803ff7d332c01facbc3f3a7e42864a"
+	)
+
+	// Each entry is one HITL resume turn carrying the user's widget answer as the
+	// rendered Q+A text (exactly what buildStructuredOutputResumeText produces).
+	resumeAnswers := []string{
+		"User submitted the form:\nQ: Device name A: " + deviceName + "\n",
+		"User submitted the form:\nQ: DevEUI A: " + devEUI + "\n",
+		"User submitted the form:\nQ: AppKey A: " + appKey + "\n",
+	}
+
+	for _, qa := range resumeAnswers {
+		ctx := domain.WithResumeTurn(context.Background())
+		cfg := ExecutionConfig{
+			SessionID:   "session-1",
+			AgentID:     "supervisor",
+			Flow:        testFlow(),
+			ChatModel:   model,
+			Input:       qa,
+			Streaming:   false,
+			AgentConfig: &config.AgentConfig{},
+		}
+		_, err := eng.Execute(ctx, cfg)
+		require.NoError(t, err)
+	}
+
+	// (a) the final snapshot must carry all three collected values.
+	snap := snapshotRepo.snapshots["supervisor"]
+	require.NotNil(t, snap)
+	messages, err := adapters.DeserializeSchemaMessages(snap.ContextData)
+	require.NoError(t, err)
+	var snapText strings.Builder
+	for _, m := range messages {
+		snapText.WriteString(m.Content)
+		snapText.WriteByte('\n')
+	}
+	for _, want := range []string{deviceName, devEUI, appKey} {
+		assert.Contains(t, snapText.String(), want,
+			"snapshot must retain every widget answer across the multi-step flow")
+	}
+
+	// (b) on the final (AppKey) turn the model must already SEE the name + DevEUI —
+	// the values it would need to call device_provision_lorawan correctly.
+	finalInput := model.lastInputText()
+	assert.Contains(t, finalInput, deviceName, "agent lost the device name by the final step")
+	assert.Contains(t, finalInput, devEUI, "agent lost the DevEUI by the final step")
+	assert.Contains(t, finalInput, appKey, "agent is missing the just-submitted AppKey")
 }
 
 // --- buildEffectiveAgentConfig tests ---

@@ -102,6 +102,29 @@ func (mc *MessageCollector) CollectUserMessage(ctx context.Context, content stri
 	slog.InfoContext(ctx, "collected user message", "length", len(content), "agent_id", mc.agentID)
 }
 
+// RecordResumeAnswer appends the user's HITL resume answer to the in-memory
+// transcript so it lands in the snapshot the NEXT turn loads. Called on resume
+// turns INSTEAD of CollectUserMessage: unlike a normal user turn it does NOT write
+// a messages-table row — the answer is already mirrored there as an
+// interrupt_resume row (chat_http_adapter) and the widget's answered state
+// represents it for the UI. Without this the answer lives only in the live resume
+// turn's input and vanishes from the agent's context next turn, so the model loses
+// the submitted value (device name / DevEUI / AppKey in a multi-step widget flow)
+// and reconstructs it from earlier examples.
+func (mc *MessageCollector) RecordResumeAnswer(content string) {
+	if content == "" {
+		return
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	mc.messages = append(mc.messages, &schema.Message{
+		Role:    schema.User,
+		Content: content,
+	})
+}
+
 // handleEvent processes events to extract and save messages
 func (mc *MessageCollector) handleEvent(event *domain.AgentEvent) {
 	mc.mu.Lock()

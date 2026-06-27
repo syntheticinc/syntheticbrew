@@ -90,11 +90,12 @@ func TestOwnedGraph_CacheControlReachesChatNodeWire(t *testing.T) {
 }
 
 // TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail verifies the two cache breakpoints
-// land on the FROZEN HEAD and the LAST natural (cacheable) message. The MessageModifier
-// folds every reminder into the byte-frozen head and appends only natural user/assistant/
-// tool turns after it, never rewriting earlier ones — so the head is the stable front
-// breakpoint and the last natural message is the byte-stable tail breakpoint. The
-// reminder marker therefore appears INSIDE the head, not as a separate trailing message.
+// land on the STABLE head and the LAST natural (cacheable) message. The MessageModifier
+// emits the head as two system messages — a turn-invariant STABLE head (the front cache
+// breakpoint) and a per-turn VOLATILE head (CURRENT TASK + reminders) — then appends only
+// natural turns after them. The reminder marker therefore appears in the VOLATILE head
+// (msgs[1]), which is NOT a breakpoint, so a changing reminder never invalidates the
+// cross-turn cache prefix. The last natural message is the byte-stable tail breakpoint.
 func TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail(t *testing.T) {
 	const reminderMarker = "HEAD-FOLDED-REMINDER-MARKER"
 	var lastBody []byte
@@ -151,21 +152,29 @@ func TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail(t *testing.T) {
 	}
 	contentStr := func(m map[string]json.RawMessage) string { return string(m["content"]) }
 
-	// The reminder is folded into the head system message, not a separate trailing message.
-	head := msgs[0]
-	require.Equal(t, "system", messageRoleOf(head), "msgs[0] must be the frozen head")
-	require.Contains(t, contentStr(head), reminderMarker, "the reminder must be folded into the head, not trailed")
-	assert.True(t, hasCC(head), "head system message must carry a cache breakpoint")
+	// The cache breakpoint lands on the STABLE head (msgs[0]); the per-turn reminder
+	// lives in the VOLATILE head (msgs[1]) — a separate system message that is NOT the
+	// breakpoint, so a changing reminder never invalidates the cross-turn cache prefix.
+	stableHead := msgs[0]
+	require.Equal(t, "system", messageRoleOf(stableHead), "msgs[0] must be the stable head")
+	require.NotContains(t, contentStr(stableHead), reminderMarker, "the per-turn reminder must NOT be in the cache-marked stable head")
+	assert.True(t, hasCC(stableHead), "the stable head must carry the front cache breakpoint")
+
+	volatileHead := msgs[1]
+	require.Equal(t, "system", messageRoleOf(volatileHead), "msgs[1] must be the volatile head")
+	require.Contains(t, contentStr(volatileHead), reminderMarker, "the reminder must live in the volatile head")
+	assert.False(t, hasCC(volatileHead), "the volatile head must NOT be a cache breakpoint (it changes per turn)")
 
 	// The last natural (cacheable) message is the user turn — the byte-stable tail
-	// breakpoint. It is NOT a reminder; the reminder lives in the head.
+	// breakpoint. It is NOT a reminder; the reminder lives in the volatile head.
 	last := msgs[len(msgs)-1]
 	require.Contains(t, contentStr(last), userInputMarker, "the tail must be the natural user turn, not a reminder")
 	assert.True(t, hasCC(last), "the last cacheable message must carry the tail cache breakpoint")
 
-	// Only head + tail are breakpoints; interior history is read from cache, not marked.
-	for i, m := range msgs[1 : len(msgs)-1] {
-		assert.False(t, hasCC(m), "only head and tail are breakpoints; interior message %d must not be marked", i+1)
+	// Only the stable head + tail are breakpoints; everything interior (the volatile
+	// head and the history) is read from cache, not marked.
+	for i, m := range msgs[2 : len(msgs)-1] {
+		assert.False(t, hasCC(m), "only stable head and tail are breakpoints; interior message %d must not be marked", i+2)
 	}
 }
 

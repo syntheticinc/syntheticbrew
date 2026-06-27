@@ -12,13 +12,18 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
-// MessageModifier builds the turn's FROZEN HEAD: a single leading system message
-// carrying everything stable for the turn — the system prompt, the available-tools
-// whitelist, the HITL halt directive, the task-focus restatement, and every context
-// reminder's content captured ONCE on the turn's first model call. The head is byte-
-// frozen for the whole turn, so the explicit-cache prefix never shifts; the owned
-// loop appends only natural user/assistant/tool turns after it, making each step's
-// request a strict append-only extension of the previous one.
+// MessageModifier builds the turn's FROZEN HEAD as TWO leading system messages,
+// both captured ONCE on the turn's first model call and byte-frozen for the whole turn:
+//   - a STABLE head (system prompt + available-tools whitelist + HITL halt directive)
+//     that is turn-invariant, so the cache_control breakpoint marking the first system
+//     message is byte-identical across turns and the provider caches it cross-turn;
+//   - a VOLATILE head (task-focus restatement + every context reminder) that is frozen
+//     within the turn but differs between turns, kept SEPARATE from the cache-marked
+//     stable head so per-turn changes don't re-bill the whole prompt every turn.
+//
+// Both are frozen for the turn, so the explicit-cache prefix never shifts mid-turn; the
+// owned loop appends only natural user/assistant/tool turns after them, making each
+// step's request a strict append-only extension of the previous one.
 //
 // What the modifier deliberately does NOT do: it never injects a standalone
 // schema.System message into the MIDDLE of the conversation, and it never rewrites
@@ -35,10 +40,17 @@ type MessageModifier struct {
 	sessionID         string
 	toolNames         []string // available tool names injected into the head
 
-	// frozenHead is the leading system message text, built once on the turn's first
-	// Modify and reused byte-identical for every later step. Reset by StartTurn.
-	frozenHead string
-	headBuilt  bool
+	// The frozen head is two leading system messages, both captured once on the turn's
+	// first Modify and reused byte-identical for every later step (reset by StartTurn):
+	//   - frozenStableHead: system prompt + tool whitelist + HITL directive. Turn-
+	//     INVARIANT, so the cache_control breakpoint (which marks the first system
+	//     message) stays byte-identical across turns and the provider caches it cross-turn.
+	//   - frozenVolatileHead: CURRENT TASK + reminders. Frozen within the turn (no mid-
+	//     turn collapse) but differs between turns, so it is kept OUT of the cache-marked
+	//     stable head — folding it in re-bills the whole prompt on every turn.
+	frozenStableHead   string
+	frozenVolatileHead string
+	headBuilt          bool
 
 	mu sync.Mutex
 }
@@ -61,32 +73,36 @@ func NewMessageModifier(cfg MessageModifierConfig) *MessageModifier {
 	}
 }
 
-// Modify prepends the frozen head to the (append-only) input transcript. The head
-// is built once per turn and never changes, so [head]+input stays a strict append-
-// only extension across the turn's steps and the explicit-cache prefix keeps growing
-// instead of collapsing.
+// Modify prepends the frozen head to the (append-only) input transcript. The head is
+// two system messages built once per turn and never changed, so [stable, volatile]+input
+// stays a strict append-only extension across the turn's steps. The stable head is kept
+// first and turn-invariant so the cache_control breakpoint on it is reused across turns;
+// the per-turn volatile head follows it (only when non-empty) and is never the breakpoint.
 func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) []*schema.Message {
 	m.mu.Lock()
 	if !m.headBuilt {
-		m.frozenHead = m.buildHead(ctx, input)
+		m.frozenStableHead = m.buildStableHead()
+		m.frozenVolatileHead = m.buildVolatileHead(ctx, input)
 		m.headBuilt = true
 	}
-	head := m.frozenHead
+	stable := m.frozenStableHead
+	volatile := m.frozenVolatileHead
 	m.mu.Unlock()
 
-	result := make([]*schema.Message, 0, len(input)+1)
-	result = append(result, schema.SystemMessage(head))
+	result := make([]*schema.Message, 0, len(input)+2)
+	result = append(result, schema.SystemMessage(stable))
+	if volatile != "" {
+		result = append(result, schema.SystemMessage(volatile))
+	}
 	result = append(result, input...)
 	return result
 }
 
-// buildHead assembles the frozen head: configured system prompt + the available-
-// tools whitelist + the HITL halt directive + the task-focus restatement + every
-// context reminder's content, captured once and ordered by priority (higher
-// priority later, for recency within the head). It carries no per-step dynamic
-// content, so it stays byte-identical across the turn's model calls and the provider
-// can prompt-cache it.
-func (m *MessageModifier) buildHead(ctx context.Context, input []*schema.Message) string {
+// buildStableHead assembles the turn-INVARIANT head: configured system prompt + the
+// available-tools whitelist + the HITL halt directive. It carries no per-turn or
+// per-step content, so it stays byte-identical across the whole conversation and the
+// cache_control modifier (which marks the first system message) caches it cross-turn.
+func (m *MessageModifier) buildStableHead() string {
 	var sb strings.Builder
 	sb.WriteString(m.systemPrompt)
 
@@ -101,16 +117,31 @@ func (m *MessageModifier) buildHead(ctx context.Context, input []*schema.Message
 		sb.WriteString(hitlPromptDirective)
 	}
 
+	return sb.String()
+}
+
+// buildVolatileHead assembles the per-turn head: the task-focus restatement of the
+// user's current question + every context reminder's content, captured ONCE for the
+// turn and ordered by priority (higher priority later, for recency). It is frozen
+// within the turn (so no mid-turn change collapses the within-turn cache) but differs
+// between turns — therefore it is emitted as a SEPARATE system message after the
+// stable head and is never the cache_control breakpoint. Returns "" when there is no
+// task focus and no reminder, so Modify can skip emitting an empty message.
+func (m *MessageModifier) buildVolatileHead(ctx context.Context, input []*schema.Message) string {
+	var sb strings.Builder
+
 	// Task focus: restate the user's question so a long tool loop stays anchored to
-	// THIS turn's request. Stable for the turn (frozen at the first model call).
+	// THIS turn's request. Stable within the turn (frozen at the first model call).
 	if q := latestUserQuestion(input); q != "" {
-		fmt.Fprintf(&sb, "\n\n**CURRENT TASK:** Answer the user's question: %q\nDo NOT get distracted - answer THIS question!",
+		fmt.Fprintf(&sb, "**CURRENT TASK:** Answer the user's question: %q\nDo NOT get distracted - answer THIS question!",
 			sanitizeForSystemPrompt(q, 500))
 	}
 
-	// Fold every context reminder's content into the head, captured ONCE for the turn.
+	// Append every context reminder's content, captured ONCE for the turn.
 	for _, content := range m.collectReminders(ctx) {
-		sb.WriteString("\n\n")
+		if sb.Len() > 0 {
+			sb.WriteString("\n\n")
+		}
 		sb.WriteString(content)
 	}
 
@@ -173,7 +204,8 @@ func latestUserQuestion(input []*schema.Message) string {
 // start of each turn.
 func (m *MessageModifier) StartTurn() {
 	m.mu.Lock()
-	m.frozenHead = ""
+	m.frozenStableHead = ""
+	m.frozenVolatileHead = ""
 	m.headBuilt = false
 	m.mu.Unlock()
 }
