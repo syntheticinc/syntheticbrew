@@ -7,6 +7,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-27
+
+### Changed
+- Bump `appVersion` to **1.10.1** — engine fixes: HITL widget answers are now
+  persisted into the agent context snapshot, and cross-turn prompt caching is
+  restored (frozen head split into a cache-marked stable head + a per-turn volatile
+  head). No chart template or values changes.
+
 ## [0.11.0] - 2026-06-24
 
 ### Added

@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.10.1] — 2026-06-27
+
+### Fixed
+
+- **HITL widget answers are now persisted into the agent context snapshot.** In a
+  multi-step `show_structured_output` flow, each answer arrives on its own resume
+  turn; the answer was written only to the messages table, never to the snapshot
+  that seeds the next turn, so the agent lost earlier answers (re-asking already
+  answered fields or reconstructing values from earlier examples). The rendered
+  resume Q+A now enters the snapshot transcript (transcript-only — no duplicate
+  messages-table row).
+- **Cross-turn prompt caching restored.** The frozen head folded the per-turn
+  CURRENT TASK and reminders into the single `cache_control`-marked system message,
+  so the marked block changed every turn and the whole system prompt was re-billed
+  cross-turn (within-turn tool loops still cached). The head is now two frozen
+  system messages — a turn-invariant stable head (system prompt + tool whitelist +
+  HITL directive) that carries the cache breakpoint, plus a per-turn volatile head
+  (CURRENT TASK + reminders) that is never the breakpoint. Within-turn cache growth
+  is preserved.
+
 ## [1.10.0] — 2026-06-24
 
 ### Added
