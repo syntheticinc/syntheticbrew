@@ -7,6 +7,15 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-01
+
+### Changed
+- Bump `appVersion` to **1.10.2** — engine prompt-cache fixes: the per-turn
+  volatile head now sits at the tail so the whole conversation history caches
+  across turns, and the history cache breakpoint follows the conversation to full
+  depth (replacing the fixed-stride scheme that stopped caching past ~48 messages).
+  No chart template or values changes.
+
 ## [0.11.1] - 2026-06-27
 
 ### Changed
