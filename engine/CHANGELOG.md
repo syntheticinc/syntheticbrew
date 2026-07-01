@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.10.2] — 2026-07-01
+
+### Fixed
+
+- **Cross-turn prompt cache now covers the whole conversation history, not just
+  the system prompt.** 1.10.1 split the frozen head into a turn-invariant stable
+  head (cache_control-marked) and a per-turn volatile head (CURRENT TASK +
+  reminders), but placed the volatile head at the FRONT — between the stable head
+  and the conversation. Because it changes every turn (a new question, or every
+  HITL form submission), the provider's common cache prefix ended right after the
+  system prompt, so the entire append-only history — often tens of thousands of
+  tokens including large tool outputs — was re-billed at full price on every turn.
+  The volatile head now sits at the TAIL, after the whole conversation, so the
+  stable head + the full history form one byte-stable growing prefix that caches
+  across turns; only the tiny volatile tail is fresh. Verified live on qwen3.7-plus
+  with a 30k-token, HITL-heavy multi-turn conversation: cross-turn cache went from
+  ~11% (front) to 99–100% (tail).
+- **Prompt cache now covers the full conversation depth — no fixed-stride ceiling.**
+  The explicit `cache_control` scheme previously placed history breakpoints at fixed
+  message offsets (16/32/48), capped at the provider's 4-breakpoint limit, so on a
+  long tool loop or conversation nothing past ~message 48 was marked and the recent
+  tail was re-billed at full price (the cached token count froze at the 48th-message
+  level while the prompt kept growing — "cache only partially works at depth"). The
+  history breakpoint is now a single marker on the last cacheable *conversation*
+  message — the moving tail — that follows the conversation to any depth: each
+  request's tail marker chains to the previous request's tail cache write, so the
+  whole prefix stays cached with no checkpoint cap. The trailing volatile head is
+  skipped (its array slot is overwritten next step, so marking it would move the
+  breakpoint onto changing bytes). Verified live on qwen3.7-plus at depth (30k+ token
+  prompt): the moving tail cached ~97% at every step where the old fixed-stride
+  scheme had decayed to ~63% and falling. Within-turn cache growth is a smooth
+  staircase from the first step. (qwen3.7-plus does not do automatic prefix caching —
+  with no markers it cached 0% — so the explicit markers are load-bearing for this
+  model, unlike the sticky-only automatic-cache providers.)
+- **Warn when `provider.order` defeats prompt caching.** An OpenRouter model whose
+  `extra_body` pins routing with `provider.order` silently disables x-session-id
+  sticky routing, scattering requests across upstream replicas and losing the
+  cache. The engine now logs a warning at client construction recommending
+  `provider.only` (which pins the pool without disabling sticky) or a dedicated
+  BYOK key.
+
 ## [1.10.1] — 2026-06-27
 
 ### Fixed

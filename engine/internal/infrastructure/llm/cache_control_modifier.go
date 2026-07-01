@@ -23,8 +23,6 @@ const (
 	// cacheGateCharsPerToken converts the token gate to a char budget for the
 	// body-size estimate. Conservative (biases toward not-caching small prefixes).
 	cacheGateCharsPerToken = 4
-	// maxCacheBreakpoints mirrors the provider cap (Anthropic: 4 breakpoints).
-	maxCacheBreakpoints = 4
 )
 
 var ephemeralCacheControl = json.RawMessage(`{"type":"ephemeral"}`)
@@ -147,89 +145,43 @@ func injectCacheControl(body []byte, minPrefixTokens int, markSystem, markHistor
 	return out, nil
 }
 
-// selectBreakpointIndices picks the message indices to mark (≤ maxCacheBreakpoints),
-// deduped. system = first system message; history = last cacheable message (the tail
-// of the append-only prefix). Both placements yield incremental hits: the front caches
-// the large stable block, the tail caches the growing conversation prefix.
+// selectBreakpointIndices picks the ≤2 cache breakpoints, deduped: the HEAD (first system
+// message — the turn-invariant stable prefix, byte-stable across turns so it caches
+// cross-turn) and the moving TAIL (the last stable conversation message, skipping the
+// trailing volatile head). As the append-only conversation grows the tail breakpoint moves
+// forward one step at a time; each request's tail marker chains to the PREVIOUS request's
+// tail cache write (a few content blocks back, within the provider's extend window), so the
+// whole prefix stays cached to ANY depth — there is no fixed-checkpoint cap. Canonicalizing
+// every message to array form keeps a former tail byte-stable when the marker moves off it
+// (only the cache_control field drops, which the providers tolerate — proven live on
+// qwen3.7-plus: cached tracks the full prefix across depth with no collapse, whereas a
+// fixed-stride cap froze cached at the ~48th message).
 func selectBreakpointIndices(msgs []map[string]json.RawMessage, markSystem, markHistory bool) []int {
 	var idxs []int
 	seen := map[int]bool{}
 	add := func(i int) {
-		if i >= 0 && !seen[i] && len(idxs) < maxCacheBreakpoints {
+		if i >= 0 && !seen[i] {
 			seen[i] = true
 			idxs = append(idxs, i)
 		}
 	}
 	if markSystem {
-		if i := firstSystemIndex(msgs); i >= 0 {
-			add(i)
-		}
+		add(firstSystemIndex(msgs))
 	}
 	if markHistory {
-		for _, i := range historyBreakpoints(msgs, maxCacheBreakpoints-len(idxs)) {
-			add(i)
-		}
+		add(lastCacheableConversationIndex(msgs))
 	}
 	return idxs
 }
 
-// historyBreakpoints returns the conversation-history breakpoint indices: fixed stride
-// checkpoints once the conversation is long enough, or — for a conversation shorter than
-// the first boundary — the tail, so a short turn still caches its small history. The head
-// dominates short turns, and the stable checkpoints take over once it grows past the first
-// stride boundary.
-func historyBreakpoints(msgs []map[string]json.RawMessage, budget int) []int {
-	if cps := historyCheckpointIndices(msgs, historyCheckpointStride, budget); len(cps) > 0 {
-		return cps
-	}
-	if i := lastCacheableIndex(msgs); i >= 0 {
-		return []int{i}
-	}
-	return nil
-}
-
-// historyCheckpointStride is the message gap between stable history cache checkpoints.
-// Marking the absolute last cacheable message moves the breakpoint every step, so the
-// previous tail loses its cache_control marker — and on Qwen/DashScope that byte change
-// stops the prior cache write from being reused, pinning cached tokens at the head
-// (empirically: cached plateaus at head with a toggling tail marker, but climbs across
-// steps with stable checkpoints). Two constraints fix the placement:
-//   - The provider walks back a bounded LOOKBACK window (~20 content blocks) from each
-//     breakpoint to find the prior cache write to extend, so consecutive markers must be
-//     ≤ that window apart or the chain (head → c1 → c2 → …) breaks. stride 16 keeps margin.
-//   - Markers must be byte-stable across steps, so they anchor to FIXED earliest boundaries
-//     (16, 32, 48, …) and accumulate — never slide — so no already-written marker is ever
-//     removed. Within the 4-breakpoint budget (head + 3) this caches the first ~64 messages
-//     (~32 tool steps) with no drops, then plateaus (still no drops).
-const historyCheckpointStride = 16
-
-// historyCheckpointIndices returns up to maxCount cacheable-message indices at FIXED stride
-// boundaries from the front (16, 32, 48, …) that already exist in the conversation. Because
-// the boundaries are anchored to the front, a marked message keeps the exact same index
-// (and bytes) as the conversation grows at the tail — the marker is never moved or removed,
-// so the explicit-cache prefix chains head → boundary → boundary and grows. The live tail
-// past the last boundary is left unmarked (marking it would toggle every step).
-func historyCheckpointIndices(msgs []map[string]json.RawMessage, stride, maxCount int) []int {
-	tail := lastCacheableIndex(msgs)
-	if tail < 0 || stride <= 0 || maxCount <= 0 {
-		return nil
-	}
-	var out []int
-	for b := stride; b <= tail && len(out) < maxCount; b += stride {
-		if i := lastCacheableAtOrBefore(msgs, b); i >= 0 {
-			out = append(out, i)
+// lastCacheableConversationIndex returns the index of the last cacheable message that is
+// part of the append-only conversation, skipping trailing system messages (the per-turn
+// volatile head), or -1 if none.
+func lastCacheableConversationIndex(msgs []map[string]json.RawMessage) int {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if messageRole(msgs[i]) == "system" {
+			continue
 		}
-	}
-	return out
-}
-
-// lastCacheableAtOrBefore returns the index of the last cacheable message at or before
-// limit (a tool_call-only assistant has null content and is skipped), or -1.
-func lastCacheableAtOrBefore(msgs []map[string]json.RawMessage, limit int) int {
-	if limit >= len(msgs) {
-		limit = len(msgs) - 1
-	}
-	for i := limit; i >= 0; i-- {
 		if contentIsCacheable(msgs[i]["content"]) {
 			return i
 		}
@@ -240,26 +192,6 @@ func lastCacheableAtOrBefore(msgs []map[string]json.RawMessage, limit int) int {
 func firstSystemIndex(msgs []map[string]json.RawMessage) int {
 	for i, m := range msgs {
 		if messageRole(m) == "system" {
-			return i
-		}
-	}
-	return -1
-}
-
-// lastCacheableIndex returns the index of the LAST message with cacheable content —
-// the end of the request's stable prefix. The engine builds each turn's messages
-// append-only: the MessageModifier appends new reminders and conversation turns at the
-// tail and never rewrites or shifts earlier ones, so the last message is byte-stable
-// once written. Marking it caches the whole growing prefix, and on the next call it is
-// interior and read from cache. (Earlier versions skipped trailing system reminders
-// because the old design REWROTE a single trailing reminder each call — content after
-// the breakpoint then changed and explicit-cache providers discarded the whole cache;
-// append-increment removes that rewrite, so the trailing reminder is now the correct,
-// stable breakpoint.) Non-cacheable turns (e.g. tool_call-only assistant with null
-// content) are skipped by contentIsCacheable.
-func lastCacheableIndex(msgs []map[string]json.RawMessage) int {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if contentIsCacheable(msgs[i]["content"]) {
 			return i
 		}
 	}

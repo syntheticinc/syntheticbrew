@@ -54,10 +54,10 @@ func TestMessageModifier_SystemPromptInjection(t *testing.T) {
 }
 
 // TestMessageModifier_TaskReminder verifies the task-focus restatement lives in the
-// VOLATILE head (result[1]) from the FIRST Modify call (a user question is present),
-// NOT in the cache-marked stable head (result[0]) — it changes per turn, so folding it
-// into the stable head would break cross-turn caching. Both head messages and the input
-// follow; there are no trailing dynamic messages.
+// VOLATILE head, which since the fix is the TRAILING message (result[len-1]) — after the
+// whole conversation — NOT in the cache-marked stable head (result[0]). It changes per
+// turn, so folding it into the stable head would break cross-turn caching; placing it at
+// the tail keeps the append-only history in the byte-stable cacheable prefix.
 func TestMessageModifier_TaskReminder(t *testing.T) {
 	modifier := NewMessageModifier(MessageModifierConfig{
 		SystemPrompt: "System",
@@ -68,31 +68,35 @@ func TestMessageModifier_TaskReminder(t *testing.T) {
 		{Role: schema.User, Content: "My question"},
 	}
 
-	// Task focus is in the volatile head (result[1]) from the very first call — it
-	// restates THIS turn's question and is captured once for the turn.
+	// Task focus is in the trailing volatile head from the very first call — it restates
+	// THIS turn's question and is captured once for the turn.
 	result := modifier.Modify(context.Background(), input)
-	if !strings.Contains(result[1].Content, "CURRENT TASK") {
-		t.Errorf("expected task focus in the volatile head from the first call, got: %s", result[1].Content)
+	volatile := result[len(result)-1]
+	if volatile.Role != schema.System {
+		t.Errorf("the trailing volatile head must be a system message, got role %v", volatile.Role)
 	}
-	if !strings.Contains(result[1].Content, "My question") {
-		t.Errorf("task focus must restate the user's question, got: %s", result[1].Content)
+	if !strings.Contains(volatile.Content, "CURRENT TASK") {
+		t.Errorf("expected task focus in the trailing volatile head from the first call, got: %s", volatile.Content)
+	}
+	if !strings.Contains(volatile.Content, "My question") {
+		t.Errorf("task focus must restate the user's question, got: %s", volatile.Content)
 	}
 	// The cache-marked stable head must NOT carry the per-turn task focus.
 	if strings.Contains(result[0].Content, "CURRENT TASK") {
 		t.Errorf("stable head must not carry the per-turn task focus, got: %s", result[0].Content)
 	}
-	// Head is [stable, volatile]; Modify returns [stable, volatile] + input, no trailing.
+	// Modify returns [stable head] + input + [volatile head], no other messages.
 	if len(result) != 2+len(input) {
-		t.Errorf("Modify must return [stable, volatile]+input with no trailing messages, got %d", len(result))
+		t.Errorf("Modify must return [stable head]+input+[volatile head], got %d", len(result))
 	}
 }
 
 // TestMessageModifier_HeadStableAcrossSteps is the within-turn cache-stability guard:
-// BOTH head system messages (stable + volatile) must be byte-identical across model
-// calls within a turn, and Modify returns exactly [stable, volatile]+input (no trailing
-// dynamic messages). Per-turn content is frozen once, so the cacheable prefix never
-// shifts within the turn. The tool whitelist lives in the stable head; the task focus in
-// the volatile head.
+// BOTH system messages (the leading stable head + the trailing volatile head) must be
+// byte-identical across model calls within a turn, and Modify returns exactly
+// [stable head]+input+[volatile head] (no other messages). Per-turn content is frozen
+// once, so the cacheable prefix never shifts within the turn. The tool whitelist lives in
+// the stable head; the task focus in the trailing volatile head.
 func TestMessageModifier_HeadStableAcrossSteps(t *testing.T) {
 	m := NewMessageModifier(MessageModifierConfig{
 		SystemPrompt: "You are a helpful assistant.",
@@ -105,19 +109,19 @@ func TestMessageModifier_HeadStableAcrossSteps(t *testing.T) {
 	var stable, volatile string
 	for i := 0; i < 5; i++ {
 		out := m.Modify(context.Background(), input)
-		require.Equal(t, schema.System, out[0].Role)
-		require.Equal(t, schema.System, out[1].Role)
+		require.Equal(t, schema.System, out[0].Role, "leading stable head must be system (step %d)", i)
+		require.Equal(t, schema.System, out[len(out)-1].Role, "trailing volatile head must be system (step %d)", i)
 		if i == 0 {
-			stable, volatile = out[0].Content, out[1].Content
+			stable, volatile = out[0].Content, out[len(out)-1].Content
 		} else {
 			require.Equal(t, stable, out[0].Content,
 				"stable head must stay byte-identical across steps (step %d)", i)
-			require.Equal(t, volatile, out[1].Content,
+			require.Equal(t, volatile, out[len(out)-1].Content,
 				"volatile head must stay byte-identical across steps (step %d)", i)
 		}
-		// No trailing messages — the two head messages carry everything; the rest is input.
+		// Exactly [stable head]+input+[volatile head]; nothing else injected.
 		require.Len(t, out, 2+len(input),
-			"Modify must return [stable, volatile]+input with no trailing dynamic messages (step %d)", i)
+			"Modify must return [stable head]+input+[volatile head] (step %d)", i)
 	}
 	// The stable head carries the tool whitelist; the volatile head carries the task focus.
 	require.Contains(t, stable, "**Available tools:**")
@@ -157,8 +161,9 @@ func (r *staticReminder) GetContextReminder(_ context.Context, _ string) (string
 // TestMessageModifier_ChangingReminderCapturedOnce proves the frozen head is built once:
 // a reminder whose value changes each call is polled EXACTLY ONCE for the turn (the
 // counter increments once across many Modify calls), its captured value appears once in
-// the head, and the head is byte-identical across every step. The reminder never trails
-// a fresh value — the whole point of folding it into the byte-frozen head.
+// the trailing volatile head, and both heads are byte-identical across every step. The
+// reminder never surfaces a fresh value — the whole point of folding it into the byte-frozen
+// volatile head, which since the fix rides at the tail (after the conversation).
 func TestMessageModifier_ChangingReminderCapturedOnce(t *testing.T) {
 	var n int
 	m := NewMessageModifier(MessageModifierConfig{
@@ -175,26 +180,27 @@ func TestMessageModifier_ChangingReminderCapturedOnce(t *testing.T) {
 	for step := 1; step <= 3; step++ {
 		out := m.Modify(context.Background(), input)
 		if step == 1 {
-			stable, volatile = out[0].Content, out[1].Content
+			stable, volatile = out[0].Content, out[len(out)-1].Content
 		} else {
 			require.Equal(t, stable, out[0].Content,
 				"stable head must stay byte-identical across steps (step %d)", step)
-			require.Equal(t, volatile, out[1].Content,
+			require.Equal(t, volatile, out[len(out)-1].Content,
 				"volatile head must stay byte-identical across steps (step %d)", step)
 		}
-		// No trailing messages: the reminder rides in the volatile head, not after input.
+		// Exactly [stable head]+input+[volatile head]: the reminder rides in the trailing head.
 		require.Len(t, out, 2+len(input))
 	}
 
 	// The provider was polled exactly once (head built once), so its first value is the
-	// only one captured and it appears exactly once in the volatile head.
+	// only one captured and it appears exactly once in the trailing volatile head.
 	require.Equal(t, 1, n, "the changing reminder provider must be polled exactly once per turn")
 	require.Equal(t, 1, strings.Count(volatile, "**COUNTDOWN:** Only 1 left."),
 		"the captured reminder value must appear exactly once in the frozen volatile head")
 }
 
-// TestMessageModifier_StaticReminderAppearsOnce proves a reminder's content is folded
-// into the head exactly once and the head is stable across steps with no trailing message.
+// TestMessageModifier_StaticReminderAppearsOnce proves a reminder's content is folded into
+// the volatile head exactly once and that head is byte-identical across steps. Since the
+// fix the volatile head is the trailing message (out[len-1]), after the conversation.
 func TestMessageModifier_StaticReminderAppearsOnce(t *testing.T) {
 	m := NewMessageModifier(MessageModifierConfig{
 		SystemPrompt: "You are a helpful assistant.",
@@ -212,11 +218,11 @@ func TestMessageModifier_StaticReminderAppearsOnce(t *testing.T) {
 	for step := 0; step <= 5; step++ {
 		out := m.Modify(context.Background(), input)
 		if step == 0 {
-			volatile = out[1].Content
+			volatile = out[len(out)-1].Content
 		} else {
-			require.Equal(t, volatile, out[1].Content, "volatile head must stay byte-identical (step %d)", step)
+			require.Equal(t, volatile, out[len(out)-1].Content, "trailing volatile head must stay byte-identical (step %d)", step)
 		}
-		require.Len(t, out, 2+len(input), "no message may follow the input (step %d)", step)
+		require.Len(t, out, 2+len(input), "exactly [stable head]+input+[volatile head] (step %d)", step)
 	}
 	require.Equal(t, 1, strings.Count(volatile, "**STATIC:** stable every step."),
 		"static reminder must appear exactly once in the frozen volatile head")
@@ -224,11 +230,12 @@ func TestMessageModifier_StaticReminderAppearsOnce(t *testing.T) {
 
 // TestMessageModifier_PrefixExtensionInvariant is the core cache-stability guard. Across
 // successive Modify calls within a turn — with the input transcript GROWING each call —
-// BOTH head messages (out[0] stable, out[1] volatile) must be byte-identical and the
-// non-head sequence (out[2:]) must equal the input transcript exactly. The modifier
-// mutates nothing and appends nothing of its own after the head, so [stable, volatile]+input
-// stays a strict append-only extension and the explicit-cache prefix can grow. A changing
-// reminder is captured once into the volatile head.
+// BOTH system messages (out[0] stable leading head, out[len-1] volatile trailing head) must
+// be byte-identical, and the interior sequence (out[1 : len-1]) must equal the input
+// transcript exactly. The modifier mutates nothing and injects nothing between the head and
+// the transcript, so [stable head]+transcript stays a strict append-only extension and the
+// explicit-cache prefix can grow; the frozen volatile head trails it. A changing reminder is
+// captured once into the volatile head.
 func TestMessageModifier_PrefixExtensionInvariant(t *testing.T) {
 	var n int
 	m := NewMessageModifier(MessageModifierConfig{
@@ -242,26 +249,28 @@ func TestMessageModifier_PrefixExtensionInvariant(t *testing.T) {
 	// A growing transcript: one assistant/user turn appended each step.
 	transcript := []*schema.Message{{Role: schema.User, Content: "Investigate thoroughly."}}
 
-	const headLen = 2 // stable + volatile
 	var stable, volatile string
 	for step := 1; step <= 5; step++ {
 		out := m.Modify(context.Background(), transcript)
 		if step == 1 {
-			stable, volatile = out[0].Content, out[1].Content
+			stable, volatile = out[0].Content, out[len(out)-1].Content
 		} else {
 			require.Equal(t, stable, out[0].Content,
 				"stable head must stay byte-identical across steps (step %d)", step)
-			require.Equal(t, volatile, out[1].Content,
+			require.Equal(t, volatile, out[len(out)-1].Content,
 				"volatile head must stay byte-identical across steps (step %d)", step)
 		}
-		// The non-head sequence must equal the input transcript exactly — no message
-		// mutated, none injected by the modifier. Same length, same content, same order.
-		require.Len(t, out, headLen+len(transcript), "out must be [stable, volatile]+transcript (step %d)", step)
+		// out is [stable head] + transcript + [volatile head]. The interior (out[1:len-1])
+		// must equal the input transcript exactly — no message mutated, none injected by the
+		// modifier. Same length, same content, same order.
+		require.Len(t, out, 2+len(transcript), "out must be [stable head]+transcript+[volatile head] (step %d)", step)
+		interior := out[1 : len(out)-1]
+		require.Len(t, interior, len(transcript), "interior must equal the transcript length (step %d)", step)
 		for i, msg := range transcript {
-			require.Equal(t, msg.Role, out[headLen+i].Role,
-				"non-head message %d role must equal the input's (step %d)", i, step)
-			require.Equal(t, msg.Content, out[headLen+i].Content,
-				"non-head message %d must equal the input's (step %d) — modifier must not mutate", i, step)
+			require.Equal(t, msg.Role, interior[i].Role,
+				"interior message %d role must equal the input's (step %d)", i, step)
+			require.Equal(t, msg.Content, interior[i].Content,
+				"interior message %d must equal the input's (step %d) — modifier must not mutate", i, step)
 		}
 
 		transcript = append(transcript,
@@ -273,6 +282,7 @@ func TestMessageModifier_PrefixExtensionInvariant(t *testing.T) {
 // TestMessageModifier_TaskDirectiveIsCountFree guards that the task-focus restatement in
 // the volatile head carries no per-step counter, so the volatile head is byte-identical
 // step-to-step (a changing "(Step N)" suffix would collapse the cache prefix every call).
+// Since the fix the volatile head is the trailing message (out[len-1]).
 func TestMessageModifier_TaskDirectiveIsCountFree(t *testing.T) {
 	m := NewMessageModifier(MessageModifierConfig{
 		SystemPrompt: "System",
@@ -284,14 +294,15 @@ func TestMessageModifier_TaskDirectiveIsCountFree(t *testing.T) {
 	var volatile string
 	for step := 0; step <= 4; step++ {
 		out := m.Modify(context.Background(), input)
-		require.Contains(t, out[1].Content, "**CURRENT TASK:**",
-			"task focus must be in the volatile head from the first call (step %d)", step)
-		require.NotContains(t, out[1].Content, "Step ",
+		vol := out[len(out)-1].Content
+		require.Contains(t, vol, "**CURRENT TASK:**",
+			"task focus must be in the trailing volatile head from the first call (step %d)", step)
+		require.NotContains(t, vol, "Step ",
 			"task focus must be count-free — no '(Step N)' suffix that changes every call")
 		if step == 0 {
-			volatile = out[1].Content
+			volatile = vol
 		} else {
-			require.Equal(t, volatile, out[1].Content,
+			require.Equal(t, volatile, vol,
 				"volatile head must be byte-identical across steps for cache stability (step %d)", step)
 		}
 	}

@@ -73,11 +73,20 @@ func NewMessageModifier(cfg MessageModifierConfig) *MessageModifier {
 	}
 }
 
-// Modify prepends the frozen head to the (append-only) input transcript. The head is
-// two system messages built once per turn and never changed, so [stable, volatile]+input
-// stays a strict append-only extension across the turn's steps. The stable head is kept
-// first and turn-invariant so the cache_control breakpoint on it is reused across turns;
-// the per-turn volatile head follows it (only when non-empty) and is never the breakpoint.
+// Modify wraps the (append-only) input transcript with the turn's two frozen heads: the
+// turn-INVARIANT stable head at the FRONT (index 0, the cache_control breakpoint) and the
+// per-turn VOLATILE head at the TAIL (after the whole conversation). Both are built once
+// per turn and never changed within it.
+//
+// The volatile head (CURRENT TASK + reminders) changes every turn because the question
+// changes. Placing it at the front — between the stable head and the conversation — caps
+// cross-turn caching at just the system prompt: the append-only history sits AFTER the
+// changing block, so the provider's common prefix ends right after the stable head and the
+// whole (often huge) history is re-billed every turn / every HITL form submission. Placing
+// it at the TAIL keeps the stable head + the entire history as one byte-stable, growing
+// prefix, so the provider caches the whole history cross-turn; only the tiny volatile tail
+// is fresh. Empirically (qwen3.7-plus, 36k-token history, changed-question turn): front
+// caches 11%, tail caches 100%. DashScope does NOT hoist the trailing system message.
 func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) []*schema.Message {
 	m.mu.Lock()
 	if !m.headBuilt {
@@ -91,10 +100,10 @@ func (m *MessageModifier) Modify(ctx context.Context, input []*schema.Message) [
 
 	result := make([]*schema.Message, 0, len(input)+2)
 	result = append(result, schema.SystemMessage(stable))
+	result = append(result, input...)
 	if volatile != "" {
 		result = append(result, schema.SystemMessage(volatile))
 	}
-	result = append(result, input...)
 	return result
 }
 
@@ -124,9 +133,11 @@ func (m *MessageModifier) buildStableHead() string {
 // user's current question + every context reminder's content, captured ONCE for the
 // turn and ordered by priority (higher priority later, for recency). It is frozen
 // within the turn (so no mid-turn change collapses the within-turn cache) but differs
-// between turns — therefore it is emitted as a SEPARATE system message after the
-// stable head and is never the cache_control breakpoint. Returns "" when there is no
-// task focus and no reminder, so Modify can skip emitting an empty message.
+// between turns, so Modify emits it as a SEPARATE system message at the TAIL — after the
+// whole conversation, never inside the cacheable prefix and never the cache_control
+// breakpoint — so a changed question does not evict the append-only history from the
+// cross-turn cache. Returns "" when there is no task focus and no reminder, so Modify
+// can skip emitting an empty message.
 func (m *MessageModifier) buildVolatileHead(ctx context.Context, input []*schema.Message) string {
 	var sb strings.Builder
 

@@ -73,6 +73,22 @@ func reportDips(t *testing.T, cachedPerStep []int) []int {
 	return dips
 }
 
+// requireEarlyCacheGrowth is the regression guard for the moving-tail breakpoint: the
+// cc-modifier must anchor the history breakpoint on the last byte-stable CONVERSATION
+// message (the moving tail), never on the ephemeral trailing volatile head. If it marked
+// the volatile head, the marker would move onto changing bytes every step and the cache
+// would PIN near zero instead of growing. This asserts the cache grows across the early
+// steps (step7 more than double step3), which a pinned marker would fail.
+func requireEarlyCacheGrowth(t *testing.T, cachedPerStep []int, steps int) {
+	t.Helper()
+	if steps < 8 {
+		return
+	}
+	require.Greater(t, cachedPerStep[6], cachedPerStep[2]*2,
+		"cache must GROW with the moving tail, not pin on the trailing volatile head (step3=%d step7=%d; series %v)",
+		cachedPerStep[2], cachedPerStep[6], cachedPerStep)
+}
+
 // liveCacheClient builds the real qwen3.7-plus client + the production cache_control
 // modifier and x-session-id sticky option.
 func liveCacheClient(t *testing.T, sessionID string) (model.ToolCallingChatModel, model.Option, model.Option) {
@@ -128,7 +144,9 @@ func streamCachedTokens(t *testing.T, client model.ToolCallingChatModel, msgs []
 		sr.Close()
 		return cached
 	}
-	t.Fatal("exhausted 429 retries")
+	// A pooled-Alibaba 429 that survives the backoff is an upstream rate limit
+	// (is_byok:false), not a cache defect — skip rather than red the paid suite.
+	t.Skipf("skipped: qwen3.7-plus rate-limited upstream (Alibaba pooled 429) after retries — rerun spaced out or with a BYOK key")
 	return 0
 }
 
@@ -176,6 +194,7 @@ func TestCacheGrowth_LiveQwen37Plus(t *testing.T) {
 	require.Greater(t, cachedPerStep[steps-1], cachedPerStep[2],
 		"cached must GROW as the conversation extends past the per-block minimum (got %v)", cachedPerStep)
 	require.Empty(t, dips, "cache must not collapse mid-loop (dips at steps %v, series %v)", dips, cachedPerStep)
+	requireEarlyCacheGrowth(t, cachedPerStep, steps)
 }
 
 // TestCacheStability_LiveQwen37Plus_FrozenReminder is the regression proof for the
@@ -223,9 +242,10 @@ func TestCacheStability_LiveQwen37Plus_FrozenReminder(t *testing.T) {
 		time.Sleep(15 * time.Second)
 	}
 
-	require.Equal(t, 1, n, "the changing reminder provider must be consulted exactly once (frozen into the head)")
+	require.Equal(t, 1, n, "the changing reminder provider must be consulted exactly once (frozen per turn)")
 	dips := reportDips(t, cachedPerStep)
 	require.Greater(t, cachedPerStep[steps-1], cachedPerStep[2],
-		"cached must GROW with the frozen reminder in the head (got %v)", cachedPerStep)
-	require.Empty(t, dips, "a changing reminder must NOT collapse the cache once frozen into the head (dips %v, series %v)", dips, cachedPerStep)
+		"cached must GROW with the frozen reminder in the volatile head (got %v)", cachedPerStep)
+	require.Empty(t, dips, "a changing reminder must NOT collapse the cache once frozen per turn (dips %v, series %v)", dips, cachedPerStep)
+	requireEarlyCacheGrowth(t, cachedPerStep, steps)
 }
