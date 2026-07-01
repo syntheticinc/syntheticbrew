@@ -141,7 +141,8 @@ func TestFoldEngineNotesIntoToolResults(t *testing.T) {
 
 // TestStartTurn_RebuildsFrozenHead verifies StartTurn discards the previous turn's frozen
 // head so the next turn rebuilds it: a reminder whose value changes between turns is
-// reflected only after StartTurn, never mid-turn.
+// reflected only after StartTurn, never mid-turn. The reminder rides in the volatile head,
+// which since the fix is the trailing message (out[len-1]); the stable head leads (out[0]).
 func TestStartTurn_RebuildsFrozenHead(t *testing.T) {
 	var n int
 	m := NewMessageModifier(MessageModifierConfig{
@@ -153,9 +154,11 @@ func TestStartTurn_RebuildsFrozenHead(t *testing.T) {
 
 	m.StartTurn()
 	out1 := m.Modify(context.Background(), input)
-	stable, first := out1[0].Content, out1[1].Content // [0] stable head, [1] volatile head (reminder)
+	// out[0] = leading stable head; out[len-1] = trailing volatile head (reminder).
+	stable, first := out1[0].Content, out1[len(out1)-1].Content
 	// Within the turn the head is frozen — the changing reminder does not re-poll.
-	again := m.Modify(context.Background(), input)[1].Content
+	out1b := m.Modify(context.Background(), input)
+	again := out1b[len(out1b)-1].Content
 	if first != again {
 		t.Fatal("volatile head must stay frozen within a turn")
 	}
@@ -164,11 +167,11 @@ func TestStartTurn_RebuildsFrozenHead(t *testing.T) {
 	}
 
 	// A new turn rebuilds the head, re-polling the (now-changed) reminder. The reminder
-	// lives in the VOLATILE head; the STABLE head stays turn-invariant (the cross-turn
-	// cache anchor).
+	// lives in the trailing VOLATILE head; the STABLE head stays turn-invariant (the
+	// cross-turn cache anchor).
 	m.StartTurn()
 	out2 := m.Modify(context.Background(), input)
-	second := out2[1].Content
+	second := out2[len(out2)-1].Content
 	if second == first {
 		t.Fatal("StartTurn must rebuild the volatile head so the next turn re-polls reminders")
 	}

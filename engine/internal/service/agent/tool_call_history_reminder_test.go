@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -509,6 +510,88 @@ func TestErrorLoopWarning_IsCountFree(t *testing.T) {
 	if !strings.Contains(content, "read_file") {
 		t.Errorf("error-loop warning must still name the offending tool: %s", content)
 	}
+}
+
+// countPattern matches the count shapes the reminder must NEVER embed: an "xN" suffix
+// (e.g. read_file(x3)) or a parenthesised number (e.g. "(4)"). The reminder text must be
+// count-free so it is byte-identical every step it persists, letting the trailing-nudge
+// dedup treat it as a single append-once item — a climbing count would change the bytes
+// every step and collapse the provider's prompt cache.
+var countPattern = regexp.MustCompile(`x\d+|\(\d+\)`)
+
+// TestToolCallHistoryReminder_CountFreeStable is the consolidated cache-stability guard for
+// the reminder text: (1) a same-tool loop warning past loopThreshold is byte-identical across
+// repeated GetContextReminder calls even as the internal count keeps climbing, and carries no
+// climbing digit-count; (2) with two tools BOTH in error loops the warnings are emitted in a
+// deterministic SORTED order (map iteration is randomised, so an unsorted emit would flake and,
+// worse, change the bytes step-to-step and break append-once).
+func TestToolCallHistoryReminder_CountFreeStable(t *testing.T) {
+	t.Run("same-tool loop is count-free and stable across calls", func(t *testing.T) {
+		r := NewToolCallHistoryReminder()
+		// Drive the same-tool streak past loopThreshold.
+		for i := 0; i < loopThreshold; i++ {
+			r.RecordToolCall("session-1", "read_file")
+		}
+
+		first, _, ok := r.GetContextReminder(context.Background(), "session-1")
+		if !ok {
+			t.Fatal("expected a same-tool loop warning past loopThreshold")
+		}
+		if countPattern.MatchString(first) {
+			t.Errorf("warning must carry no climbing count (xN / (N)): %q", first)
+		}
+
+		// Keep the internal streak climbing; the emitted text must not change.
+		r.RecordToolCall("session-1", "read_file")
+		r.RecordToolCall("session-1", "read_file")
+		second, _, ok := r.GetContextReminder(context.Background(), "session-1")
+		if !ok {
+			t.Fatal("expected the warning to persist as the streak grows")
+		}
+		if first != second {
+			t.Errorf("warning text must be byte-identical across calls (cache stability): %q vs %q", first, second)
+		}
+	})
+
+	t.Run("two error-looping tools emit in deterministic sorted order", func(t *testing.T) {
+		r := NewToolCallHistoryReminder()
+		// Distinct tool calls so the same-tool loop warning does NOT fire — isolate the two
+		// error-loop warnings.
+		r.RecordToolCall("session-1", "zeta_tool")
+		r.RecordToolCall("session-1", "alpha_tool")
+		// Both tools cross the error-loop threshold.
+		for i := 0; i < loopThreshold; i++ {
+			r.RecordToolResult("session-1", "zeta_tool", "[ERROR] boom")
+			r.RecordToolResult("session-1", "alpha_tool", "[ERROR] boom")
+		}
+
+		content, _, ok := r.GetContextReminder(context.Background(), "session-1")
+		if !ok {
+			t.Fatal("expected error-loop warnings for both tools")
+		}
+		alphaIdx := strings.Index(content, "alpha_tool")
+		zetaIdx := strings.Index(content, "zeta_tool")
+		if alphaIdx < 0 || zetaIdx < 0 {
+			t.Fatalf("both tools must appear in the warnings: %q", content)
+		}
+		if alphaIdx > zetaIdx {
+			t.Errorf("error-loop warnings must be sorted (alpha_tool before zeta_tool) for byte-stable output: %q", content)
+		}
+		if countPattern.MatchString(content) {
+			t.Errorf("error-loop warnings must be count-free: %q", content)
+		}
+
+		// Byte-stable across calls despite continued error accumulation.
+		r.RecordToolResult("session-1", "zeta_tool", "[ERROR] boom")
+		r.RecordToolResult("session-1", "alpha_tool", "[ERROR] boom")
+		again, _, ok := r.GetContextReminder(context.Background(), "session-1")
+		if !ok {
+			t.Fatal("expected the error-loop warnings to persist")
+		}
+		if content != again {
+			t.Errorf("error-loop warning text must be byte-identical across calls: %q vs %q", content, again)
+		}
+	})
 }
 
 func TestRecordToolResult_EmptyParams(t *testing.T) {

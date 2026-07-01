@@ -90,12 +90,14 @@ func TestOwnedGraph_CacheControlReachesChatNodeWire(t *testing.T) {
 }
 
 // TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail verifies the two cache breakpoints
-// land on the STABLE head and the LAST natural (cacheable) message. The MessageModifier
-// emits the head as two system messages — a turn-invariant STABLE head (the front cache
-// breakpoint) and a per-turn VOLATILE head (CURRENT TASK + reminders) — then appends only
-// natural turns after them. The reminder marker therefore appears in the VOLATILE head
-// (msgs[1]), which is NOT a breakpoint, so a changing reminder never invalidates the
-// cross-turn cache prefix. The last natural message is the byte-stable tail breakpoint.
+// land on the STABLE head (front) and the LAST cacheable message (tail). Since the fix, the
+// MessageModifier emits the turn-invariant STABLE head at index 0 (the front breakpoint,
+// carrying the system prompt + tool whitelist, NO reminder) and the per-turn VOLATILE head
+// (CURRENT TASK + reminders) at the TAIL — after the whole conversation — so the append-only
+// history stays part of the byte-stable cacheable prefix cross-turn. The cache_control
+// modifier's tail breakpoint is the last cacheable message, which is now the trailing
+// volatile head; the interior history and the natural user turn are read from cache, not
+// marked. No system message appears strictly between the head and the trailing volatile.
 func TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail(t *testing.T) {
 	const reminderMarker = "HEAD-FOLDED-REMINDER-MARKER"
 	var lastBody []byte
@@ -141,7 +143,7 @@ func TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail(t *testing.T) {
 	require.NoError(t, json.Unmarshal(lastBody, &top))
 	var msgs []map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(top["messages"], &msgs))
-	require.GreaterOrEqual(t, len(msgs), 4, "head + history + user turn")
+	require.GreaterOrEqual(t, len(msgs), 5, "stable head + history + user turn + trailing volatile head")
 
 	hasCC := func(m map[string]json.RawMessage) bool {
 		c, ok := m["content"]
@@ -152,29 +154,43 @@ func TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail(t *testing.T) {
 	}
 	contentStr := func(m map[string]json.RawMessage) string { return string(m["content"]) }
 
-	// The cache breakpoint lands on the STABLE head (msgs[0]); the per-turn reminder
-	// lives in the VOLATILE head (msgs[1]) — a separate system message that is NOT the
-	// breakpoint, so a changing reminder never invalidates the cross-turn cache prefix.
+	// The front breakpoint lands on the turn-invariant STABLE head (msgs[0]): system
+	// prompt + tool whitelist, NO per-turn reminder — so the marked block is byte-identical
+	// across turns and the provider reuses its cache.
 	stableHead := msgs[0]
 	require.Equal(t, "system", messageRoleOf(stableHead), "msgs[0] must be the stable head")
 	require.NotContains(t, contentStr(stableHead), reminderMarker, "the per-turn reminder must NOT be in the cache-marked stable head")
+	require.NotContains(t, contentStr(stableHead), "CURRENT TASK", "the per-turn task focus must NOT be in the stable head")
 	assert.True(t, hasCC(stableHead), "the stable head must carry the front cache breakpoint")
 
-	volatileHead := msgs[1]
-	require.Equal(t, "system", messageRoleOf(volatileHead), "msgs[1] must be the volatile head")
-	require.Contains(t, contentStr(volatileHead), reminderMarker, "the reminder must live in the volatile head")
-	assert.False(t, hasCC(volatileHead), "the volatile head must NOT be a cache breakpoint (it changes per turn)")
+	// The per-turn VOLATILE head (CURRENT TASK + reminder) is the LAST message, after the
+	// whole conversation, so the append-only history sits inside the cacheable prefix. It is
+	// EPHEMERAL — its array slot is overwritten by a real conversation message on the next
+	// step — so it must NOT be the cache breakpoint; the modifier skips it.
+	volatileHead := msgs[len(msgs)-1]
+	require.Equal(t, "system", messageRoleOf(volatileHead), "the trailing message must be the volatile head")
+	require.Contains(t, contentStr(volatileHead), reminderMarker, "the reminder must live in the trailing volatile head")
+	require.Contains(t, contentStr(volatileHead), "CURRENT TASK", "the task focus must live in the trailing volatile head")
+	assert.False(t, hasCC(volatileHead), "the trailing volatile head must NOT be a breakpoint (ephemeral; its slot is overwritten next step)")
 
-	// The last natural (cacheable) message is the user turn — the byte-stable tail
-	// breakpoint. It is NOT a reminder; the reminder lives in the volatile head.
-	last := msgs[len(msgs)-1]
-	require.Contains(t, contentStr(last), userInputMarker, "the tail must be the natural user turn, not a reminder")
-	assert.True(t, hasCC(last), "the last cacheable message must carry the tail cache breakpoint")
+	// The history breakpoint anchors on the last byte-stable CONVERSATION message — the
+	// current user turn (msgs[len-2]) — skipping the trailing volatile head.
+	convTail := msgs[len(msgs)-2]
+	require.Contains(t, contentStr(convTail), userInputMarker, "the last conversation message must be the current user turn")
+	assert.True(t, hasCC(convTail), "the last conversation message carries the history breakpoint (the volatile head is skipped)")
 
-	// Only the stable head + tail are breakpoints; everything interior (the volatile
-	// head and the history) is read from cache, not marked.
-	for i, m := range msgs[2 : len(msgs)-1] {
-		assert.False(t, hasCC(m), "only stable head and tail are breakpoints; interior message %d must not be marked", i+2)
+	// No system message may appear STRICTLY BETWEEN the stable head and the trailing
+	// volatile head — the conversation there is user/assistant/tool only. A mid-conversation
+	// system message would re-render Qwen's chat template and discard the explicit-cache prefix.
+	for i := 1; i < len(msgs)-1; i++ {
+		require.NotEqual(t, "system", messageRoleOf(msgs[i]),
+			"no system message may appear between the stable head and the trailing volatile head (index %d)", i)
+	}
+
+	// Only the stable head + the conversation tail are breakpoints; the earlier history and
+	// the trailing volatile head are read from cache / not marked.
+	for i := 1; i < len(msgs)-2; i++ {
+		assert.False(t, hasCC(msgs[i]), "interior history message %d must not be marked (only head + conversation tail are breakpoints)", i)
 	}
 }
 

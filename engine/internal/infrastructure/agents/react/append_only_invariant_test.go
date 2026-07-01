@@ -26,10 +26,11 @@ import (
 //
 //  1. consecutive bodies are prefix-extensions — every message at an index that existed
 //     in the prior body is BYTE-IDENTICAL in the next (no formed message is ever mutated);
-//  2. every body's system messages form the frozen head — contiguous at the front
-//     (the stable cache-marked head + an optional volatile head), with NO system message
-//     after the conversation starts; a mid-conversation system message would re-render
-//     Qwen's chat template and discard the explicit-cache prefix;
+//  2. every body's system messages are the stable cache-marked head at index 0 and an
+//     OPTIONAL volatile head at the TAIL (last message), with NO system message STRICTLY
+//     BETWEEN them; a mid-conversation system message would re-render Qwen's chat template
+//     and discard the explicit-cache prefix. The volatile head sits at the tail so the
+//     append-only history stays part of the byte-stable cacheable prefix cross-turn;
 //  3. the loop-correction note rides INSIDE a tool message (never a system/user message).
 //
 // The agent is attached WITHOUT a RequestPayloadModifier so the bodies are clean (no
@@ -130,33 +131,37 @@ func TestOwnedGraph_AppendOnlyPrefixInvariant(t *testing.T) {
 		msgs := parse(body)
 		require.NotEmpty(t, msgs, "body %d has no messages", bi)
 
-		// (2) the system messages form the frozen head: contiguous at the front (the
-		// stable cache-marked head + an optional volatile head), with NO system message
-		// after the conversation starts (a mid-conversation system message would re-render
-		// Qwen's chat template and discard the explicit-cache prefix).
+		// (2) index 0 is the stable cache-marked head; the volatile head (CURRENT TASK +
+		// reminders) is the OPTIONAL trailing system message; and NO system message may
+		// appear STRICTLY BETWEEN them (a mid-conversation system message would re-render
+		// Qwen's chat template and discard the explicit-cache prefix). The volatile head
+		// sits at the tail so the append-only history stays in the byte-stable cacheable
+		// prefix cross-turn.
 		require.Equal(t, "system", msgs[0].Role, "body %d: index 0 must be the stable head system message", bi)
-		firstNonSystem := len(msgs)
-		for i, m := range msgs {
-			if m.Role != "system" {
-				firstNonSystem = i
-				break
-			}
-		}
-		for i := firstNonSystem; i < len(msgs); i++ {
+		for i := 1; i < len(msgs)-1; i++ {
 			require.NotEqual(t, "system", msgs[i].Role,
-				"body %d: no system message may appear after the conversation starts (found at index %d)", bi, i)
+				"body %d: no system message may appear between the stable head and the trailing volatile head (found at index %d)", bi, i)
 		}
-		require.LessOrEqual(t, firstNonSystem, 2,
-			"body %d: the head is at most two system messages (stable + volatile)", bi)
 
-		// (1) strict prefix-extension: every message present in the prior body is
-		// byte-identical here, in the same position; the body only grows at the tail.
+		// (1) strict prefix-extension: the cacheable prefix — the stable head + the
+		// append-only conversation, i.e. everything EXCEPT the trailing volatile head — must
+		// be byte-identical across consecutive bodies, in the same position. The volatile
+		// head is frozen for the turn but its POSITION shifts as the conversation grows, so
+		// it is excluded from the prefix comparison. cacheablePrefix drops it when present.
+		cacheablePrefix := func(m []wireMsg) []wireMsg {
+			if len(m) > 1 && m[len(m)-1].Role == "system" {
+				return m[:len(m)-1]
+			}
+			return m
+		}
 		if prev != nil {
-			require.GreaterOrEqual(t, len(msgs), len(prev),
-				"body %d: message count must not shrink (was %d, now %d)", bi, len(prev), len(msgs))
-			for i := range prev {
-				require.JSONEq(t, string(prev[i].raw), string(msgs[i].raw),
-					"body %d: message at index %d must be byte-identical to the prior body (no mutation)", bi, i)
+			prevPrefix := cacheablePrefix(prev)
+			curPrefix := cacheablePrefix(msgs)
+			require.GreaterOrEqual(t, len(curPrefix), len(prevPrefix),
+				"body %d: cacheable prefix must not shrink (was %d, now %d)", bi, len(prevPrefix), len(curPrefix))
+			for i := range prevPrefix {
+				require.JSONEq(t, string(prevPrefix[i].raw), string(curPrefix[i].raw),
+					"body %d: cacheable-prefix message at index %d must be byte-identical to the prior body (no mutation)", bi, i)
 			}
 		}
 		prev = msgs

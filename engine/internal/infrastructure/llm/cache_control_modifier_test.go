@@ -221,47 +221,37 @@ func markedHistoryIndices(t *testing.T, n int) []int {
 	return marked
 }
 
-// TestCacheModifier_HistoryCheckpointsAreStableAndGrow is the regression guard for the
-// cache-growth fix: history breakpoints anchor to FIXED stride boundaries (16, 32, …), so
-// a marked message keeps the same index as the conversation grows at the tail (never
-// toggled off), and a second checkpoint is ADDED — not moved — when the conversation
-// crosses the next boundary. A moving tail marker (the old behaviour) instead toggled the
-// previous tail off every step, which on Qwen/DashScope pinned cached tokens at the head.
-func TestCacheModifier_HistoryCheckpointsAreStableAndGrow(t *testing.T) {
-	const stride = historyCheckpointStride
-
-	// Past the first boundary: exactly one checkpoint, at the stride boundary — NOT the tail.
-	at20 := markedHistoryIndices(t, stride+4)
-	require.Equal(t, []int{stride}, at20, "one fixed checkpoint at the stride boundary, not the moving tail")
-
-	// Grow the conversation by a few messages: the checkpoint must stay on the SAME index
-	// (byte-stable marker → the provider keeps the prior cache write), not advance to the tail.
-	at24 := markedHistoryIndices(t, stride+8)
-	require.Equal(t, []int{stride}, at24, "checkpoint stays put as the tail grows (no toggling)")
-
-	// Past the second boundary: the first checkpoint is KEPT and a second is added.
-	at40 := markedHistoryIndices(t, 2*stride+8)
-	require.Equal(t, []int{stride, 2 * stride}, at40, "checkpoints accumulate at fixed boundaries")
-
-	// Below the first boundary: fall back to marking the tail so short turns still cache.
-	short := markedHistoryIndices(t, 4)
-	require.Equal(t, []int{3}, short, "short conversation marks the tail (fallback)")
+// TestCacheModifier_MovingTailFollowsConversation is the regression guard for the
+// full-depth cache fix: the history breakpoint is a SINGLE marker on the last cacheable
+// message (the moving tail) that follows the append-only conversation to ANY depth — no
+// fixed-stride checkpoints and no 4-breakpoint cap. Each step's tail marker chains to the
+// previous request's tail cache write (a few blocks back, within the provider's extend
+// window), so the whole prefix stays cached; on qwen3.7-plus this cached ~97% of a 30k+
+// prompt at depth where the old fixed-stride scheme froze cached at the ~48th message.
+func TestCacheModifier_MovingTailFollowsConversation(t *testing.T) {
+	// The single breakpoint is always the LAST message (the moving tail), at every depth.
+	require.Equal(t, []int{19}, markedHistoryIndices(t, 20), "tail marker on the last message")
+	require.Equal(t, []int{23}, markedHistoryIndices(t, 24), "tail marker moves forward with the conversation")
+	require.Equal(t, []int{39}, markedHistoryIndices(t, 40), "tail marker follows to any depth — no stride cap")
+	require.Equal(t, []int{3}, markedHistoryIndices(t, 4), "short conversation marks its tail too")
 }
 
-func TestCacheModifier_HistoryBreakpointOnAppendOnlyTail(t *testing.T) {
+func TestCacheModifier_HistoryBreakpointSkipsTrailingVolatileHead(t *testing.T) {
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})
 	require.NotNil(t, mod)
 
-	// Engine shape: head system + conversation + a trailing injected system reminder. The
-	// request is built append-only (reminders/turns appended at the tail, never rewritten),
-	// so the LAST message is byte-stable once written and is the correct history breakpoint:
-	// marking it caches the whole growing prefix, and on the next call it is interior and
-	// read from cache. Only head + tail carry the breakpoint; interior messages do not.
+	// Engine shape: stable head (system) + conversation + the per-turn VOLATILE head — a
+	// TRAILING system message (CURRENT TASK + reminders). The volatile head is ephemeral: its
+	// array slot is overwritten by a real conversation message on the next step, so it is NOT
+	// byte-stable at its position and must NOT carry the history breakpoint (marking it would
+	// move the marker onto changing bytes and collapse the within-turn cache). The short-turn
+	// breakpoint anchors on the last byte-stable CONVERSATION message (msg 1, the user turn);
+	// the trailing volatile head is skipped.
 	body := []byte(`{
 		"messages": [
 			{"role":"system","content":"` + bigText("you are helpful") + `"},
 			{"role":"user","content":"` + bigText("the stable question") + `"},
-			{"role":"system","content":"` + bigText("COUNTDOWN only N steps left") + `"}
+			{"role":"system","content":"` + bigText("CURRENT TASK answer the question") + `"}
 		]
 	}`)
 
@@ -270,9 +260,66 @@ func TestCacheModifier_HistoryBreakpointOnAppendOnlyTail(t *testing.T) {
 	msgs := parseMessages(t, out)
 	require.Len(t, msgs, 3)
 
-	assert.True(t, lastPartHasCacheControl(t, msgs[0]), "head system marked")
-	assert.False(t, lastPartHasCacheControl(t, msgs[1]), "interior message must not be the breakpoint")
-	assert.True(t, lastPartHasCacheControl(t, msgs[2]), "the append-only tail carries the history breakpoint")
+	assert.True(t, lastPartHasCacheControl(t, msgs[0]), "stable head system marked")
+	assert.True(t, lastPartHasCacheControl(t, msgs[1]), "the last CONVERSATION message carries the history breakpoint")
+	assert.False(t, lastPartHasCacheControl(t, msgs[2]), "the trailing volatile head must NOT be the breakpoint (ephemeral; its slot is overwritten next step)")
+}
+
+// TestCacheModifier_DeepHistoryMarksHeadAndTailOnly is the deterministic guard that on a
+// LONG conversation the marker set is exactly {head, moving tail} at ANY depth — the head
+// (index 0) and the last cacheable CONVERSATION message — with no fixed-stride checkpoints,
+// no 4-breakpoint cap, and the trailing volatile head never marked. Critically, the recent
+// tail IS marked (it's the breakpoint), so — unlike the old stride scheme that left every
+// message past checkpoint 48 unmarked and re-billed at depth — the whole prefix caches to
+// full depth.
+func TestCacheModifier_DeepHistoryMarksHeadAndTailOnly(t *testing.T) {
+	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})
+	require.NotNil(t, mod)
+
+	// Engine shape: system head at index 0, then ~78 alternating user/assistant/tool
+	// conversation messages, then the per-turn VOLATILE head (trailing system message) at the
+	// last index. Every message carries enough text to clear the min-prefix gate.
+	const convCount = 78
+	var sb strings.Builder
+	sb.WriteString(`{"messages":[`)
+	sb.WriteString(`{"role":"system","content":"` + bigText("stable head system prompt") + `"}`)
+	roles := []string{"user", "assistant", "tool"}
+	for i := 0; i < convCount; i++ {
+		sb.WriteString(`,{"role":"` + roles[i%len(roles)] + `","content":"` + bigText("conversation message") + `"}`)
+	}
+	// Trailing volatile head: a system message (CURRENT TASK + reminders), overwritten by a
+	// real conversation message next step, so it must NOT be a breakpoint.
+	sb.WriteString(`,{"role":"system","content":"` + bigText("CURRENT TASK answer the question") + `"}`)
+	sb.WriteString(`]}`)
+
+	out, err := mod([]byte(sb.String()))
+	require.NoError(t, err)
+	msgs := parseMessages(t, out)
+	require.Len(t, msgs, 1+convCount+1) // head + conversation + volatile head
+
+	var marked []int
+	for i, m := range msgs {
+		if lastPartHasCacheControl(t, m) {
+			marked = append(marked, i)
+		}
+	}
+
+	// Exactly 2 markers: the head (0) and the moving tail — the last CONVERSATION message
+	// (array index convCount, since the trailing volatile head at convCount+1 is skipped).
+	// No fixed-stride indices (16/32/48), and NOT capped away from the deep tail.
+	tail := convCount // 1 (head) + convCount conversation messages ⇒ last conv index == convCount
+	assert.Equal(t, []int{0, tail}, marked,
+		"marked set must be exactly {head, moving tail} at any depth — no stride checkpoints, no cap")
+
+	// The trailing volatile head (last message) must NOT be marked.
+	assert.False(t, lastPartHasCacheControl(t, msgs[len(msgs)-1]),
+		"the trailing volatile head must never carry a breakpoint (ephemeral; overwritten next step)")
+
+	// Only the head and the tail are breakpoints — every interior message is read from cache.
+	for i := 1; i < tail; i++ {
+		assert.False(t, lastPartHasCacheControl(t, msgs[i]),
+			"interior message %d must not be marked (only head + moving tail are breakpoints)", i)
+	}
 }
 
 func TestCacheModifier_MinPrefixGateSkipsSmallPrefix(t *testing.T) {

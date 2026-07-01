@@ -24,8 +24,9 @@ import (
 // cache_control modifier), not a hand-built body. It runs TWO separate agent runs (two
 // conversation turns with DIFFERENT user questions) against a capturing fake provider and
 // asserts the cache-marked STABLE head (msgs[0]) is byte-identical across the two turns —
-// the precise condition the provider needs to reuse its cache. The volatile head (msgs[1],
-// CURRENT TASK) differs and is not the breakpoint.
+// the precise condition the provider needs to reuse its cache. Since the fix, the volatile
+// head (CURRENT TASK) sits at the TAIL (the last message), so the append-only history stays
+// in the byte-stable cacheable prefix; it differs between the turns (different questions).
 //
 // It also writes the two real wire bodies to _scratch so a live run can feed them straight
 // to OpenRouter and confirm the actual cache hit on real serialization.
@@ -77,18 +78,18 @@ func TestOwnedGraph_StableHeadByteIdenticalAcrossTurns(t *testing.T) {
 		{Role: schema.Assistant, Content: "Answer."},
 	}, "Connect device BETA, a different question entirely")
 
-	firstSystem := func(body []byte) (content string, all []map[string]json.RawMessage) {
+	stableHead := func(body []byte) (content string, all []map[string]json.RawMessage) {
 		var top map[string]json.RawMessage
 		require.NoError(t, json.Unmarshal(body, &top))
 		var msgs []map[string]json.RawMessage
 		require.NoError(t, json.Unmarshal(top["messages"], &msgs))
-		require.GreaterOrEqual(t, len(msgs), 2, "head is two system messages")
+		require.GreaterOrEqual(t, len(msgs), 2, "stable head + conversation + trailing volatile head")
 		require.Equal(t, "system", messageRoleOf(msgs[0]), "msgs[0] must be the stable head")
 		return string(msgs[0]["content"]), msgs
 	}
 
-	head1, msgs1 := firstSystem(body1)
-	head2, msgs2 := firstSystem(body2)
+	head1, msgs1 := stableHead(body1)
+	head2, msgs2 := stableHead(body2)
 
 	// THE cross-turn cache condition: the cache-marked stable head is byte-identical
 	// across turns, on the REAL serialized wire bytes.
@@ -97,12 +98,25 @@ func TestOwnedGraph_StableHeadByteIdenticalAcrossTurns(t *testing.T) {
 	require.Contains(t, head1, "ephemeral", "the stable head must carry the cache_control breakpoint")
 	require.NotContains(t, head1, "CURRENT TASK", "the stable head must not carry the per-turn task focus")
 
-	// Sanity: the volatile head (msgs[1]) actually differs between the two turns — proves
-	// the turns really varied (different CURRENT TASK), so the byte-identity above is real.
-	require.Equal(t, "system", messageRoleOf(msgs1[1]))
-	require.Equal(t, "system", messageRoleOf(msgs2[1]))
-	require.NotEqual(t, string(msgs1[1]["content"]), string(msgs2[1]["content"]),
-		"the volatile head must differ between the two questions (otherwise the test didn't vary the turn)")
+	// Since the fix, the volatile head (CURRENT TASK) is the LAST message, after the whole
+	// conversation. Sanity: the trailing volatile heads actually differ between the two turns
+	// — proves the turns really varied (different CURRENT TASK), so the byte-identity above is
+	// real. The volatile head at the tail keeps the append-only history in the cacheable prefix.
+	vol1 := msgs1[len(msgs1)-1]
+	vol2 := msgs2[len(msgs2)-1]
+	require.Equal(t, "system", messageRoleOf(vol1), "the trailing message must be the volatile head")
+	require.Equal(t, "system", messageRoleOf(vol2), "the trailing message must be the volatile head")
+	require.Contains(t, string(vol1["content"]), "CURRENT TASK", "the trailing volatile head carries the per-turn task focus")
+	require.NotEqual(t, string(vol1["content"]), string(vol2["content"]),
+		"the trailing volatile head must differ between the two questions (otherwise the test didn't vary the turn)")
+
+	// No system message may appear STRICTLY BETWEEN the stable head and the trailing volatile
+	// head — the conversation there is user/assistant/tool only (a mid-conversation system
+	// message would re-render Qwen's chat template and discard the cache prefix).
+	for i := 1; i < len(msgs1)-1; i++ {
+		require.NotEqual(t, "system", messageRoleOf(msgs1[i]),
+			"turn 1: no system message may appear between the stable head and the trailing volatile head (index %d)", i)
+	}
 
 	// Dump the real wire bodies so a live run can replay them against OpenRouter.
 	if dir := os.Getenv("CROSSTURN_DUMP_DIR"); dir != "" {

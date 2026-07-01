@@ -207,9 +207,27 @@ func newOpenAICompatTransport(m models.LLMProviderModel) http.RoundTripper {
 		transport = &usageReportingTransport{base: transport}
 	}
 	if extra := m.GetConfig().ExtraBody; len(extra) > 0 {
+		if isOpenRouterBaseURL(m.BaseURL) && openRouterProviderOrderSet(extra) {
+			slog.WarnContext(context.Background(),
+				"model config sets provider.order on OpenRouter: this OVERRIDES x-session-id sticky routing, so requests scatter across upstream replicas (each with a cold cache) and prompt caching is defeated. Use provider.only:[<single>] to pin one upstream without disabling sticky, or a dedicated BYOK key.",
+				"model", m.ModelName)
+		}
 		transport = &extraBodyTransport{base: transport, extra: extra}
 	}
 	return &responseLoggingTransport{base: transport}
+}
+
+// openRouterProviderOrderSet reports whether the operator's extra_body pins routing with
+// a `provider.order` list. On OpenRouter, provider.order disables x-session-id sticky
+// routing (the engine's cross-turn cache lever), so it is worth warning about; provider.only
+// constrains the pool WITHOUT disabling sticky and does NOT trip this.
+func openRouterProviderOrderSet(extra map[string]any) bool {
+	prov, ok := extra["provider"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, hasOrder := prov["order"]
+	return hasOrder
 }
 
 // CreateClientFromDBModel creates a ToolCallingChatModel from a database LLMProviderModel record.

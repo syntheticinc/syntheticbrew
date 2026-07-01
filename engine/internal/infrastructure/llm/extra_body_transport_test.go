@@ -164,3 +164,26 @@ func TestExtraBodyTransport_AgainstRealServer(t *testing.T) {
 	assert.Contains(t, got, "provider", "merged body must arrive at upstream server")
 	assert.Equal(t, "glm-4.7", got["model"])
 }
+
+// TestOpenRouterProviderOrderSet guards the H6 cache-footgun detector: provider.order
+// pins OpenRouter routing and disables x-session-id sticky routing (defeating prompt
+// caching), so it must be detected to warn; provider.only must NOT trip it.
+func TestOpenRouterProviderOrderSet(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]any
+		want  bool
+	}{
+		{"order list trips", map[string]any{"provider": map[string]any{"order": []any{"alibaba"}}}, true},
+		{"only does not trip", map[string]any{"provider": map[string]any{"only": []any{"alibaba"}}}, false},
+		{"no provider key", map[string]any{"temperature": 0.1}, false},
+		{"provider without order", map[string]any{"provider": map[string]any{"allow_fallbacks": false}}, false},
+		{"empty extra", map[string]any{}, false},
+		{"provider not a map", map[string]any{"provider": "alibaba"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, openRouterProviderOrderSet(tc.extra))
+		})
+	}
+}
