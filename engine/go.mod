@@ -17,7 +17,7 @@ require (
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/lib/pq v1.10.9
 	github.com/ollama/ollama v0.14.2
-	github.com/pgvector/pgvector-go v0.3.0
+	github.com/pgvector/pgvector-go v0.4.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/robfig/cron/v3 v3.0.1
