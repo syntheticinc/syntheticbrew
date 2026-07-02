@@ -322,6 +322,77 @@ func TestCacheModifier_DeepHistoryMarksHeadAndTailOnly(t *testing.T) {
 	}
 }
 
+// TestCacheModifier_AdversarialNoPanic throws malformed/attacker-influenceable
+// message shapes at the modifier and asserts it NEVER panics and NEVER errors the
+// request (SCC-03: best-effort passthrough). Each case pairs a large stable system
+// head (so the min-prefix gate is cleared and the marking write-paths are actually
+// exercised) with an adversarial trailing message that becomes the history breakpoint.
+func TestCacheModifier_AdversarialNoPanic(t *testing.T) {
+	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})
+	require.NotNil(t, mod)
+	sys := `{"role":"system","content":"` + bigText("head") + `"}`
+
+	adversarial := map[string]string{
+		"content object":            `{"role":"user","content":{"x":1}}`,
+		"content number":            `{"role":"user","content":42}`,
+		"content bool":              `{"role":"user","content":true}`,
+		"content null":              `{"role":"user","content":null}`,
+		"array null only":           `{"role":"user","content":[null]}`,
+		"array null last":           `{"role":"user","content":[{"type":"text","text":"a"},null]}`,
+		"array null first":          `{"role":"user","content":[null,{"type":"text","text":"a"}]}`,
+		"array mixed null scalar":   `{"role":"user","content":[{"type":"text","text":"a"},null,123]}`,
+		"array of strings":          `{"role":"user","content":["a","b"]}`,
+		"array of numbers":          `{"role":"user","content":[1,2,3]}`,
+		"array empty":               `{"role":"user","content":[]}`,
+		"role number":              `{"role":5,"content":"` + bigText("x") + `"}`,
+		"role null":                `{"role":null,"content":"` + bigText("x") + `"}`,
+		"no role":                  `{"content":"` + bigText("x") + `"}`,
+		"cache_control preexisting": `{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}}]}`,
+		"nested parts":              `{"role":"user","content":[{"type":"text","text":"a","extra":{"deep":{"deeper":[1,2,3]}}}]}`,
+		"control chars":             `{"role":"user","content":"ab"}`,
+		"part missing type":         `{"role":"user","content":[{"text":"a"}]}`,
+		"part type number":          `{"role":"user","content":[{"type":7,"text":"a"}]}`,
+	}
+	for name, msg := range adversarial {
+		t.Run(name, func(t *testing.T) {
+			body := []byte(`{"model":"m","messages":[` + sys + `,` + msg + `]}`)
+			require.NotPanics(t, func() {
+				out, err := mod(body)
+				require.NoError(t, err, "malformed input must pass through, never error")
+				require.NotEmpty(t, out)
+			})
+		})
+	}
+
+	// Adversarial content on the FIRST system message (exercises the markSystem write
+	// path, not just the history one).
+	t.Run("system head array null last", func(t *testing.T) {
+		body := []byte(`{"messages":[{"role":"system","content":[{"type":"text","text":"` + bigText("h") + `"},null]},{"role":"user","content":"` + bigText("q") + `"}]}`)
+		require.NotPanics(t, func() {
+			out, err := mod(body)
+			require.NoError(t, err)
+			require.NotEmpty(t, out)
+		})
+	})
+
+	// DoS: a large message array must complete quickly and stay bounded (≤4 markers).
+	t.Run("huge message array bounded", func(t *testing.T) {
+		var sb strings.Builder
+		sb.WriteString(`{"messages":[`)
+		sb.WriteString(sys)
+		for i := 0; i < 5000; i++ {
+			sb.WriteString(`,{"role":"user","content":"hello world filler text here"}`)
+		}
+		sb.WriteString(`]}`)
+		require.NotPanics(t, func() {
+			out, err := mod([]byte(sb.String()))
+			require.NoError(t, err)
+			// at most maxCacheBreakpoints content blocks were rewritten to arrays.
+			require.LessOrEqual(t, strings.Count(string(out), `"cache_control"`), maxCacheBreakpoints)
+		})
+	})
+}
+
 func TestCacheModifier_MinPrefixGateSkipsSmallPrefix(t *testing.T) {
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 100000})
 	require.NotNil(t, mod)
