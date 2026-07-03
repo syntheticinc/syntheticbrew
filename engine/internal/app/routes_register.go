@@ -25,6 +25,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgmutate"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
 	ucschematemplate "github.com/syntheticinc/syntheticbrew/internal/usecase/schematemplate"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
@@ -469,6 +470,24 @@ func registerHTTPRoutes(deps routesDeps) {
 			r.Use(deliveryhttp.RequireAdminSession)
 			r.Post("/api/v1/admin/builder-assistant/restore", baHandler.Restore)
 		})
+
+		// Usage limits (admin-only) — operator-declared per-tenant / per-user
+		// turn/step caps. The Enforcer's stores are tenant-scoped, so config
+		// mutations stay within the caller's tenant.
+		if pgDB != nil {
+			usageLimitEnforcer := usagelimit.New(
+				configrepo.NewGORMUsageLimitRepository(pgDB),
+				configrepo.NewGORMUsageCounterRepository(pgDB),
+				nil,
+			)
+			usageLimitHandler := deliveryhttp.NewUsageLimitHandler(usageLimitEnforcer)
+			r.Group(func(r chi.Router) {
+				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAdmin))
+				r.Get("/api/v1/admin/usage-limits", usageLimitHandler.List)
+				r.Put("/api/v1/admin/usage-limits", usageLimitHandler.Set)
+				r.Delete("/api/v1/admin/usage-limits/{scope}", usageLimitHandler.Delete)
+			})
+		}
 
 		// Sessions — split read / write under granular scopes. Replaces the
 		// pre-1.1.4 RequireAdminSession gate that rejected any api_token.

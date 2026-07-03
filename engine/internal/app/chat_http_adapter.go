@@ -15,10 +15,31 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/flowregistry"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
+
+// usageGate is the pre-turn gate + post-turn settle the chat adapter depends
+// on. Defined consumer-side so the adapter can be unit-tested against a fake;
+// the concrete *usagelimit.Enforcer satisfies it.
+type usageGate interface {
+	CheckAllowed(ctx context.Context, userSub string) (domain.UsageDecision, error)
+	RecordTurn(ctx context.Context, userSub string, steps int) error
+	// RecordSteps settles a HITL resume: it consumes step budget without
+	// counting a new turn (the resume continues the same turn).
+	RecordSteps(ctx context.Context, userSub string, steps int) error
+}
+
+// stepTaker registers and drains the per-session step count accumulated during a
+// turn. The concrete *usagelimit.StepAccumulator satisfies it. Begin scopes
+// accumulation to owners that settle, so non-settling step sources never leak.
+type stepTaker interface {
+	Begin(sessionID string)
+	Take(sessionID string) int
+	Discard(sessionID string)
+}
 
 // schemaChatRepo narrows the schema repository to the operations the chat
 // dispatcher needs: load for chat_enabled + entry_agent_id, and stamp
@@ -66,6 +87,13 @@ type chatServiceHTTPAdapter struct {
 	interrupts  interruptResumeRepo
 	eventStore  resumeEventStore
 	history     interruptResumeHistory // mirrors interrupt_resume into messages table for reload restore
+
+	// usage gates a turn before it runs and settles the counters once it
+	// completes. accumulator carries the per-session step count the settle
+	// records. Both are nil in no-DB mode, in which case gating/settling is
+	// skipped entirely.
+	usage       usageGate
+	accumulator stepTaker
 }
 
 // resolveRegistry returns the AgentRegistry for the current request context.
@@ -130,6 +158,21 @@ func (a *chatServiceHTTPAdapter) Chat(ctx context.Context, schemaID, message, us
 		return nil, pkgerrors.InvalidInput("session_id must be a valid UUID")
 	}
 
+	// BYOK turns run on the end user's own model key, so they neither consume
+	// nor are gated by the operator's usage limits — bringing a key is the
+	// documented way to run without limits.
+	byok := llm.BYOKCredentialsFrom(ctx) != nil
+
+	if err := a.gateTurn(ctx, userSub, byok); err != nil {
+		return nil, err
+	}
+
+	// Register this session so the global step callback attributes steps to it;
+	// the settle (below) drains it. BYOK turns are neither counted nor Begin'd.
+	if a.accumulator != nil && !byok {
+		a.accumulator.Begin(sessionID)
+	}
+
 	// "First seen" = not in the in-memory registry. This is what triggers
 	// session-row persistence; relying on a client-side `sessionID == ""`
 	// signal misses the case where the caller supplies a fresh UUID for
@@ -178,11 +221,21 @@ func (a *chatServiceHTTPAdapter) Chat(ctx context.Context, schemaID, message, us
 		defer a.registry.RemoveSession(sessionID)
 		defer a.processor.StopProcessing(sessionID)
 		defer cleanup()
+		// Settle the turn once event fan-out ends. A turn that produced real
+		// output/interrupt is billable → record it with its exact step count;
+		// one that stopped before any output (errored early) is discarded so
+		// its steps don't leak into the next turn on this session. BYOK turns
+		// are neither gated nor settled.
+		sawOutput := false
+		defer a.settleTurn(ctx, sessionID, userSub, byok, &sawOutput)
 
 		for protoEvent := range eventCh {
 			sseEvent := convertSessionEventToSSE(protoEvent, sessionID)
 			if sseEvent == nil {
 				continue
+			}
+			if isBillableOutput(sseEvent.Type) {
+				sawOutput = true
 			}
 			sseCh <- *sseEvent
 
@@ -198,6 +251,79 @@ func (a *chatServiceHTTPAdapter) Chat(ctx context.Context, schemaID, message, us
 	}()
 
 	return sseCh, nil
+}
+
+// isBillableOutput reports whether an SSE event type represents real output
+// the user received: a streamed/complete answer or a HITL interrupt. A turn
+// that emits any of these is settled against the usage counters.
+func isBillableOutput(sseType string) bool {
+	switch sseType {
+	case "message_delta", "message", "interrupt_request":
+		return true
+	default:
+		return false
+	}
+}
+
+// gateTurn is the pre-turn usage gate: it blocks the turn with a UsageLimited
+// (HTTP 402) error when a configured limit is exhausted. Skipped when usage
+// limiting is not wired or for BYOK turns (which run on the user's own key).
+//
+// This is a check-then-settle gate, not a reservation: at the exact boundary
+// (used == limit-1) N turns that start concurrently can all pass the gate
+// before any of them settles, so the enforced count can overshoot the limit by
+// up to the request concurrency — once per window, never unbounded (the counter
+// upsert is atomic; the next window resets it). This soft over-allowance is an
+// accepted trade-off for a usage limit; a hard cap would need a reserve-before-
+// serve counter.
+func (a *chatServiceHTTPAdapter) gateTurn(ctx context.Context, userSub string, byok bool) error {
+	if a.usage == nil || byok {
+		return nil
+	}
+	dec, err := a.usage.CheckAllowed(ctx, userSub)
+	if err != nil {
+		return fmt.Errorf("check usage limit: %w", err)
+	}
+	if !dec.Allowed {
+		return pkgerrors.UsageLimited(fmt.Sprintf(
+			"usage limit reached: %d/%d %s for this %s — bring your own model key to continue",
+			dec.Used, dec.Limit, dec.Unit, dec.BlockedScope))
+	}
+	return nil
+}
+
+// settleTurn records or discards the turn's accumulated steps once event
+// fan-out ends. Skipped entirely when usage limiting is not wired or for BYOK
+// turns. The record runs on a cancel-detached context so a client disconnect
+// (which cancels ctx as the stream closes) does not abort the counter write.
+func (a *chatServiceHTTPAdapter) settleTurn(ctx context.Context, sessionID, userSub string, byok bool, sawOutput *bool) {
+	if a.usage == nil || a.accumulator == nil || byok {
+		return
+	}
+	if !*sawOutput {
+		a.accumulator.Discard(sessionID)
+		return
+	}
+	steps := a.accumulator.Take(sessionID)
+	if err := a.usage.RecordTurn(context.WithoutCancel(ctx), userSub, steps); err != nil {
+		slog.WarnContext(ctx, "record usage turn failed", "session_id", sessionID, "steps", steps, "error", err)
+	}
+}
+
+// settleResumeSteps drains and records a HITL resume's steps against the usage
+// counters WITHOUT counting a new turn (turnsDelta 0). Skipped when usage
+// limiting is not wired or for BYOK resumes.
+func (a *chatServiceHTTPAdapter) settleResumeSteps(ctx context.Context, sessionID, userSub string, byok bool) {
+	if a.usage == nil || a.accumulator == nil || byok {
+		return
+	}
+	steps := a.accumulator.Take(sessionID)
+	if steps == 0 {
+		return
+	}
+	if err := a.usage.RecordSteps(ctx, userSub, steps); err != nil {
+		slog.WarnContext(ctx, "record usage resume steps failed", "session_id", sessionID, "steps", steps, "error", err)
+	}
 }
 
 // ResumeInterrupt validates the interrupt + tenant + session match, persists
@@ -227,6 +353,16 @@ func (a *chatServiceHTTPAdapter) ResumeInterrupt(
 	}
 	if a.schemas == nil {
 		return nil, fmt.Errorf("schema repo not wired")
+	}
+
+	// Resume continues an existing turn, but it runs a fresh, max_steps-bounded
+	// React pass, so it must not be a free unbounded-usage lane: gate it (a
+	// caller already over the limit cannot pump pre-stuffed interrupts) and
+	// settle its steps below (turnsDelta 0 — no double-counting the wizard as a
+	// new turn). BYOK resumes run on the user's own key: neither gated nor counted.
+	byok := llm.BYOKCredentialsFrom(ctx) != nil
+	if err := a.gateTurn(ctx, userSub, byok); err != nil {
+		return nil, err
 	}
 
 	// Schema gating mirrors Chat — cross-tenant / chat-disabled → 404.
@@ -322,6 +458,12 @@ func (a *chatServiceHTTPAdapter) ResumeInterrupt(
 		a.registry.CreateSession(sessionID, "", userSub, "", "", agentName)
 	}
 
+	// Register so the resume's steps are attributed to this session and settled
+	// below. BYOK resumes are neither counted nor Begin'd.
+	if a.accumulator != nil && !byok {
+		a.accumulator.Begin(sessionID)
+	}
+
 	eventCh, cleanup := a.registry.Subscribe(sessionID)
 	// Sentinel tells processor not to publish this as a user_message (the
 	// widget's answered state already represents the answer).
@@ -337,6 +479,11 @@ func (a *chatServiceHTTPAdapter) ResumeInterrupt(
 		defer a.registry.RemoveSession(sessionID)
 		defer a.processor.StopProcessing(sessionID)
 		defer cleanup()
+		// Settle the resume as steps-only (turnsDelta 0): a HITL wizard stays
+		// ONE turn, but its resume work consumes step budget so resume-chaining
+		// cannot do unbounded LLM work for free. Runs on a cancel-detached
+		// context so a client disconnect does not abort the counter write.
+		defer a.settleResumeSteps(context.WithoutCancel(ctx), sessionID, userSub, byok)
 
 		// Surface the resume event first so the client marks the widget
 		// answered before any subsequent assistant chunks arrive.

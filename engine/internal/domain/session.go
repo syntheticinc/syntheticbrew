@@ -1,9 +1,28 @@
 package domain
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
+
+// --- Session id context key ---
+
+type sessionIDCtxKey struct{}
+
+// WithSessionID returns a context carrying the current turn's session id.
+// Attached at turn start so observers deep in the agent callback chain (which
+// have no session id of their own) can correlate per-step signals back to the
+// session — e.g. the usage-limit step accumulator.
+func WithSessionID(ctx context.Context, sessionID string) context.Context {
+	return context.WithValue(ctx, sessionIDCtxKey{}, sessionID)
+}
+
+// SessionIDFromContext extracts the session id from context, or "" when absent.
+func SessionIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(sessionIDCtxKey{}).(string)
+	return v
+}
 
 // SessionStatus represents the lifecycle stage of a session.
 // Values must match target-schema.dbml sessions.status CHECK:

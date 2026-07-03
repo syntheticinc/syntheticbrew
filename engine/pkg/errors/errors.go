@@ -17,6 +17,7 @@ const (
 	CodeUnavailable      = "UNAVAILABLE"
 	CodePermissionDenied = "PERMISSION_DENIED"
 	CodeCancelled        = "CANCELLED"
+	CodeUsageLimited     = "USAGE_LIMITED"
 
 	// LLM-provider error classes — produced at the HTTP boundary in
 	// internal/infrastructure/llm/classify_error.go and consumed by
@@ -117,6 +118,13 @@ func PermissionDenied(message string) *DomainError {
 // Cancelled creates a cancelled error
 func Cancelled(message string) *DomainError {
 	return New(CodeCancelled, message)
+}
+
+// UsageLimited creates a usage-limit-reached error. It maps to HTTP 402 at the
+// delivery boundary — the turn was refused because a configured usage limit is
+// exhausted, not because of an auth or input problem.
+func UsageLimited(message string) *DomainError {
+	return New(CodeUsageLimited, message)
 }
 
 // Is checks if the error is a DomainError with the given code

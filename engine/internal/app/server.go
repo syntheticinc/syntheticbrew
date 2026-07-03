@@ -46,6 +46,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	"github.com/syntheticinc/syntheticbrew/pkg/logger"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
@@ -89,6 +90,14 @@ func Run(sc ServerConfig) error {
 		sc.Plugin = pluginpkg.Noop{}
 	}
 
+	// Process-global step accumulator: counts real agent steps per in-flight
+	// turn, keyed by session id. Driven by the same per-step signal the agent
+	// runtime already fires (the step callback below) and drained once by the
+	// usage-limit settle when a turn completes. Session-keyed, so it is safe
+	// under the Cloud multi-tenant invariant (session ids are unique across
+	// tenants).
+	usageAccumulator := usagelimit.NewStepAccumulator()
+
 	// Wire the agent-step observer hook so plugins are notified after every
 	// runtime step. The callbacks package uses a process-global callback
 	// because the StepCounter lives deep in the agent infrastructure;
@@ -96,6 +105,7 @@ func Run(sc ServerConfig) error {
 	// observer hook would be disproportionate.
 	plugin := sc.Plugin
 	callbacks.SetStepCallback(func(ctx context.Context) error {
+		usageAccumulator.Inc(domain.SessionIDFromContext(ctx))
 		return plugin.OnAgentStep(ctx, domain.TenantIDFromContext(ctx), pluginpkg.StepsLimitFromContext(ctx))
 	})
 
@@ -891,6 +901,15 @@ func Run(sc ServerConfig) error {
 			chatService.interrupts = interruptRepo
 			chatService.eventStore = eventStore
 			chatService.history = repository.NewMessageRepositoryImpl(pgDB)
+			// Usage-limit enforcement: gate a turn before it runs and settle
+			// the counters when it completes. Both stores are tenant-scoped
+			// (resolve the tenant from context). Wired only with a DB.
+			chatService.usage = usagelimit.New(
+				configrepo.NewGORMUsageLimitRepository(pgDB),
+				configrepo.NewGORMUsageCounterRepository(pgDB),
+				nil,
+			)
+			chatService.accumulator = usageAccumulator
 		}
 		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, forwardHeadersStore.GetForContext)
 
