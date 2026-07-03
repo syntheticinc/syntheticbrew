@@ -35,6 +35,15 @@ func (s *ModelSelector) SetModel(agentName string, m model.ToolCallingChatModel,
 	s.modelNames[agentName] = name
 }
 
+// SetDefault replaces the fallback model returned by Select (and its name from
+// ModelName) when an agent has no per-agent model. It is the extension point a
+// plugin uses to install a process-wide default — e.g. a shared proxy client —
+// without the engine knowing what that default is.
+func (s *ModelSelector) SetDefault(m model.ToolCallingChatModel, name string) {
+	s.defaultModel = m
+	s.defaultName = name
+}
+
 // Select returns the ChatModel for the given agent name.
 // Falls back to default if no specific model is configured.
 func (s *ModelSelector) Select(agentName string) model.ToolCallingChatModel {
