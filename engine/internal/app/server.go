@@ -419,7 +419,8 @@ func Run(sc ServerConfig) error {
 						registryMgr.InvalidateAll()
 					}
 				},
-				TransportPolicy: sc.Plugin.TransportPolicy(),
+				TransportPolicy:   sc.Plugin.TransportPolicy(),
+				WidgetTokenMinter: &widgetTokenMinterAdapter{repo: apiTokenRepo},
 			})
 			slog.InfoContext(ctx, "admin tools registered into builtin store")
 		}

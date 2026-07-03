@@ -24,8 +24,8 @@ func NewAdminListAgentsTool(repo AgentRepository) tool.InvokableTool {
 
 func (t *adminListAgentsTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: "admin_list_agents",
-		Desc: "Lists all agents configured in the engine. Returns name, lifecycle, model, tool count, and system flag for each agent.",
+		Name:        "admin_list_agents",
+		Desc:        "Lists all agents configured in the engine. Returns name, lifecycle, model, tool count, and system flag for each agent.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }
@@ -148,6 +148,9 @@ func (t *adminCreateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	if args.SystemPrompt == "" {
 		return "[ERROR] system_prompt is required", nil
 	}
+	if msg := rejectManagementTools(args.BuiltinTools); msg != "" {
+		return msg, nil
+	}
 
 	if args.Lifecycle == "" {
 		args.Lifecycle = "persistent"
@@ -228,6 +231,9 @@ func (t *adminUpdateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 	if args.Name == "" {
 		return "[ERROR] name is required", nil
+	}
+	if msg := rejectManagementTools(args.BuiltinTools); msg != "" {
+		return msg, nil
 	}
 
 	// Fetch existing to merge non-provided fields.
@@ -330,4 +336,18 @@ func coalesce(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// rejectManagementTools returns a user-facing error message if any name in the
+// list is a management-plane tool (admin_*, provision_agent, get_embed_snippet).
+// Defense in depth: even though tool resolution already gates these to system
+// agents, this stops a dangerous config from ever being stored on a
+// user-provisioned agent. Empty string means the list is clean.
+func rejectManagementTools(tools []string) string {
+	for _, name := range tools {
+		if domain.IsManagementTool(name) {
+			return fmt.Sprintf("tool %q cannot be granted to an agent", name)
+		}
+	}
+	return ""
 }

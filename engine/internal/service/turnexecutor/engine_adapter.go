@@ -155,6 +155,7 @@ func (e *EngineAdapter) ExecuteTurn(
 	// 2. Get tool dependencies
 	toolDeps := e.toolDeps.GetDependencies(sessionID, projectKey)
 	toolDeps.AgentName = flow.Name
+	toolDeps.IsSystem = flow.IsSystem
 	toolDeps.MCPServers = flow.MCPServers
 	// Set schema scope for memory tools (0 = no explicit schema context)
 	toolDeps.SchemaID = e.schemaID

@@ -129,4 +129,16 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 	store.Register("admin_get_session", func(_ tools.ToolDependencies) tool.InvokableTool {
 		return NewAdminGetSessionTool(deps.SessionRepo)
 	})
+
+	// Provisioning tools — high-level one-shot helpers for external MCP clients.
+	store.Register("provision_agent", func(_ tools.ToolDependencies) tool.InvokableTool {
+		return NewProvisionAgentTool(deps.AgentRepo, deps.SchemaRepo, reloader)
+	})
+	// get_embed_snippet needs a token minter; skip registration when absent so
+	// the tool never surfaces without the ability to mint a key.
+	if deps.WidgetTokenMinter != nil {
+		store.Register("get_embed_snippet", func(_ tools.ToolDependencies) tool.InvokableTool {
+			return NewGetEmbedSnippetTool(deps.SchemaRepo, deps.WidgetTokenMinter)
+		})
+	}
 }

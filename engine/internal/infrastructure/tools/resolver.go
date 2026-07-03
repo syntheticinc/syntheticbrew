@@ -11,6 +11,10 @@ type ToolEventEmitter interface {
 type ToolDependencies struct {
 	SessionID         string
 	AgentName         string
+	// IsSystem marks the resolving agent as a built-in system agent. Only
+	// system agents may resolve management-plane tools (admin_*, provision_agent,
+	// get_embed_snippet) via the legacy Resolve path.
+	IsSystem          bool
 	ProjectKey        string
 	BackgroundMode    bool // true for cron/webhook/API tasks (no user interaction)
 	Proxy             ClientOperationsProxy

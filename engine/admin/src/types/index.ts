@@ -247,9 +247,14 @@ export interface APIToken {
   last_used_at?: string;
 }
 
+// CreateTokenRequest matches the engine POST /auth/tokens contract, which
+// accepts either a raw `scopes_mask` bitmask or a symbolic `scopes` name list
+// (e.g. ["provision"], ["provision","manage"] for MCP clients). When both are
+// present the engine OR-s them; at least one must resolve to a non-zero mask.
 export interface CreateTokenRequest {
   name: string;
-  scopes_mask: number;
+  scopes_mask?: number;
+  scopes?: string[];
 }
 
 export interface CreateTokenResponse {

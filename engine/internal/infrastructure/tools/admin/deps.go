@@ -21,6 +21,9 @@ type AdminToolDependencies struct {
 	CapabilityRepo    CapabilityRepository
 	Reloader          func()              // AgentRegistry reload callback
 	TransportPolicy   mcp.TransportPolicy // MCP transport restriction policy
+	// WidgetTokenMinter mints chat-scoped widget tokens for get_embed_snippet.
+	// Nil disables the get_embed_snippet tool at registration time.
+	WidgetTokenMinter WidgetTokenMinter
 }
 
 // Consumer-side interfaces (defined here, implemented by GORM repo adapters):

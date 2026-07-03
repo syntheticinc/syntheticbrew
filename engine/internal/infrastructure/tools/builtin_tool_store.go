@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 )
@@ -246,6 +247,17 @@ func (r *AgentToolResolver) ResolveForAgent(ctx context.Context, rc ResolveConte
 		if strings.HasPrefix(name, "spawn_") {
 			continue
 		}
+		// Management-plane tools (admin_*, provision_agent, get_embed_snippet)
+		// administer engine config / mint credentials. They resolve ONLY for
+		// system agents (builder-assistant). A user-provisioned agent that
+		// somehow has one in its tool list must NOT get it — otherwise a
+		// provision-scoped caller could inject admin_delete_* into an agent and
+		// execute it via chat, bypassing the scope gate. Skip with a warning.
+		if domain.IsManagementTool(name) && !rc.Agent.Record.IsSystem {
+			slog.WarnContext(ctx, "management tool not available to non-system agent",
+				"agent", rc.Agent.Record.Name, "tool", name)
+			continue
+		}
 		factory, ok := r.builtins.Get(name)
 		if !ok {
 			// Dynamic KG-derived tools (list_<entity_type>, get_<entity_type>)
@@ -407,6 +419,16 @@ func (r *AgentToolResolver) Resolve(ctx context.Context, toolNames []string, dep
 	for _, name := range allToolNames {
 		// knowledge_search is auto-injected below via capability — skip here
 		if name == "knowledge_search" {
+			continue
+		}
+		// Management-plane tools (admin_*, provision_agent, get_embed_snippet)
+		// resolve ONLY for system agents. This is the chat runtime path
+		// (engine_adapter → Resolve); without this gate a user-provisioned agent
+		// carrying admin_delete_* in its tool list would execute it server-side,
+		// bypassing the MCP endpoint's scope gate entirely.
+		if domain.IsManagementTool(name) && !deps.IsSystem {
+			slog.WarnContext(ctx, "management tool not available to non-system agent",
+				"agent", deps.AgentName, "tool", name)
 			continue
 		}
 		factory, ok := r.builtins.Get(name)

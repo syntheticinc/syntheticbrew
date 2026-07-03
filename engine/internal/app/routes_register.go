@@ -524,6 +524,23 @@ func registerHTTPRoutes(deps routesDeps) {
 			r.Get("/api/v1/mcp/catalog", catalogHandler.ListCatalog)
 		}
 
+		// MCP server endpoint: a single streamable-HTTP JSON-RPC surface
+		// exposing the admin_* and provisioning tools to external MCP clients.
+		// Auth + tenant are already applied by this group; per-tool scope
+		// gating happens inside the handler against the context scope mask
+		// (provision bits vs ScopeManage for destructive delete tools). It
+		// routes calls through the raw builtin store: the admin tools were
+		// registered without a ConfirmRequester (AdminToolDependencies has no
+		// such field), so external calls can never block on SSE confirmation.
+		if components != nil && components.AgentToolResolver != nil {
+			mcpServerHandler := deliveryhttp.NewMCPServerHandler(
+				components.AgentToolResolver.BuiltinStore(),
+				&mcpToolAuditorAdapter{logger: auditLogger},
+				deps.Version,
+			)
+			r.Post("/api/v1/mcp/rpc", mcpServerHandler.ServeHTTP)
+		}
+
 		// Schema templates catalog + fork — DB-backed. Reads are open to any
 		// authenticated user; fork requires schemas-write scope.
 		if pgDB != nil {

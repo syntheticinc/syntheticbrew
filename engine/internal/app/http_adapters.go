@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"gorm.io/gorm"
 
+	"github.com/syntheticinc/syntheticbrew/internal/authprim"
 	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
@@ -144,6 +145,57 @@ func (a *tokenRepoHTTPAdapter) VerifyToken(ctx context.Context, tokenHash string
 		ScopesMask: v.ScopesMask,
 		TenantID:   v.TenantID,
 	}, nil
+}
+
+// widgetTokenMinterAdapter mints chat-scoped API tokens for embed snippets.
+// It reuses the exact token-creation primitives the REST token handler uses
+// (authprim.Generate + authprim.Hash + the same repo Create), pinned to the
+// chat scope so a widget key can only drive chat and nothing else. Tenant and
+// actor are stamped from the request context by the repo/authprim layer.
+type widgetTokenMinterAdapter struct {
+	repo *configrepo.GORMAPITokenRepository
+}
+
+func (a *widgetTokenMinterAdapter) MintChatToken(ctx context.Context, name string) (string, error) {
+	raw, err := authprim.Generate()
+	if err != nil {
+		return "", fmt.Errorf("generate widget token: %w", err)
+	}
+	hash := authprim.Hash(raw)
+	userSub := domain.UserSubFromContext(ctx)
+	if _, err := a.repo.Create(ctx, userSub, name, hash, deliveryhttp.ScopeChat); err != nil {
+		return "", fmt.Errorf("store widget token: %w", err)
+	}
+	return raw, nil
+}
+
+// mcpToolAuditorAdapter appends a per-tool-call audit record for the MCP server
+// endpoint. It reuses the shared audit.Logger; tenant/actor are stamped from
+// context inside Log.
+type mcpToolAuditorAdapter struct {
+	logger *audit.Logger
+}
+
+func (a *mcpToolAuditorAdapter) RecordToolCall(ctx context.Context, toolName string, isError bool, durationMs int64) {
+	if a.logger == nil {
+		return
+	}
+	actorType, _ := ctx.Value(deliveryhttp.ContextKeyActorType).(string)
+	actorID, _ := ctx.Value(deliveryhttp.ContextKeyActorID).(string)
+	err := a.logger.Log(ctx, audit.Entry{
+		ActorType: actorType,
+		ActorID:   actorID,
+		Action:    "mcp.tool.call",
+		Resource:  toolName,
+		Details: map[string]interface{}{
+			"tool":        toolName,
+			"is_error":    isError,
+			"duration_ms": durationMs,
+		},
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "mcp server: append tool-call audit failed", "tool", toolName, "error", err)
+	}
 }
 
 // configReloaderHTTPAdapter bridges AgentRegistry and MCP reconnection to the http.ConfigReloader interface.

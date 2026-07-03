@@ -104,6 +104,50 @@ func TestAgentToolResolver_ResolveForAgent_Whitelist(t *testing.T) {
 	assert.Equal(t, "tool_c", info1.Name)
 }
 
+// TestAgentToolResolver_ResolveForAgent_ManagementToolGate proves the security
+// gate: a non-system (user-provisioned) agent must NOT resolve management-plane
+// tools even if its BuiltinTools list names them, while a system agent still can.
+// This closes the privilege-escalation path where a provisioned agent granted
+// admin_* tools would execute them server-side, bypassing scope checks.
+func TestAgentToolResolver_ResolveForAgent_ManagementToolGate(t *testing.T) {
+	store := NewBuiltinToolStore()
+	store.Register("admin_delete_agent", func(deps ToolDependencies) tool.InvokableTool {
+		return &stubTool{name: "admin_delete_agent"}
+	})
+	store.Register("read_file", func(deps ToolDependencies) tool.InvokableTool {
+		return &stubTool{name: "read_file"}
+	})
+	resolver := NewAgentToolResolver(store)
+
+	// Non-system agent: admin_delete_agent is skipped, read_file resolves.
+	userAgent := &agentregistry.RegisteredAgent{
+		Record: configrepo.AgentRecord{
+			Name:         "user_agent",
+			IsSystem:     false,
+			BuiltinTools: []string{"admin_delete_agent", "read_file"},
+		},
+		DerivedTools: []string{"admin_delete_agent", "read_file"},
+	}
+	tools, err := resolver.ResolveForAgent(context.Background(), ResolveContext{Agent: userAgent, Deps: ToolDependencies{}})
+	require.NoError(t, err)
+	require.Len(t, tools, 1, "non-system agent must not resolve admin_delete_agent")
+	info, _ := tools[0].Info(context.Background())
+	assert.Equal(t, "read_file", info.Name)
+
+	// System agent (e.g. builder-assistant): admin_delete_agent still resolves.
+	sysAgent := &agentregistry.RegisteredAgent{
+		Record: configrepo.AgentRecord{
+			Name:         "builder-assistant",
+			IsSystem:     true,
+			BuiltinTools: []string{"admin_delete_agent", "read_file"},
+		},
+		DerivedTools: []string{"admin_delete_agent", "read_file"},
+	}
+	sysTools, err := resolver.ResolveForAgent(context.Background(), ResolveContext{Agent: sysAgent, Deps: ToolDependencies{}})
+	require.NoError(t, err)
+	require.Len(t, sysTools, 2, "system agent must keep admin tools")
+}
+
 func TestAgentToolResolver_ResolveForAgent_UnknownTool(t *testing.T) {
 	store := NewBuiltinToolStore()
 	store.Register("tool_a", func(deps ToolDependencies) tool.InvokableTool {
@@ -181,4 +225,3 @@ func TestAgentToolResolver_ResolveForAgent_PassesDeps(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "session-42", capturedSessionID)
 }
-

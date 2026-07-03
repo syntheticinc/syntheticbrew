@@ -39,6 +39,10 @@ type Flow struct {
 	TopP           *float64 // per-agent top_p override (nil = use model default)
 	MaxTokens      *int     // per-agent max_tokens override (nil = use model default)
 	StopSequences  []string // per-agent stop sequences override (nil = use model default)
+	// IsSystem marks a built-in system agent (e.g. builder-assistant). Only
+	// system agents may resolve management-plane tools (admin_*, provision_agent,
+	// get_embed_snippet); user-provisioned agents must not.
+	IsSystem bool
 }
 
 // Validate validates the Flow configuration
