@@ -7,6 +7,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-04
+
+### Changed
+- Bump `appVersion` to **1.11.0** — engine adds the MCP provisioning endpoint,
+  generic operator-configurable usage limits, and the `SetDefault` model-selector
+  extension point. All additive and default-off in CE; no new chart values are
+  required, so existing installs upgrade without values changes.
+
 ## [0.11.2] - 2026-07-01
 
 ### Changed

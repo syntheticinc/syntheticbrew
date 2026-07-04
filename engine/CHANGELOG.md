@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.11.0] — 2026-07-04
+
+### Added
+
+- **MCP server endpoint (`POST /api/v1/mcp/rpc`) for agent provisioning.** An
+  external coding agent (Claude Code, Cursor, …) connects over streamable-HTTP
+  with a scoped token and provisions a ready-to-embed agent + widget snippet via
+  `provision_agent` / `get_embed_snippet`, plus the `admin_*` management tools.
+  Management tools resolve only for system agents and are rejected at
+  create/provision so a provisioned agent cannot escalate.
+- **Generic operator-configurable usage limits.** One CE-clean subsystem
+  (`{scope: tenant|per_user, unit: turns|steps, limit, interval}`) with a durable
+  per-(tenant, user, window) counter, atomic upsert with a rolling-reset
+  predicate, a pre-turn gate (402 when exhausted, with a bring-your-own-key hint)
+  and settle-on-billable. Both `turns` and `steps` are always counted so the
+  active unit can switch mid-period safely. Default absent = unlimited; BYOK
+  turns are neither counted nor gated. Admin API under
+  `/api/v1/admin/usage-limits` (ScopeAdmin).
+- **`ModelSelectorConfigurator.SetDefault` plugin extension point.** A plugin can
+  install a process-wide default model; the engine's per-request resolution keeps
+  precedence BYOK → per-agent DB model → this default, so the default only serves
+  genuinely-unconfigured, non-BYOK turns.
+
 ## [1.10.2] — 2026-07-01
 
 ### Fixed
