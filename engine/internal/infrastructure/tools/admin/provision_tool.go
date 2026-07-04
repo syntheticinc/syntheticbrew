@@ -64,11 +64,11 @@ Write a strong system_prompt — it is the single biggest lever on agent quality
   - REFUSALS: topics or requests to decline, and how to decline politely.
   - TONE: voice and formatting expectations (concise, friendly, cites sources, etc.).
 
-Recommended follow-ups after provisioning: attach a knowledge base (so the agent answers from your documents) and add tools (search, MCP servers) that let it act. If model_name is omitted the agent is created unbound and will not answer until a model is configured.`),
+Recommended follow-ups after provisioning: attach a knowledge base (so the agent answers from your documents) and add tools (search, MCP servers) that let it act. If model_name is omitted the agent uses the deployment's default model when one is available (e.g. a hosted free plan) and can answer immediately; on a self-hosted deployment with no default, configure a model before it can answer.`),
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"name":          {Type: schema.String, Desc: "Unique agent name (lowercase letters, digits, hyphens; must start with a letter).", Required: true},
 			"system_prompt": {Type: schema.String, Desc: "System prompt defining role, scope, refusals, and tone. This is the primary quality lever.", Required: true},
-			"model_name":    {Type: schema.String, Desc: "Model name to bind. If empty, the agent is created unbound and must be configured with a model before it can answer.", Required: false},
+			"model_name":    {Type: schema.String, Desc: "Model name to bind. If empty, the agent uses the deployment's default model when one is available (e.g. a hosted free plan) and answers immediately; otherwise it must be configured with a model before it can answer.", Required: false},
 			"tools":         {Type: schema.Array, Desc: "Optional array of builtin tool names to grant the agent.", Required: false},
 			"schema_name":   {Type: schema.String, Desc: "Chat schema name. Defaults to the agent name.", Required: false},
 		}),
@@ -225,7 +225,7 @@ func (t *provisionAgentTool) reload() {
 func buildProvisionNextSteps(schemaName, modelName string) []string {
 	steps := make([]string, 0, 3)
 	if modelName == "" {
-		steps = append(steps, "Bind a model: this agent is unbound and cannot answer yet. Configure a model with admin_update_agent (model) or admin_set_default_model.")
+		steps = append(steps, "No model bound: this agent uses the deployment's default model when one is available (e.g. a hosted free plan) and can answer immediately. To pin a specific model, use admin_update_agent (model) or admin_set_default_model; on a self-hosted deployment with no default, binding a model is required before it can answer.")
 	}
 	steps = append(steps,
 		"Attach a knowledge base so the agent answers from your documents.",
