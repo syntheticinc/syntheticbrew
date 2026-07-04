@@ -58,11 +58,11 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
     // admin surface and the user stranded with an unbound builder-assistant
     // (no path back into the wizard).
     let cancelled = false;
-    // A hosted deployment that funds a process-wide default model (free plan)
-    // reports platform_default_model on /health. Treat that as "LLM configured"
-    // so a keyless tenant is never force-marched through BYOK setup — the whole
-    // point of the free tier is a working agent with no key. Self-hosted
-    // deployments report false and keep the mandatory-setup behaviour.
+    // A deployment that provides a process-wide default model reports
+    // platform_default_model on /health. Treat that as "LLM configured" so a
+    // keyless tenant is never force-marched through BYOK setup — it already has
+    // a working default model. Deployments with no default report false and
+    // keep the mandatory-setup behaviour.
     Promise.all([
       api.health().then((h) => h).catch(() => null),
       api.listModels().then((m) => m).catch(() => null),

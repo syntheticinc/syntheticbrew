@@ -212,8 +212,8 @@ function Step1ConnectLLM({
   platformDefault,
 }: {
   onSuccess: () => void;
-  // When the deployment funds a process-wide default model (hosted free plan),
-  // bringing a key is optional — the user can continue on the free plan.
+  // When the deployment provides a process-wide default model, bringing a key
+  // is optional — the user can continue without one.
   platformDefault: boolean;
 }) {
   const [providerId, setProviderId] = useState<string>(PROVIDERS[0]!.id);
@@ -468,7 +468,7 @@ function Step1ConnectLLM({
               disabled={status.kind === 'testing'}
               className="px-4 py-2 text-sm font-medium text-brand-shade2 hover:text-brand-light transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Continue on the free plan (no key)
+              Continue without a key
             </button>
           )}
           <button
@@ -667,7 +667,7 @@ function Step2Template({
 
 export default function OnboardingWizard() {
   const [step, setStep] = useState<1 | 2>(1);
-  // Hosted deployments that fund a default model let the user continue keyless.
+  // Deployments that provide a default model let the user continue keyless.
   const [platformDefault, setPlatformDefault] = useState(false);
   const navigate = useNavigate();
 
@@ -703,7 +703,7 @@ export default function OnboardingWizard() {
           <div className="max-w-3xl mx-auto flex items-center justify-between">
             <div className="text-sm font-semibold text-brand-light">SyntheticBrew setup</div>
             <div className="text-xs text-brand-shade3">
-              {platformDefault ? 'Free plan — bring your own key to lift limits' : 'BYOK — bring your own key'}
+              {platformDefault ? 'Platform default model — bring your own key for full control' : 'BYOK — bring your own key'}
             </div>
           </div>
         </div>

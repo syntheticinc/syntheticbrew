@@ -284,9 +284,9 @@ export interface HealthResponse {
   uptime: string;
   agents_count: number;
   update_available?: string;
-  // True when the deployment funds a usable process-wide default model (e.g.
-  // a hosted free plan). The onboarding gate treats this as "LLM configured"
-  // so a keyless tenant is not forced through mandatory BYOK setup.
+  // True when the deployment provides a usable process-wide default model.
+  // The onboarding gate treats this as "LLM configured" so a keyless tenant
+  // is not forced through mandatory BYOK setup.
   platform_default_model?: boolean;
 }
 

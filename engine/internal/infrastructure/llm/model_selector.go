@@ -19,7 +19,8 @@ type ModelSelector struct {
 	// platformDefaultSet records whether a plugin replaced the fallback via
 	// SetDefault. It distinguishes a usable process-wide default (installed by
 	// an external module) from the constructor default, which in a fresh
-	// self-hosted deployment may be a placeholder awaiting user configuration.
+	// deployment with no configured model may be a placeholder awaiting user
+	// configuration.
 	platformDefaultSet bool
 }
 

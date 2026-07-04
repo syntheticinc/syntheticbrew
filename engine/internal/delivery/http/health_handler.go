@@ -16,8 +16,8 @@ type HealthResponse struct {
 	UpdateAvailable string `json:"update_available,omitempty"`
 	// PlatformDefaultModel is true when a usable process-wide default model is
 	// installed (a plugin called ModelSelector.SetDefault). Clients use it to
-	// skip mandatory key-setup onboarding when the deployment already funds a
-	// default model. Absent/false on self-hosted deployments with no default.
+	// skip mandatory key-setup onboarding when the deployment already provides a
+	// default model. Absent/false when no default model is installed.
 	PlatformDefaultModel bool `json:"platform_default_model"`
 }
 
