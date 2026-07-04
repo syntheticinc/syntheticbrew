@@ -101,8 +101,16 @@ func TestModelSelector_SetDefault(t *testing.T) {
 	selector := NewModelSelector(origDefault, "orig-model")
 	selector.SetModel("coder", coderModel, "coder-model")
 
+	// Before any SetDefault, no platform default is advertised (self-hosted
+	// with only a constructor default → onboarding stays mandatory).
+	assert.False(t, selector.HasPlatformDefault(), "fresh selector must not advertise a platform default")
+
 	// SetDefault replaces the fallback used for unconfigured agents...
 	selector.SetDefault(newDefault, "platform-free")
+
+	// ...and now advertises a usable process-wide default (the health endpoint
+	// surfaces this so a keyless tenant skips mandatory setup).
+	assert.True(t, selector.HasPlatformDefault(), "SetDefault must mark a platform default present")
 
 	resp, err := selector.Select("unknown-agent").Generate(context.Background(), nil)
 	require.NoError(t, err)

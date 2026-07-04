@@ -100,6 +100,9 @@ func registerHTTPRoutes(deps routesDeps) {
 	// Health (public) — available on both ports
 	healthHandler := deliveryhttp.NewHealthHandler(deps.Version, &agentCounterHTTPAdapter{registry: agentRegistry})
 	healthHandler.SetUpdateChecker(updateChecker)
+	if components != nil && components.ModelSelector != nil {
+		healthHandler.SetPlatformDefaultChecker(components.ModelSelector)
+	}
 	r.Get("/api/v1/health", healthHandler.ServeHTTP)
 
 	// Model registry (public — read-only catalog, no auth needed)

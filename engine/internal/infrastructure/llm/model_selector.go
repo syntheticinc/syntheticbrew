@@ -16,6 +16,11 @@ type ModelSelector struct {
 	modelNames   map[string]string
 	defaultName  string
 	namedModels  map[string]model.ToolCallingChatModel
+	// platformDefaultSet records whether a plugin replaced the fallback via
+	// SetDefault. It distinguishes a usable process-wide default (installed by
+	// an external module) from the constructor default, which in a fresh
+	// self-hosted deployment may be a placeholder awaiting user configuration.
+	platformDefaultSet bool
 }
 
 // NewModelSelector creates a new ModelSelector with a default model.
@@ -42,6 +47,15 @@ func (s *ModelSelector) SetModel(agentName string, m model.ToolCallingChatModel,
 func (s *ModelSelector) SetDefault(m model.ToolCallingChatModel, name string) {
 	s.defaultModel = m
 	s.defaultName = name
+	s.platformDefaultSet = true
+}
+
+// HasPlatformDefault reports whether a plugin installed a process-wide default
+// via SetDefault. Callers (e.g. the health endpoint) use it to tell clients a
+// usable default model exists even when no per-tenant models are configured,
+// so a fresh deployment backed by such a default need not force key setup.
+func (s *ModelSelector) HasPlatformDefault() bool {
+	return s.platformDefaultSet
 }
 
 // Select returns the ChatModel for the given agent name.
