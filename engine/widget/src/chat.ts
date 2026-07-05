@@ -56,6 +56,23 @@ export interface ChatConfig {
   apiKey: string | null;
 }
 
+/** Map an HTTP failure status to a message safe to show an end-user. The raw
+ *  response body can carry server-side operator or error detail and must never
+ *  reach the chat surface — the caller logs the raw body separately for
+ *  operators. */
+export function endUserHttpMessage(status: number): string {
+  if (status === 402 || status === 429) {
+    return 'The assistant has reached its current usage limit. Please try again later.';
+  }
+  if (status === 401 || status === 403) {
+    return 'The assistant is not available right now.';
+  }
+  if (status >= 500) {
+    return 'The assistant is temporarily unavailable. Please try again in a moment.';
+  }
+  return 'Something went wrong. Please try again.';
+}
+
 const SESSION_KEY_PREFIX = 'bb_widget_session_';
 
 export class ChatClient {
@@ -155,8 +172,14 @@ export class ChatClient {
     }
 
     if (!response.ok) {
-      const text = await response.text().catch(() => 'Unknown error');
-      callbacks.onError(`Server error ${response.status}: ${text}`);
+      // The raw body can carry server-side operator or error detail; keep it
+      // out of the end-user chat. Log it for operators, surface only a safe
+      // message.
+      const detail = await response.text().catch(() => '');
+      if (detail) {
+        console.warn(`[bytebrew-widget] chat request failed (${response.status}): ${detail}`);
+      }
+      callbacks.onError(endUserHttpMessage(response.status));
       return;
     }
 

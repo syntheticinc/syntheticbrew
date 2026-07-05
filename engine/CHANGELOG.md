@@ -23,6 +23,15 @@
   precedence BYOK → per-agent DB model → this default, so the default only serves
   genuinely-unconfigured, non-BYOK turns.
 
+### Fixed
+
+- **Embeddable widget shows a safe message on a failed chat request.** On any
+  non-2xx response the widget now renders a short, friendly message mapped from
+  the HTTP status (usage-limit / not-available / temporarily-unavailable) instead
+  of printing `Server error <status>: <body>` into the chat. The raw response
+  body — which can carry server-side operator or error detail — is logged to the
+  browser console for operators and never surfaced to the end user.
+
 ## [1.10.2] — 2026-07-01
 
 ### Fixed
