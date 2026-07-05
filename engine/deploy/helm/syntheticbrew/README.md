@@ -25,6 +25,7 @@ it has been validated. Pick what your environment supports and treat
 | AWS IRSA annotations                   | **Beta**     | CI render-validated only — no AWS account in CI; community feedback welcome |
 | GCP Workload Identity annotations      | **Beta**     | CI render-validated only — no GCP account in CI |
 | NetworkPolicy enabled                  | **Beta**     | CI render-validated only — kind default CNI does NOT enforce NetworkPolicy |
+| Migration `waitForDB` init-container (wait-for-postgres) | **Beta** | CI render-validated (init-container present when `enabled`, absent when disabled); the wait-on-cold-DB path is not e2e-gated |
 | Argo CD pull GitOps                    | **Experimental** | Example-only (`examples/argocd-application.yaml`); not exercised in CI |
 | Flux CD HelmRelease                    | **Experimental** | Not exercised in CI |
 | Multi-replica HA (`auth.mode=external`)| **Out of CE** | EE feature — requires external JWT IdP, not in this chart |

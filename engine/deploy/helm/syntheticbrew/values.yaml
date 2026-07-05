@@ -265,6 +265,16 @@ migrations:
       memory: 128Mi
   # Increase for cold-start large schemas.
   activeDeadlineSeconds: 1800
+  # Wait for Postgres to accept TCP connections before running Liquibase. The
+  # migration Job is a pre-install/pre-upgrade hook with backoffLimit 0, so a
+  # single connection-refused against a not-yet-ready database fails the whole
+  # release. The wait reuses the migrations image's bash (no extra tooling) and
+  # polls until the DB is reachable or the budget (retries * intervalSeconds)
+  # elapses.
+  waitForDB:
+    enabled: true
+    retries: 60
+    intervalSeconds: 2
 
 # Optional: declarative GitOps reconcile via the brewctl CLI.
 # Requires a published brewctl Docker image (ghcr.io/syntheticinc/brewctl:vX.Y.Z).
