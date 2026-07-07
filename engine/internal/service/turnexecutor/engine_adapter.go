@@ -146,6 +146,12 @@ func (e *EngineAdapter) ExecuteTurn(
 	chunkCallback func(chunk string) error,
 	eventCallback func(event *domain.AgentEvent) error,
 ) error {
+	// Attach the session id to the turn context so per-step observers deep in
+	// the Eino callback chain (which have no session id of their own) can
+	// correlate each IncrementStep back to this session — used by the
+	// usage-limit step accumulator to settle a turn with its exact step count.
+	ctx = domain.WithSessionID(ctx, sessionID)
+
 	// 1. Get flow config for the agent
 	flow, err := e.flowProvider.GetFlow(ctx, e.agentName)
 	if err != nil {
@@ -155,6 +161,7 @@ func (e *EngineAdapter) ExecuteTurn(
 	// 2. Get tool dependencies
 	toolDeps := e.toolDeps.GetDependencies(sessionID, projectKey)
 	toolDeps.AgentName = flow.Name
+	toolDeps.IsSystem = flow.IsSystem
 	toolDeps.MCPServers = flow.MCPServers
 	// Set schema scope for memory tools (0 = no explicit schema context)
 	toolDeps.SchemaID = e.schemaID

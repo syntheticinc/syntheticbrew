@@ -32,6 +32,61 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.migrations.waitForDB.enabled }}
+      initContainers:
+        - name: wait-for-db
+          image: "{{ .Values.migrations.image.repository }}:{{ $tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Block until Postgres accepts TCP connections so the migration Job
+          # (backoffLimit: 0) doesn't fail the release on a cold database. Host
+          # and port are parsed from the same libpq DATABASE_URL the migration
+          # container uses; the wait uses bash's /dev/tcp so no extra client
+          # tooling or image is required.
+          command: ["/bin/bash", "-eu", "-c"]
+          args:
+            - |
+              URL_NO_PROTO="${DATABASE_URL#postgres://}"
+              URL_NO_PROTO="${URL_NO_PROTO#postgresql://}"
+              HOSTPATH="${URL_NO_PROTO##*@}"          # strip user:pass@
+              case "$HOSTPATH" in
+                *\?*) HOSTPATH="${HOSTPATH%%\?*}" ;;    # drop ?query
+              esac
+              HOSTPORT="${HOSTPATH%%/*}"               # drop /dbname
+              DB_HOST="${HOSTPORT%%:*}"
+              case "$HOSTPORT" in
+                *:*) DB_PORT="${HOSTPORT##*:}" ;;
+                *)   DB_PORT="5432" ;;
+              esac
+              echo "waiting for postgres at ${DB_HOST}:${DB_PORT}..."
+              for _ in $(seq 1 {{ .Values.migrations.waitForDB.retries }}); do
+                if (exec 3<>"/dev/tcp/${DB_HOST}/${DB_PORT}") 2>/dev/null; then
+                  echo "postgres is accepting connections"
+                  exit 0
+                fi
+                sleep {{ .Values.migrations.waitForDB.intervalSeconds }}
+              done
+              echo "timed out waiting for postgres at ${DB_HOST}:${DB_PORT}" >&2
+              exit 1
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "syntheticbrew-engine.databaseSecretName" . }}
+                  key: {{ include "syntheticbrew-engine.databaseSecretKey" . }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+      {{- end }}
       containers:
         - name: migrations
           image: "{{ .Values.migrations.image.repository }}:{{ $tag }}"

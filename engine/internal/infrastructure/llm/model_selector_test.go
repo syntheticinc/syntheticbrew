@@ -93,6 +93,36 @@ func TestModelSelector_Select(t *testing.T) {
 	}
 }
 
+func TestModelSelector_SetDefault(t *testing.T) {
+	origDefault := &mockChatModel{id: "orig"}
+	newDefault := &mockChatModel{id: "platform-free"}
+	coderModel := &mockChatModel{id: "coder"}
+
+	selector := NewModelSelector(origDefault, "orig-model")
+	selector.SetModel("coder", coderModel, "coder-model")
+
+	// Before any SetDefault, no platform default is advertised (self-hosted
+	// with only a constructor default → onboarding stays mandatory).
+	assert.False(t, selector.HasPlatformDefault(), "fresh selector must not advertise a platform default")
+
+	// SetDefault replaces the fallback used for unconfigured agents...
+	selector.SetDefault(newDefault, "platform-free")
+
+	// ...and now advertises a usable process-wide default (the health endpoint
+	// surfaces this so a keyless tenant skips mandatory setup).
+	assert.True(t, selector.HasPlatformDefault(), "SetDefault must mark a platform default present")
+
+	resp, err := selector.Select("unknown-agent").Generate(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "platform-free", resp.Content, "unconfigured agent should get the new default")
+	assert.Equal(t, "platform-free", selector.ModelName("unknown-agent"))
+
+	// ...but per-agent overrides still win over the default.
+	resp, err = selector.Select("coder").Generate(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "coder", resp.Content, "per-agent model must still take precedence over default")
+}
+
 func TestModelSelector_ModelName(t *testing.T) {
 	defaultModel := &mockChatModel{id: "default"}
 	coderModel := &mockChatModel{id: "coder"}

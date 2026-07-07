@@ -68,16 +68,16 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 		return NewAdminListMCPServersTool(deps.MCPServerRepo)
 	})
 	store.Register("admin_create_mcp_server", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminCreateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy)
+		return NewAdminCreateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy, deps.MCPSyncer)
 	})
 	store.Register("admin_update_mcp_server", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminUpdateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy)
+		return NewAdminUpdateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy, deps.MCPSyncer)
 	})
 	store.Register("admin_delete_mcp_server", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminDeleteMCPServerTool(deps.MCPServerRepo, reloader)
+		return NewAdminDeleteMCPServerTool(deps.MCPServerRepo, reloader, deps.MCPSyncer)
 	})
 	store.Register("admin_set_mcp_server_enabled", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminSetMCPServerEnabledTool(deps.MCPServerRepo, reloader)
+		return NewAdminSetMCPServerEnabledTool(deps.MCPServerRepo, reloader, deps.MCPSyncer)
 	})
 
 	// Granular agent attachment tools (append-style wrappers around admin_update_agent)
@@ -129,4 +129,16 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 	store.Register("admin_get_session", func(_ tools.ToolDependencies) tool.InvokableTool {
 		return NewAdminGetSessionTool(deps.SessionRepo)
 	})
+
+	// Provisioning tools — high-level one-shot helpers for external MCP clients.
+	store.Register("provision_agent", func(_ tools.ToolDependencies) tool.InvokableTool {
+		return NewProvisionAgentTool(deps.AgentRepo, deps.SchemaRepo, reloader)
+	})
+	// get_embed_snippet needs a token minter; skip registration when absent so
+	// the tool never surfaces without the ability to mint a key.
+	if deps.WidgetTokenMinter != nil {
+		store.Register("get_embed_snippet", func(_ tools.ToolDependencies) tool.InvokableTool {
+			return NewGetEmbedSnippetTool(deps.SchemaRepo, deps.WidgetTokenMinter)
+		})
+	}
 }

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { CreateModelRequest } from '../types';
@@ -209,8 +209,12 @@ type TestStatus =
 
 function Step1ConnectLLM({
   onSuccess,
+  platformDefault,
 }: {
   onSuccess: () => void;
+  // When the deployment provides a process-wide default model, bringing a key
+  // is optional — the user can continue without one.
+  platformDefault: boolean;
 }) {
   const [providerId, setProviderId] = useState<string>(PROVIDERS[0]!.id);
   const [apiKey, setApiKey] = useState('');
@@ -457,6 +461,16 @@ function Step1ConnectLLM({
           Your key is stored on your Engine's database, never transmitted to syntheticbrew.ai.
         </p>
         <div className="flex items-center gap-3">
+          {platformDefault && (
+            <button
+              type="button"
+              onClick={onSuccess}
+              disabled={status.kind === 'testing'}
+              className="px-4 py-2 text-sm font-medium text-brand-shade2 hover:text-brand-light transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              Continue without a key
+            </button>
+          )}
           <button
             type="submit"
             disabled={status.kind === 'testing'}
@@ -653,7 +667,24 @@ function Step2Template({
 
 export default function OnboardingWizard() {
   const [step, setStep] = useState<1 | 2>(1);
+  // Deployments that provide a default model let the user continue keyless.
+  const [platformDefault, setPlatformDefault] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .health()
+      .then((h) => {
+        if (!cancelled) setPlatformDefault(!!h?.platform_default_model);
+      })
+      .catch(() => {
+        /* fail closed: no free-plan affordance, mandatory key setup remains */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Drop into the new schema's canvas when we know its name; fall back to
   // the schemas list (Skip path). Engine 1.1.0+ URLs are name-keyed.
@@ -671,13 +702,15 @@ export default function OnboardingWizard() {
         <div className="px-6 py-4 border-b border-brand-shade3/10 bg-brand-dark-surface">
           <div className="max-w-3xl mx-auto flex items-center justify-between">
             <div className="text-sm font-semibold text-brand-light">SyntheticBrew setup</div>
-            <div className="text-xs text-brand-shade3">BYOK — bring your own key</div>
+            <div className="text-xs text-brand-shade3">
+              {platformDefault ? 'Platform default model — bring your own key for full control' : 'BYOK — bring your own key'}
+            </div>
           </div>
         </div>
 
         <div className="flex-1 px-6 py-10">
           <ProgressHeader step={step} />
-          {step === 1 && <Step1ConnectLLM onSuccess={() => setStep(2)} />}
+          {step === 1 && <Step1ConnectLLM onSuccess={() => setStep(2)} platformDefault={platformDefault} />}
           {step === 2 && <Step2Template onDone={finish} />}
         </div>
       </div>

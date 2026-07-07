@@ -15,10 +15,10 @@ import (
 
 type adminAddCapabilityTool struct {
 	repo     CapabilityRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminAddCapabilityTool(repo CapabilityRepository, reloader func()) tool.InvokableTool {
+func NewAdminAddCapabilityTool(repo CapabilityRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminAddCapabilityTool{repo: repo, reloader: reloader}
 }
 
@@ -83,7 +83,7 @@ func (t *adminAddCapabilityTool) InvokableRun(ctx context.Context, argsJSON stri
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminAddCapability] added", "agent", args.AgentName, "type", args.CapabilityType)
@@ -94,10 +94,10 @@ func (t *adminAddCapabilityTool) InvokableRun(ctx context.Context, argsJSON stri
 
 type adminRemoveCapabilityTool struct {
 	repo     CapabilityRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminRemoveCapabilityTool(repo CapabilityRepository, reloader func()) tool.InvokableTool {
+func NewAdminRemoveCapabilityTool(repo CapabilityRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminRemoveCapabilityTool{repo: repo, reloader: reloader}
 }
 
@@ -136,7 +136,7 @@ func (t *adminRemoveCapabilityTool) InvokableRun(ctx context.Context, argsJSON s
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminRemoveCapability] removed", "id", args.CapabilityID)
@@ -147,10 +147,10 @@ func (t *adminRemoveCapabilityTool) InvokableRun(ctx context.Context, argsJSON s
 
 type adminUpdateCapabilityTool struct {
 	repo     CapabilityRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminUpdateCapabilityTool(repo CapabilityRepository, reloader func()) tool.InvokableTool {
+func NewAdminUpdateCapabilityTool(repo CapabilityRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminUpdateCapabilityTool{repo: repo, reloader: reloader}
 }
 
@@ -210,7 +210,7 @@ func (t *adminUpdateCapabilityTool) InvokableRun(ctx context.Context, argsJSON s
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminUpdateCapability] updated", "id", args.CapabilityID)

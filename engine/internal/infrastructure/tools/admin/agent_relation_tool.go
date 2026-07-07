@@ -74,10 +74,10 @@ func (t *adminListAgentRelationsTool) InvokableRun(ctx context.Context, argsJSON
 
 type adminCreateAgentRelationTool struct {
 	repo     AgentRelationRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminCreateAgentRelationTool(repo AgentRelationRepository, reloader func()) tool.InvokableTool {
+func NewAdminCreateAgentRelationTool(repo AgentRelationRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminCreateAgentRelationTool{repo: repo, reloader: reloader}
 }
 
@@ -128,7 +128,7 @@ func (t *adminCreateAgentRelationTool) InvokableRun(ctx context.Context, argsJSO
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminCreateAgentRelation] created", "schema_id", args.SchemaID, "from", args.FromAgent, "to", args.ToAgent)
@@ -139,10 +139,10 @@ func (t *adminCreateAgentRelationTool) InvokableRun(ctx context.Context, argsJSO
 
 type adminDeleteAgentRelationTool struct {
 	repo     AgentRelationRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminDeleteAgentRelationTool(repo AgentRelationRepository, reloader func()) tool.InvokableTool {
+func NewAdminDeleteAgentRelationTool(repo AgentRelationRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminDeleteAgentRelationTool{repo: repo, reloader: reloader}
 }
 
@@ -177,7 +177,7 @@ func (t *adminDeleteAgentRelationTool) InvokableRun(ctx context.Context, argsJSO
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminDeleteAgentRelation] deleted", "relation_id", args.RelationID)

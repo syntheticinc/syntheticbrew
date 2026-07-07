@@ -15,6 +15,7 @@ export const MOCK_HEALTH: HealthResponse = {
   version: '2.0.0-prototype',
   uptime: '3h 42m',
   agents_count: 6,
+  platform_default_model: false,
 };
 
 export const MOCK_MODELS_LIST: Model[] = [

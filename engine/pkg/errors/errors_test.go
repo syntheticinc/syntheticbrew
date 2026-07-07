@@ -197,3 +197,17 @@ func TestDeepestCode(t *testing.T) {
 		t.Fatalf("user message: want 'svc down', got %q", got)
 	}
 }
+
+func TestUserMessage_UntypedReturnsGenericNotRaw(t *testing.T) {
+	// An untyped error must never surface its raw string to the client — it can
+	// carry provider URLs or wrapped technical detail.
+	raw := stderrors.New("dial tcp 10.0.0.5:5432: connection refused")
+	if got := UserMessage(raw); got != genericUserMessage {
+		t.Fatalf("untyped error: want generic fallback, got %q", got)
+	}
+	// A curated typed message is still surfaced verbatim.
+	typed := Unavailable("Service is temporarily unavailable.", raw)
+	if got := UserMessage(typed); got != "Service is temporarily unavailable." {
+		t.Fatalf("typed message: want it verbatim, got %q", got)
+	}
+}

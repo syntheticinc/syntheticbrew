@@ -7,6 +7,23 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-04
+
+### Changed
+- Bump `appVersion` to **1.11.0** — engine adds the MCP provisioning endpoint,
+  generic operator-configurable usage limits, and the `SetDefault` model-selector
+  extension point. All additive and default-off in CE; no new chart values are
+  required, so existing installs upgrade without values changes.
+
+### Fixed
+- Migration Job now waits for Postgres to accept TCP connections before running
+  Liquibase, via an initContainer that reuses the migrations image (bash
+  `/dev/tcp`, no extra tooling or image). Prevents the pre-install/pre-upgrade
+  hook — which runs with `backoffLimit: 0` — from failing a release when it races
+  a not-yet-ready database. Tunable via
+  `migrations.waitForDB.{enabled,retries,intervalSeconds}` (default on; no values
+  change required to adopt).
+
 ## [0.11.2] - 2026-07-01
 
 ### Changed

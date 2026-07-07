@@ -22,6 +22,12 @@ type mockUpdateChecker struct {
 
 func (m *mockUpdateChecker) UpdateAvailable() string { return m.version }
 
+type mockPlatformDefaultChecker struct {
+	has bool
+}
+
+func (m *mockPlatformDefaultChecker) HasPlatformDefault() bool { return m.has }
+
 func TestHealthHandler_ServeHTTP(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -96,4 +102,35 @@ func TestHealthHandler_NilUpdateChecker(t *testing.T) {
 	err := json.NewDecoder(rec.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Empty(t, resp.UpdateAvailable)
+}
+
+func TestHealthHandler_PlatformDefaultModel(t *testing.T) {
+	tests := []struct {
+		name    string
+		checker PlatformDefaultChecker
+		want    bool
+	}{
+		{"default installed", &mockPlatformDefaultChecker{has: true}, true},
+		{"default absent", &mockPlatformDefaultChecker{has: false}, false},
+		{"no checker wired", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewHealthHandler("1.0.0", &mockAgentCounter{count: 1})
+			if tt.checker != nil {
+				handler.SetPlatformDefaultChecker(tt.checker)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusOK, rec.Code)
+
+			var resp HealthResponse
+			err := json.NewDecoder(rec.Body).Decode(&resp)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, resp.PlatformDefaultModel)
+		})
+	}
 }

@@ -230,17 +230,25 @@ func (a *adminMCPServerRepoAdapter) Create(ctx context.Context, record *admintoo
 	return nil
 }
 
+// Update overlays only the admin-managed columns onto the current row before
+// writing. The GORM repo write is a full-row replace (Select("*")), so a fresh
+// model built from the admin DTO alone would blank the auth_* columns (and
+// forward_headers / catalog_refresh_interval_seconds) and violate the
+// chk_mcp_servers_auth_type CHECK. Loading first preserves fields the admin
+// surface does not manage — the same technique PatchMCPServer uses.
 func (a *adminMCPServerRepoAdapter) Update(ctx context.Context, id string, record *admintools.MCPServerRecord) error {
-	m := &models.MCPServerModel{
-		Name:    record.Name,
-		Type:    record.Type,
-		Command: record.Command,
-		URL:     record.URL,
-		Args:    marshalJSONPtr(record.Args),
-		EnvVars: marshalJSONPtr(record.EnvVars),
-		Enabled: record.Enabled,
+	existing, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
 	}
-	return a.repo.Update(ctx, id, m)
+	existing.Name = record.Name
+	existing.Type = record.Type
+	existing.Command = record.Command
+	existing.URL = record.URL
+	existing.Args = marshalJSONPtr(record.Args)
+	existing.EnvVars = marshalJSONPtr(record.EnvVars)
+	existing.Enabled = record.Enabled
+	return a.repo.Update(ctx, id, existing)
 }
 
 func (a *adminMCPServerRepoAdapter) Delete(ctx context.Context, id string) error {
@@ -587,7 +595,9 @@ func (a *adminCapabilityRepoAdapter) Delete(ctx context.Context, id string) erro
 
 type builderAssistantRestorerAdapter struct {
 	db       *gorm.DB
-	registry interface{ Reload(ctx context.Context) error }
+	registry interface {
+		Reload(ctx context.Context) error
+	}
 }
 
 func (a *builderAssistantRestorerAdapter) RestoreBuilderAssistant(ctx context.Context) error {

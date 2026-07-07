@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.11.0] — 2026-07-04
+
+### Added
+
+- **MCP server endpoint (`POST /api/v1/mcp/rpc`) for agent provisioning.** An
+  external coding agent (Claude Code, Cursor, …) connects over streamable-HTTP
+  with a scoped token and provisions a ready-to-embed agent + widget snippet via
+  `provision_agent` / `get_embed_snippet`, plus the `admin_*` management tools.
+  Management tools resolve only for system agents and are rejected at
+  create/provision so a provisioned agent cannot escalate.
+- **Generic operator-configurable usage limits.** One CE-clean subsystem
+  (`{scope: tenant|per_user, unit: turns|steps, limit, interval}`) with a durable
+  per-(tenant, user, window) counter, atomic upsert with a rolling-reset
+  predicate, a pre-turn gate (402 when exhausted, with a bring-your-own-key hint)
+  and settle-on-billable. Both `turns` and `steps` are always counted so the
+  active unit can switch mid-period safely. Default absent = unlimited; BYOK
+  turns are neither counted nor gated. Admin API under
+  `/api/v1/admin/usage-limits` (ScopeAdmin).
+- **`ModelSelectorConfigurator.SetDefault` plugin extension point.** A plugin can
+  install a process-wide default model; the engine's per-request resolution keeps
+  precedence BYOK → per-agent DB model → this default, so the default only serves
+  genuinely-unconfigured, non-BYOK turns.
+
+### Fixed
+
+- **Embeddable widget shows a safe message on a failed chat request.** On any
+  non-2xx response the widget now renders a short, friendly message mapped from
+  the HTTP status (usage-limit / not-available / temporarily-unavailable) instead
+  of printing `Server error <status>: <body>` into the chat. The raw response
+  body — which can carry server-side operator or error detail — is logged to the
+  browser console for operators and never surfaced to the end user.
+- **Embeddable widget rejects links with an unsafe URL scheme.** Agent output is
+  untrusted; `[text](url)` now renders an anchor only for `http`/`https`/`mailto`
+  or scheme-less/relative URLs. A `javascript:` / `data:` / `vbscript:` URL (incl.
+  control-char-obfuscated variants) is dropped to plain text, closing a
+  click-to-XSS vector in the embedding page.
+- **Session error event no longer leaks raw error strings.** `errors.UserMessage`
+  returns a generic fallback for untyped errors instead of the raw Go error
+  string, so internal detail (provider URLs, wrapped technical chains) no longer
+  reaches the end-user chat. The stable error code is still carried on the event
+  for clients that switch on it, and operators still get the full error in logs.
+
 ## [1.10.2] — 2026-07-01
 
 ### Fixed

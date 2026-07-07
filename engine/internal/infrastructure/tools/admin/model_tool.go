@@ -23,8 +23,8 @@ func NewAdminListModelsTool(repo ModelRepository) tool.InvokableTool {
 
 func (t *adminListModelsTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: "admin_list_models",
-		Desc: "Lists all LLM model configurations. API keys are never shown.",
+		Name:        "admin_list_models",
+		Desc:        "Lists all LLM model configurations. API keys are never shown.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }
@@ -60,10 +60,10 @@ func (t *adminListModelsTool) InvokableRun(ctx context.Context, _ string, _ ...t
 
 type adminCreateModelTool struct {
 	repo     ModelRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminCreateModelTool(repo ModelRepository, reloader func()) tool.InvokableTool {
+func NewAdminCreateModelTool(repo ModelRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminCreateModelTool{repo: repo, reloader: reloader}
 }
 
@@ -123,7 +123,7 @@ func (t *adminCreateModelTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminCreateModel] created", "name", args.Name, "type", args.Type, "model", args.ModelName, "is_default", args.IsDefault)
@@ -138,10 +138,10 @@ func (t *adminCreateModelTool) InvokableRun(ctx context.Context, argsJSON string
 
 type adminUpdateModelTool struct {
 	repo     ModelRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminUpdateModelTool(repo ModelRepository, reloader func()) tool.InvokableTool {
+func NewAdminUpdateModelTool(repo ModelRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminUpdateModelTool{repo: repo, reloader: reloader}
 }
 
@@ -210,7 +210,7 @@ func (t *adminUpdateModelTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminUpdateModel] updated", "id", args.ModelID, "promoted_default", args.IsDefault && !existing.IsDefault)
@@ -224,11 +224,11 @@ func (t *adminUpdateModelTool) InvokableRun(ctx context.Context, argsJSON string
 // (SetDefault runs in a transaction + partial unique index).
 type adminSetDefaultModelTool struct {
 	repo     ModelRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
 // NewAdminSetDefaultModelTool wires the set-default tool.
-func NewAdminSetDefaultModelTool(repo ModelRepository, reloader func()) tool.InvokableTool {
+func NewAdminSetDefaultModelTool(repo ModelRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminSetDefaultModelTool{repo: repo, reloader: reloader}
 }
 
@@ -285,7 +285,7 @@ func (t *adminSetDefaultModelTool) InvokableRun(ctx context.Context, argsJSON st
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	if name == "" {
@@ -305,10 +305,10 @@ func (t *adminSetDefaultModelTool) InvokableRun(ctx context.Context, argsJSON st
 
 type adminDeleteModelTool struct {
 	repo     ModelRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminDeleteModelTool(repo ModelRepository, reloader func()) tool.InvokableTool {
+func NewAdminDeleteModelTool(repo ModelRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminDeleteModelTool{repo: repo, reloader: reloader}
 }
 
@@ -343,7 +343,7 @@ func (t *adminDeleteModelTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminDeleteModel] deleted", "id", args.ModelID)

@@ -51,6 +51,8 @@ func domainErrorToHTTPStatus(err error) int {
 		return http.StatusUnauthorized
 	case pkgerrors.CodeForbidden:
 		return http.StatusForbidden
+	case pkgerrors.CodeUsageLimited:
+		return http.StatusPaymentRequired
 	default:
 		return http.StatusInternalServerError
 	}

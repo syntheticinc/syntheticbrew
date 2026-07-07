@@ -41,3 +41,6 @@ databaseChangeLog:
   - include:
       file: 014_add_knowledge_document_file_name.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 015_add_usage_limits_tables.yaml
+      relativeToChangelogFile: true

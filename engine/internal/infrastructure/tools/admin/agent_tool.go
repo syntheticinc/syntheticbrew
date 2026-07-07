@@ -24,8 +24,8 @@ func NewAdminListAgentsTool(repo AgentRepository) tool.InvokableTool {
 
 func (t *adminListAgentsTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: "admin_list_agents",
-		Desc: "Lists all agents configured in the engine. Returns name, lifecycle, model, tool count, and system flag for each agent.",
+		Name:        "admin_list_agents",
+		Desc:        "Lists all agents configured in the engine. Returns name, lifecycle, model, tool count, and system flag for each agent.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }
@@ -101,10 +101,10 @@ func (t *adminGetAgentTool) InvokableRun(ctx context.Context, argsJSON string, _
 
 type adminCreateAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminCreateAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminCreateAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminCreateAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -148,6 +148,9 @@ func (t *adminCreateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	if args.SystemPrompt == "" {
 		return "[ERROR] system_prompt is required", nil
 	}
+	if msg := rejectManagementTools(args.BuiltinTools); msg != "" {
+		return msg, nil
+	}
 
 	if args.Lifecycle == "" {
 		args.Lifecycle = "persistent"
@@ -173,14 +176,14 @@ func (t *adminCreateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 		return fmt.Sprintf("[ERROR] Failed to create agent: %v", err), nil
 	}
 
-	t.reload()
+	t.reload(ctx)
 	slog.InfoContext(ctx, "[AdminCreateAgent] created agent", "name", args.Name)
 	return fmt.Sprintf("Agent %q created successfully (lifecycle=%s, model=%s).", args.Name, args.Lifecycle, coalesce(args.Model, "none")), nil
 }
 
-func (t *adminCreateAgentTool) reload() {
+func (t *adminCreateAgentTool) reload(ctx context.Context) {
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 }
 
@@ -188,10 +191,10 @@ func (t *adminCreateAgentTool) reload() {
 
 type adminUpdateAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminUpdateAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminUpdateAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminUpdateAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -229,6 +232,9 @@ func (t *adminUpdateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	if args.Name == "" {
 		return "[ERROR] name is required", nil
 	}
+	if msg := rejectManagementTools(args.BuiltinTools); msg != "" {
+		return msg, nil
+	}
 
 	// Fetch existing to merge non-provided fields.
 	existing, err := t.repo.GetByName(ctx, args.Name)
@@ -260,14 +266,14 @@ func (t *adminUpdateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
 	}
 
-	t.reload()
+	t.reload(ctx)
 	slog.InfoContext(ctx, "[AdminUpdateAgent] updated agent", "name", args.Name)
 	return fmt.Sprintf("Agent %q updated successfully.", args.Name), nil
 }
 
-func (t *adminUpdateAgentTool) reload() {
+func (t *adminUpdateAgentTool) reload(ctx context.Context) {
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 }
 
@@ -275,10 +281,10 @@ func (t *adminUpdateAgentTool) reload() {
 
 type adminDeleteAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminDeleteAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminDeleteAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminDeleteAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -318,7 +324,7 @@ func (t *adminDeleteAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 	slog.InfoContext(ctx, "[AdminDeleteAgent] deleted agent", "name", args.Name)
 	return fmt.Sprintf("Agent %q deleted successfully.", args.Name), nil
@@ -330,4 +336,18 @@ func coalesce(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// rejectManagementTools returns a user-facing error message if any name in the
+// list is a management-plane tool (admin_*, provision_agent, get_embed_snippet).
+// Defense in depth: even though tool resolution already gates these to system
+// agents, this stops a dangerous config from ever being stored on a
+// user-provisioned agent. Empty string means the list is clean.
+func rejectManagementTools(tools []string) string {
+	for _, name := range tools {
+		if domain.IsManagementTool(name) {
+			return fmt.Sprintf("tool %q cannot be granted to an agent", name)
+		}
+	}
+	return ""
 }

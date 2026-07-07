@@ -17,6 +17,7 @@ const (
 	CodeUnavailable      = "UNAVAILABLE"
 	CodePermissionDenied = "PERMISSION_DENIED"
 	CodeCancelled        = "CANCELLED"
+	CodeUsageLimited     = "USAGE_LIMITED"
 
 	// LLM-provider error classes — produced at the HTTP boundary in
 	// internal/infrastructure/llm/classify_error.go and consumed by
@@ -119,6 +120,13 @@ func Cancelled(message string) *DomainError {
 	return New(CodeCancelled, message)
 }
 
+// UsageLimited creates a usage-limit-reached error. It maps to HTTP 402 at the
+// delivery boundary — the turn was refused because a configured usage limit is
+// exhausted, not because of an auth or input problem.
+func UsageLimited(message string) *DomainError {
+	return New(CodeUsageLimited, message)
+}
+
 // Is checks if the error is a DomainError with the given code
 func Is(err error, code string) bool {
 	var domainErr *DomainError
@@ -150,9 +158,18 @@ func DeepestCode(err error) string {
 	return code
 }
 
+// genericUserMessage is surfaced to end users when an error carries no curated,
+// user-facing DomainError message. It never exposes the raw error string, which
+// can leak internal detail (provider URLs, wrapped technical chains) to the
+// client over the session error event. Operators still get the full error via
+// server-side logging and the stable DeepestCode carried alongside.
+const genericUserMessage = "An unexpected error occurred. Please try again."
+
 // UserMessage returns the curated, user-facing message for an error: the
 // Message of the deepest non-CodeInternal DomainError when present (without the
-// "[CODE]" prefix or wrapped technical detail), else the raw error string.
+// "[CODE]" prefix or wrapped technical detail), else a generic fallback. It
+// never returns the raw error string — an untyped error would otherwise leak
+// internal detail to the client.
 func UserMessage(err error) string {
 	if err == nil {
 		return ""
@@ -166,5 +183,5 @@ func UserMessage(err error) string {
 	if best != nil {
 		return best.Message
 	}
-	return err.Error()
+	return genericUserMessage
 }

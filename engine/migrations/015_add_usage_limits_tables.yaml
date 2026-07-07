@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015_add_usage_limits_tables
+      author: syntheticbrew
+      comment: |
+        Generic operator-configurable usage limits (CE-clean, no quota/billing
+        vocabulary). Two tables, both per-tenant scoped per cloud-first rule:
+        usage_limit_configs — one config per (tenant, scope): unit turns|steps,
+        limit, rolling interval. usage_counters — rolling counter per
+        (tenant, user_sub, window_kind); BOTH units counted every turn so the
+        enforced unit can switch mid-period without loss. window_kind is in the
+        unique key so future session/weekly windows are additive rows.
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE usage_limit_configs (
+                id               uuid         NOT NULL DEFAULT gen_random_uuid(),
+                tenant_id        uuid         NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                scope            varchar(20)  NOT NULL DEFAULT 'tenant',
+                unit             varchar(20)  NOT NULL,
+                limit_value      bigint       NOT NULL,
+                interval_seconds bigint       NOT NULL DEFAULT 2592000,
+                enabled          boolean      NOT NULL DEFAULT true,
+                created_at       timestamptz  NOT NULL DEFAULT now(),
+                updated_at       timestamptz  NOT NULL DEFAULT now(),
+                CONSTRAINT pk_usage_limit_configs PRIMARY KEY (id),
+                CONSTRAINT uq_usage_limit_configs_tenant_scope UNIQUE (tenant_id, scope),
+                CONSTRAINT chk_usage_limit_configs_scope CHECK (scope IN ('tenant','per_user')),
+                CONSTRAINT chk_usage_limit_configs_unit  CHECK (unit  IN ('turns','steps')),
+                CONSTRAINT chk_usage_limit_configs_limit CHECK (limit_value > 0),
+                CONSTRAINT chk_usage_limit_configs_interval CHECK (interval_seconds > 0)
+              );
+
+              CREATE TABLE usage_counters (
+                id            uuid         NOT NULL DEFAULT gen_random_uuid(),
+                tenant_id     uuid         NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                user_sub      varchar(255) NOT NULL DEFAULT '',
+                window_kind   varchar(20)  NOT NULL DEFAULT 'rolling',
+                period_start  timestamptz  NOT NULL DEFAULT now(),
+                turns_count   bigint       NOT NULL DEFAULT 0,
+                steps_count   bigint       NOT NULL DEFAULT 0,
+                created_at    timestamptz  NOT NULL DEFAULT now(),
+                updated_at    timestamptz  NOT NULL DEFAULT now(),
+                CONSTRAINT pk_usage_counters PRIMARY KEY (id),
+                CONSTRAINT uq_usage_counters_scope_window UNIQUE (tenant_id, user_sub, window_kind),
+                CONSTRAINT chk_usage_counters_window CHECK (window_kind IN ('rolling')),
+                CONSTRAINT chk_usage_counters_nonneg CHECK (turns_count >= 0 AND steps_count >= 0)
+              );
+
+              CREATE INDEX idx_usage_counters_tenant_user
+                ON usage_counters (tenant_id, user_sub);
+        - rollback:
+            sql: |
+              DROP TABLE IF EXISTS usage_counters;
+              DROP TABLE IF EXISTS usage_limit_configs;

@@ -42,6 +42,7 @@ func (p *AgentPool) runAgentWithEngine(
 
 	deps := toolDeps.GetDependencies(sessionID, projectKey)
 	deps.AgentName = flow.Name
+	deps.IsSystem = flow.IsSystem
 	deps.MCPServers = flow.MCPServers
 	deps.CanSpawn = flow.Spawn.AllowedFlows
 

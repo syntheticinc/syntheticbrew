@@ -19,8 +19,28 @@ type AdminToolDependencies struct {
 	AgentRelationRepo AgentRelationRepository
 	SessionRepo       SessionRepository
 	CapabilityRepo    CapabilityRepository
-	Reloader          func()              // AgentRegistry reload callback
-	TransportPolicy   mcp.TransportPolicy // MCP transport restriction policy
+	Reloader          func(context.Context) // AgentRegistry reload callback
+	TransportPolicy   mcp.TransportPolicy   // MCP transport restriction policy
+	// WidgetTokenMinter mints chat-scoped widget tokens for get_embed_snippet.
+	// Nil disables the get_embed_snippet tool at registration time.
+	WidgetTokenMinter WidgetTokenMinter
+	// MCPSyncer keeps the live per-tenant MCP client registry in step with
+	// MCP-server lifecycle writes (create / update / delete / set_enabled) so
+	// a freshly provisioned server dials in without a restart. Derives the
+	// tenant from ctx (per-tenant, never a process-global broadcast). Nil on
+	// the legacy no-DB boot path — lifecycle tools then skip the sync.
+	MCPSyncer MCPClientSyncer
+}
+
+// MCPClientSyncer synchronises the live per-tenant MCP client registry after a
+// successful MCP-server lifecycle write. Consumer-side interface; the app layer
+// implements it over the MCP Manager, deriving the tenant from ctx. Tenant A's
+// write never touches tenant B's clients.
+type MCPClientSyncer interface {
+	// ReconnectServer dials (or redials) the named server for the ctx tenant.
+	ReconnectServer(ctx context.Context, name string) error
+	// DisconnectServer drops the named server's client for the ctx tenant.
+	DisconnectServer(ctx context.Context, name string) error
 }
 
 // Consumer-side interfaces (defined here, implemented by GORM repo adapters):

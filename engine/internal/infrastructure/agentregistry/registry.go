@@ -295,5 +295,6 @@ func toFlow(rec configrepo.AgentRecord) *domain.Flow {
 		TopP:            rec.TopP,
 		MaxTokens:       rec.MaxTokens,
 		StopSequences:   rec.StopSequences,
+		IsSystem:        rec.IsSystem,
 	}
 }

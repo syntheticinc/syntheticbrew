@@ -25,6 +25,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgmutate"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
 	ucschematemplate "github.com/syntheticinc/syntheticbrew/internal/usecase/schematemplate"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
@@ -99,6 +100,9 @@ func registerHTTPRoutes(deps routesDeps) {
 	// Health (public) — available on both ports
 	healthHandler := deliveryhttp.NewHealthHandler(deps.Version, &agentCounterHTTPAdapter{registry: agentRegistry})
 	healthHandler.SetUpdateChecker(updateChecker)
+	if components != nil && components.ModelSelector != nil {
+		healthHandler.SetPlatformDefaultChecker(components.ModelSelector)
+	}
 	r.Get("/api/v1/health", healthHandler.ServeHTTP)
 
 	// Model registry (public — read-only catalog, no auth needed)
@@ -230,7 +234,7 @@ func registerHTTPRoutes(deps routesDeps) {
 		// Config
 		configImportExport := &configImportExportHTTPAdapter{db: pgDB}
 		configHandler := deliveryhttp.NewConfigHandler(
-			&configReloaderHTTPAdapter{registry: agentRegistry, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
+			&configReloaderHTTPAdapter{registry: agentRegistry, registryMgr: registryMgr, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
 			configImportExport,
 		)
 		r.Group(func(r chi.Router) {
@@ -470,6 +474,24 @@ func registerHTTPRoutes(deps routesDeps) {
 			r.Post("/api/v1/admin/builder-assistant/restore", baHandler.Restore)
 		})
 
+		// Usage limits (admin-only) — operator-declared per-tenant / per-user
+		// turn/step caps. The Enforcer's stores are tenant-scoped, so config
+		// mutations stay within the caller's tenant.
+		if pgDB != nil {
+			usageLimitEnforcer := usagelimit.New(
+				configrepo.NewGORMUsageLimitRepository(pgDB),
+				configrepo.NewGORMUsageCounterRepository(pgDB),
+				nil,
+			)
+			usageLimitHandler := deliveryhttp.NewUsageLimitHandler(usageLimitEnforcer)
+			r.Group(func(r chi.Router) {
+				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAdmin))
+				r.Get("/api/v1/admin/usage-limits", usageLimitHandler.List)
+				r.Put("/api/v1/admin/usage-limits", usageLimitHandler.Set)
+				r.Delete("/api/v1/admin/usage-limits/{scope}", usageLimitHandler.Delete)
+			})
+		}
+
 		// Sessions — split read / write under granular scopes. Replaces the
 		// pre-1.1.4 RequireAdminSession gate that rejected any api_token.
 		// Per-user ACL hardening lives inside session_handler (extractSessionACL):
@@ -522,6 +544,23 @@ func registerHTTPRoutes(deps routesDeps) {
 			catalogSvc := mcpcatalog.NewCatalogService(catalogRepo)
 			catalogHandler := deliveryhttp.NewCatalogHandler(catalogSvc)
 			r.Get("/api/v1/mcp/catalog", catalogHandler.ListCatalog)
+		}
+
+		// MCP server endpoint: a single streamable-HTTP JSON-RPC surface
+		// exposing the admin_* and provisioning tools to external MCP clients.
+		// Auth + tenant are already applied by this group; per-tool scope
+		// gating happens inside the handler against the context scope mask
+		// (provision bits vs ScopeManage for destructive delete tools). It
+		// routes calls through the raw builtin store: the admin tools were
+		// registered without a ConfirmRequester (AdminToolDependencies has no
+		// such field), so external calls can never block on SSE confirmation.
+		if components != nil && components.AgentToolResolver != nil {
+			mcpServerHandler := deliveryhttp.NewMCPServerHandler(
+				components.AgentToolResolver.BuiltinStore(),
+				&mcpToolAuditorAdapter{logger: auditLogger},
+				deps.Version,
+			)
+			r.Post("/api/v1/mcp/rpc", mcpServerHandler.ServeHTTP)
 		}
 
 		// Schema templates catalog + fork — DB-backed. Reads are open to any

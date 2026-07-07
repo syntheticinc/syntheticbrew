@@ -22,14 +22,14 @@ import (
 
 type adminAttachMCPServerToAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
 // NewAdminAttachMCPServerToAgentTool wires the attach tool. The repo is used
 // for both the read (to fetch the current MCPServers slice) and the write
 // (full-row Update with the appended server). Idempotent: attaching the same
 // server twice is a no-op.
-func NewAdminAttachMCPServerToAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminAttachMCPServerToAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminAttachMCPServerToAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -83,7 +83,7 @@ func (t *adminAttachMCPServerToAgentTool) InvokableRun(ctx context.Context, args
 		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
 	}
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 	slog.InfoContext(ctx, "[AdminAttachMCPServerToAgent] attached", "agent", args.AgentName, "server", args.ServerName)
 	return fmt.Sprintf("Attached MCP server %q to agent %q.", args.ServerName, args.AgentName), nil
@@ -93,10 +93,10 @@ func (t *adminAttachMCPServerToAgentTool) InvokableRun(ctx context.Context, args
 
 type adminDetachMCPServerFromAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminDetachMCPServerFromAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminDetachMCPServerFromAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminDetachMCPServerFromAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -151,7 +151,7 @@ func (t *adminDetachMCPServerFromAgentTool) InvokableRun(ctx context.Context, ar
 		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
 	}
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 	slog.InfoContext(ctx, "[AdminDetachMCPServerFromAgent] detached", "agent", args.AgentName, "server", args.ServerName)
 	return fmt.Sprintf("Detached MCP server %q from agent %q.", args.ServerName, args.AgentName), nil
@@ -161,10 +161,10 @@ func (t *adminDetachMCPServerFromAgentTool) InvokableRun(ctx context.Context, ar
 
 type adminAddBuiltinToolToAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminAddBuiltinToolToAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminAddBuiltinToolToAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminAddBuiltinToolToAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -217,7 +217,7 @@ func (t *adminAddBuiltinToolToAgentTool) InvokableRun(ctx context.Context, argsJ
 		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
 	}
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 	slog.InfoContext(ctx, "[AdminAddBuiltinToolToAgent] added", "agent", args.AgentName, "tool", args.ToolName)
 	return fmt.Sprintf("Added builtin tool %q to agent %q.", args.ToolName, args.AgentName), nil
@@ -227,10 +227,10 @@ func (t *adminAddBuiltinToolToAgentTool) InvokableRun(ctx context.Context, argsJ
 
 type adminRemoveBuiltinToolFromAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminRemoveBuiltinToolFromAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminRemoveBuiltinToolFromAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminRemoveBuiltinToolFromAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -285,7 +285,7 @@ func (t *adminRemoveBuiltinToolFromAgentTool) InvokableRun(ctx context.Context, 
 		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
 	}
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 	slog.InfoContext(ctx, "[AdminRemoveBuiltinToolFromAgent] removed", "agent", args.AgentName, "tool", args.ToolName)
 	return fmt.Sprintf("Removed builtin tool %q from agent %q.", args.ToolName, args.AgentName), nil

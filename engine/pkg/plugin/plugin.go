@@ -15,10 +15,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-// ModelSelectorConfigurator is a minimal interface for registering per-agent models.
+// ModelSelectorConfigurator is a minimal interface for registering models.
 // Implemented by *llm.ModelSelector (internal CE type).
 type ModelSelectorConfigurator interface {
 	SetModel(agentName string, m model.ToolCallingChatModel, displayName string)
+	// SetDefault replaces the fallback model used when an agent has no
+	// per-agent model. A plugin uses it to install a process-wide default.
+	SetDefault(m model.ToolCallingChatModel, displayName string)
 }
 
 // stepsLimitKey is the private context key used to propagate the per-tenant

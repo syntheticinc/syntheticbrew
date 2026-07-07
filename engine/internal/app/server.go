@@ -46,6 +46,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	"github.com/syntheticinc/syntheticbrew/pkg/logger"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
@@ -89,6 +90,14 @@ func Run(sc ServerConfig) error {
 		sc.Plugin = pluginpkg.Noop{}
 	}
 
+	// Process-global step accumulator: counts real agent steps per in-flight
+	// turn, keyed by session id. Driven by the same per-step signal the agent
+	// runtime already fires (the step callback below) and drained once by the
+	// usage-limit settle when a turn completes. Session-keyed, so it is safe
+	// under the Cloud multi-tenant invariant (session ids are unique across
+	// tenants).
+	usageAccumulator := usagelimit.NewStepAccumulator()
+
 	// Wire the agent-step observer hook so plugins are notified after every
 	// runtime step. The callbacks package uses a process-global callback
 	// because the StepCounter lives deep in the agent infrastructure;
@@ -96,6 +105,7 @@ func Run(sc ServerConfig) error {
 	// observer hook would be disproportionate.
 	plugin := sc.Plugin
 	callbacks.SetStepCallback(func(ctx context.Context) error {
+		usageAccumulator.Inc(domain.SessionIDFromContext(ctx))
 		return plugin.OnAgentStep(ctx, domain.TenantIDFromContext(ctx), pluginpkg.StepsLimitFromContext(ctx))
 	})
 
@@ -406,6 +416,14 @@ func Run(sc ServerConfig) error {
 
 		// Wire admin tools into builtin store for builder-assistant.
 		if components.AgentToolResolver != nil {
+			// mcpSyncer keeps the live per-tenant MCP client registry in step
+			// with the provisioning tools' lifecycle writes (same tenant-scoped
+			// path as the REST reconnectAfterCRUD hook). Nil on the legacy
+			// no-DB boot where the manager has no reader — tools skip the sync.
+			var mcpSyncer admintools.MCPClientSyncer
+			if mcpManager != nil {
+				mcpSyncer = newMCPClientSyncAdapter(mcpManager)
+			}
 			admintools.RegisterAdminTools(components.AgentToolResolver.BuiltinStore(), admintools.AdminToolDependencies{
 				AgentRepo:         newAdminAgentRepoAdapter(configrepo.NewGORMAgentRepository(pgDB)),
 				SchemaRepo:        newAdminSchemaRepoAdapter(configrepo.NewGORMSchemaRepository(pgDB)),
@@ -414,12 +432,23 @@ func Run(sc ServerConfig) error {
 				AgentRelationRepo: newAdminAgentRelationRepoAdapter(configrepo.NewGORMAgentRelationRepository(pgDB), configrepo.NewGORMAgentRepository(pgDB)),
 				SessionRepo:       newAdminSessionRepoAdapter(configrepo.NewGORMSessionRepository(pgDB)),
 				CapabilityRepo:    newAdminCapabilityRepoAdapter(configrepo.NewGORMCapabilityRepository(pgDB)),
-				Reloader: func() {
-					if registryMgr != nil {
-						registryMgr.InvalidateAll()
+				Reloader: func(ctx context.Context) {
+					if registryMgr == nil {
+						return
 					}
+					// Tenant-scoped: a tenant's admin/provisioning write invalidates
+					// only its own cached agent registry, never a broadcast eviction
+					// of every tenant (per-tenant scope). CE has no tenant in ctx, so
+					// InvalidateAll reloads the single shared registry.
+					if tid := domain.TenantIDFromContext(ctx); tid != "" {
+						registryMgr.InvalidateTenant(tid)
+						return
+					}
+					registryMgr.InvalidateAll()
 				},
-				TransportPolicy: sc.Plugin.TransportPolicy(),
+				TransportPolicy:   sc.Plugin.TransportPolicy(),
+				WidgetTokenMinter: &widgetTokenMinterAdapter{repo: apiTokenRepo},
+				MCPSyncer:         mcpSyncer,
 			})
 			slog.InfoContext(ctx, "admin tools registered into builtin store")
 		}
@@ -890,6 +919,15 @@ func Run(sc ServerConfig) error {
 			chatService.interrupts = interruptRepo
 			chatService.eventStore = eventStore
 			chatService.history = repository.NewMessageRepositoryImpl(pgDB)
+			// Usage-limit enforcement: gate a turn before it runs and settle
+			// the counters when it completes. Both stores are tenant-scoped
+			// (resolve the tenant from context). Wired only with a DB.
+			chatService.usage = usagelimit.New(
+				configrepo.NewGORMUsageLimitRepository(pgDB),
+				configrepo.NewGORMUsageCounterRepository(pgDB),
+				nil,
+			)
+			chatService.accumulator = usageAccumulator
 		}
 		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, forwardHeadersStore.GetForContext)
 

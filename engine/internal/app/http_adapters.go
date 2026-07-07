@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"gorm.io/gorm"
 
+	"github.com/syntheticinc/syntheticbrew/internal/authprim"
 	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agentregistry"
@@ -58,9 +59,9 @@ func (a *agentListerHTTPAdapter) ListAgents(_ context.Context) ([]deliveryhttp.A
 	result := make([]deliveryhttp.AgentInfo, 0, len(agents))
 	for _, agent := range agents {
 		result = append(result, deliveryhttp.AgentInfo{
-			ID:           agent.Record.ID,
-			Name:         agent.Record.Name,
-			ToolsCount:   len(agent.Record.BuiltinTools) + len(agent.Record.CustomTools),
+			ID:         agent.Record.ID,
+			Name:       agent.Record.Name,
+			ToolsCount: len(agent.Record.BuiltinTools) + len(agent.Record.CustomTools),
 		})
 	}
 	return result, nil
@@ -79,10 +80,10 @@ func (a *agentListerHTTPAdapter) GetAgent(_ context.Context, name string) (*deli
 	}
 	return &deliveryhttp.AgentDetail{
 		AgentInfo: deliveryhttp.AgentInfo{
-			ID:           rec.ID,
-			Name:         rec.Name,
-			ToolsCount:   len(tools),
-			IsSystem:     rec.IsSystem,
+			ID:         rec.ID,
+			Name:       rec.Name,
+			ToolsCount: len(tools),
+			IsSystem:   rec.IsSystem,
 		},
 		ModelID:         rec.ModelID,
 		SystemPrompt:    rec.SystemPrompt,
@@ -146,21 +147,100 @@ func (a *tokenRepoHTTPAdapter) VerifyToken(ctx context.Context, tokenHash string
 	}, nil
 }
 
+// widgetTokenMinterAdapter mints chat-scoped API tokens for embed snippets.
+// It reuses the exact token-creation primitives the REST token handler uses
+// (authprim.Generate + authprim.Hash + the same repo Create), pinned to the
+// chat scope so a widget key can only drive chat and nothing else. Tenant and
+// actor are stamped from the request context by the repo/authprim layer.
+type widgetTokenMinterAdapter struct {
+	repo *configrepo.GORMAPITokenRepository
+}
+
+func (a *widgetTokenMinterAdapter) MintChatToken(ctx context.Context, name string) (string, error) {
+	raw, err := authprim.Generate()
+	if err != nil {
+		return "", fmt.Errorf("generate widget token: %w", err)
+	}
+	hash := authprim.Hash(raw)
+	userSub := domain.UserSubFromContext(ctx)
+	if _, err := a.repo.Create(ctx, userSub, name, hash, deliveryhttp.ScopeChat); err != nil {
+		return "", fmt.Errorf("store widget token: %w", err)
+	}
+	return raw, nil
+}
+
+// mcpToolAuditorAdapter appends a per-tool-call audit record for the MCP server
+// endpoint. It reuses the shared audit.Logger; tenant/actor are stamped from
+// context inside Log.
+type mcpToolAuditorAdapter struct {
+	logger *audit.Logger
+}
+
+func (a *mcpToolAuditorAdapter) RecordToolCall(ctx context.Context, toolName string, isError bool, durationMs int64) {
+	if a.logger == nil {
+		return
+	}
+	actorType, _ := ctx.Value(deliveryhttp.ContextKeyActorType).(string)
+	actorID, _ := ctx.Value(deliveryhttp.ContextKeyActorID).(string)
+	err := a.logger.Log(ctx, audit.Entry{
+		ActorType: actorType,
+		ActorID:   actorID,
+		Action:    "mcp.tool.call",
+		Resource:  toolName,
+		Details: map[string]interface{}{
+			"tool":        toolName,
+			"is_error":    isError,
+			"duration_ms": durationMs,
+		},
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "mcp server: append tool-call audit failed", "tool", toolName, "error", err)
+	}
+}
+
 // configReloaderHTTPAdapter bridges AgentRegistry and MCP reconnection to the http.ConfigReloader interface.
 type configReloaderHTTPAdapter struct {
 	registry        *agentregistry.AgentRegistry
+	registryMgr     *agentregistry.Manager
 	mcpManager      *mcp.Manager
 	db              *gorm.DB
 	transportPolicy mcpcatalog.TransportPolicy
 }
 
 func (a *configReloaderHTTPAdapter) Reload(ctx context.Context) error {
-	if err := a.registry.Reload(ctx); err != nil {
-		return err
+	// CE / single-tenant: reload the eager registry singleton directly so a real
+	// DB error surfaces as a 500. Multi-tenant: there is no singleton (registry
+	// is nil) — drop only the caller's cached registry so it lazily reloads on
+	// the next request, mirroring agentManagerHTTPAdapter.invalidateRegistryForContext.
+	if a.registry != nil {
+		if err := a.registry.Reload(ctx); err != nil {
+			return err
+		}
+	} else {
+		a.invalidateTenantRegistry(ctx)
 	}
 
 	a.reconnectMCPServers(ctx)
 	return nil
+}
+
+// invalidateTenantRegistry drops the caller's cached agent registry in
+// multi-tenant mode so it lazily reloads on the next request. No-op when no
+// tenant-aware manager is wired (legacy boot path).
+func (a *configReloaderHTTPAdapter) invalidateTenantRegistry(ctx context.Context) {
+	if a.registryMgr == nil {
+		return
+	}
+	tid := domain.TenantIDFromContext(ctx)
+	if tid == "" {
+		// Fail closed: this branch is multi-tenant only (the eager singleton is
+		// nil), so InvalidateAll would broadcast-evict every tenant's registry.
+		// RequireTenant guarantees a tenant_id on real requests, so refuse rather
+		// than fan out across tenants (per-tenant: no cross-tenant side-effects).
+		slog.ErrorContext(ctx, "config reload with no tenant_id in multi-tenant mode; skipping registry invalidation")
+		return
+	}
+	a.registryMgr.InvalidateTenant(tid)
 }
 
 func (a *configReloaderHTTPAdapter) reconnectMCPServers(ctx context.Context) {
