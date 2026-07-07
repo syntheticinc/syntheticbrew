@@ -515,53 +515,39 @@ func (r *AgentToolResolver) Resolve(ctx context.Context, toolNames []string, dep
 		}
 	}
 
-	// MCP tools via legacy Resolve path. An unreachable MCP server fails the
-	// resolve so engine_adapter can surface the error as an `error` SSE event
-	// instead of silently dropping the agent's MCP-backed tool surface.
-	if r.mcpProvider != nil && len(deps.MCPServers) > 0 {
-		for _, serverName := range deps.MCPServers {
-			mcpTools, err := r.mcpProvider.GetMCPTools(ctx, serverName)
-			if err != nil {
-				slog.WarnContext(ctx, "MCP server unreachable, failing tool resolve",
-					"server", serverName, "error", err)
-				return nil, fmt.Errorf("mcp server %q unreachable: %w", serverName, err)
-			}
-			// AC-RESIL-05: Timeout is innermost — fires first, feeds timeout error to CB
-			// US-006: Circuit breaker wraps timeout
-			for i, mt := range mcpTools {
-				if r.toolTimeoutMs > 0 {
-					mcpTools[i] = NewTimeoutToolWrapper(mt, r.toolTimeoutMs)
-					mt = mcpTools[i]
-				}
-				if r.cbRegistry != nil {
-					mcpTools[i] = NewCircuitBreakerToolWrapper(mt, r.cbRegistry.Get(serverName))
-				}
-			}
-			resolved = append(resolved, mcpTools...)
-		}
-	}
+	// MCP tools (legacy Resolve path): best-effort. An unreachable or
+	// misconfigured MCP server is skipped with a WARN so one bad server never
+	// fails the whole turn — the turn still answers with the remaining tools.
+	resolved = append(resolved, r.appendMCPToolsBestEffort(ctx, deps.MCPServers, deps.AgentName)...)
 
 	return resolved, nil
 }
 
 // resolveMCPTools returns tools from MCP servers configured for the agent.
 // US-006: MCP tools are wrapped with circuit breaker and timeout if configured.
+// Best-effort: an unreachable MCP server is skipped, not fatal (see appendMCPToolsBestEffort).
 func (r *AgentToolResolver) resolveMCPTools(rc ResolveContext) ([]tool.InvokableTool, error) {
-	if r.mcpProvider == nil || len(rc.Agent.Record.MCPServers) == 0 {
-		return nil, nil
-	}
-
 	mcpCtx := rc.Ctx
 	if mcpCtx == nil {
 		mcpCtx = context.Background()
 	}
+	return r.appendMCPToolsBestEffort(mcpCtx, rc.Agent.Record.MCPServers, rc.Agent.Record.Name), nil
+}
 
-	var result []tool.InvokableTool
-	for _, serverName := range rc.Agent.Record.MCPServers {
-		mcpTools, err := r.mcpProvider.GetMCPTools(mcpCtx, serverName)
+// appendMCPToolsBestEffort resolves each named MCP server's tools and wraps them
+// with the configured timeout + circuit breaker. A server whose tools cannot be
+// resolved (unreachable / misconfigured) is skipped with a WARN — one down MCP
+// server must never fail the whole turn. Shared by Resolve and resolveMCPTools.
+func (r *AgentToolResolver) appendMCPToolsBestEffort(ctx context.Context, serverNames []string, agentName string) []tool.InvokableTool {
+	if r.mcpProvider == nil || len(serverNames) == 0 {
+		return nil
+	}
+	var out []tool.InvokableTool
+	for _, serverName := range serverNames {
+		mcpTools, err := r.mcpProvider.GetMCPTools(ctx, serverName)
 		if err != nil {
-			slog.WarnContext(mcpCtx, "failed to get MCP tools, skipping server",
-				"server", serverName, "agent", rc.Agent.Record.Name, "error", err)
+			slog.WarnContext(ctx, "MCP server unavailable, skipping its tools",
+				"server", serverName, "agent", agentName, "error", err)
 			continue
 		}
 		// AC-RESIL-05: Timeout is innermost — fires first, feeds timeout error to CB
@@ -575,9 +561,9 @@ func (r *AgentToolResolver) resolveMCPTools(rc ResolveContext) ([]tool.Invokable
 				mcpTools[i] = NewCircuitBreakerToolWrapper(mt, r.cbRegistry.Get(serverName))
 			}
 		}
-		result = append(result, mcpTools...)
+		out = append(out, mcpTools...)
 	}
-	return result, nil
+	return out
 }
 
 // hasToolInList checks if a tool name exists in the given list.
