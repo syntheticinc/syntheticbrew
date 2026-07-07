@@ -349,9 +349,9 @@ func (m *Manager) ReconnectServer(ctx context.Context, tenantID, name string) er
 
 	// Serialise per-server lifecycle through the per-tenant lock so a
 	// concurrent ReconnectTenant for the same tenant cannot wipe the
-	// freshly-dialled client mid-flight. Acquired BEFORE getRegistryForTenant
-	// so the lazy-load path inside GetForContext (which takes the same lock)
-	// does not deadlock — sync.Mutex is non-reentrant.
+	// freshly-dialled client mid-flight. Acquired BEFORE lookupOrLoadLocked
+	// so the lazy-load path (which takes the same lock) does not deadlock —
+	// sync.Mutex is non-reentrant.
 	if m.perTenant {
 		tl := m.lockForTenant(effectiveTenant)
 		tl.Lock()
@@ -477,14 +477,16 @@ func (m *Manager) RefreshServer(ctx context.Context, tenantID, name string) (int
 	if !m.perTenant {
 		registry = m.single
 	} else {
+		// Lazy-load the tenant registry (mirrors ReconnectServer) so a
+		// valid-but-unwarmed tenant does not spuriously report "not registered";
+		// the per-tenant lock is held across lookupOrLoadLocked, which expects it.
 		tl := m.lockForTenant(effectiveTenant)
 		tl.Lock()
 		defer tl.Unlock()
-		m.mu.RLock()
-		registry = m.tenants[effectiveTenant]
-		m.mu.RUnlock()
-		if registry == nil {
-			return 0, fmt.Errorf("mcp server %q not registered for tenant %s", name, effectiveTenant)
+		var err error
+		registry, err = m.lookupOrLoadLocked(ctx, effectiveTenant)
+		if err != nil {
+			return 0, fmt.Errorf("get registry for tenant %s: %w", effectiveTenant, err)
 		}
 	}
 

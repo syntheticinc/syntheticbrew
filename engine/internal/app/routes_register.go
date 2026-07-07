@@ -234,7 +234,7 @@ func registerHTTPRoutes(deps routesDeps) {
 		// Config
 		configImportExport := &configImportExportHTTPAdapter{db: pgDB}
 		configHandler := deliveryhttp.NewConfigHandler(
-			&configReloaderHTTPAdapter{registry: agentRegistry, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
+			&configReloaderHTTPAdapter{registry: agentRegistry, registryMgr: registryMgr, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
 			configImportExport,
 		)
 		r.Group(func(r chi.Router) {

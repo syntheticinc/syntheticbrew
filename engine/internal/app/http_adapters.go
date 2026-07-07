@@ -201,18 +201,46 @@ func (a *mcpToolAuditorAdapter) RecordToolCall(ctx context.Context, toolName str
 // configReloaderHTTPAdapter bridges AgentRegistry and MCP reconnection to the http.ConfigReloader interface.
 type configReloaderHTTPAdapter struct {
 	registry        *agentregistry.AgentRegistry
+	registryMgr     *agentregistry.Manager
 	mcpManager      *mcp.Manager
 	db              *gorm.DB
 	transportPolicy mcpcatalog.TransportPolicy
 }
 
 func (a *configReloaderHTTPAdapter) Reload(ctx context.Context) error {
-	if err := a.registry.Reload(ctx); err != nil {
-		return err
+	// CE / single-tenant: reload the eager registry singleton directly so a real
+	// DB error surfaces as a 500. Multi-tenant: there is no singleton (registry
+	// is nil) — drop only the caller's cached registry so it lazily reloads on
+	// the next request, mirroring agentManagerHTTPAdapter.invalidateRegistryForContext.
+	if a.registry != nil {
+		if err := a.registry.Reload(ctx); err != nil {
+			return err
+		}
+	} else {
+		a.invalidateTenantRegistry(ctx)
 	}
 
 	a.reconnectMCPServers(ctx)
 	return nil
+}
+
+// invalidateTenantRegistry drops the caller's cached agent registry in
+// multi-tenant mode so it lazily reloads on the next request. No-op when no
+// tenant-aware manager is wired (legacy boot path).
+func (a *configReloaderHTTPAdapter) invalidateTenantRegistry(ctx context.Context) {
+	if a.registryMgr == nil {
+		return
+	}
+	tid := domain.TenantIDFromContext(ctx)
+	if tid == "" {
+		// Fail closed: this branch is multi-tenant only (the eager singleton is
+		// nil), so InvalidateAll would broadcast-evict every tenant's registry.
+		// RequireTenant guarantees a tenant_id on real requests, so refuse rather
+		// than fan out across tenants (cloud-first: no cross-tenant side-effects).
+		slog.ErrorContext(ctx, "config reload with no tenant_id in multi-tenant mode; skipping registry invalidation")
+		return
+	}
+	a.registryMgr.InvalidateTenant(tid)
 }
 
 func (a *configReloaderHTTPAdapter) reconnectMCPServers(ctx context.Context) {
