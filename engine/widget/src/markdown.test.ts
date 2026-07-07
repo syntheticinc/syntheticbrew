@@ -25,4 +25,14 @@ describe('renderMarkdown link safety', () => {
       expect(out).toContain('click'); // visible text is preserved
     }
   });
+
+  it('renders an HTML-entity-encoded scheme as an inert href, not a live javascript: link', () => {
+    // The `&` is HTML-escaped before link substitution, so a browser decodes it
+    // only once to the literal `&#x6a;avascript:` — which is not re-parsed as a
+    // scheme. This is the single case that still emits an <a>, so pin it down.
+    const out = renderMarkdown('[click](&#x6a;avascript:alert(1))');
+    expect(out).not.toMatch(/href="javascript:/i);
+    expect(out).toContain('&amp;#x6a;'); // ampersand escaped → scheme never reconstituted
+    expect(out).toContain('click');
+  });
 });
