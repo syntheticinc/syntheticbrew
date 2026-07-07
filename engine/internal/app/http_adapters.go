@@ -59,9 +59,9 @@ func (a *agentListerHTTPAdapter) ListAgents(_ context.Context) ([]deliveryhttp.A
 	result := make([]deliveryhttp.AgentInfo, 0, len(agents))
 	for _, agent := range agents {
 		result = append(result, deliveryhttp.AgentInfo{
-			ID:           agent.Record.ID,
-			Name:         agent.Record.Name,
-			ToolsCount:   len(agent.Record.BuiltinTools) + len(agent.Record.CustomTools),
+			ID:         agent.Record.ID,
+			Name:       agent.Record.Name,
+			ToolsCount: len(agent.Record.BuiltinTools) + len(agent.Record.CustomTools),
 		})
 	}
 	return result, nil
@@ -80,10 +80,10 @@ func (a *agentListerHTTPAdapter) GetAgent(_ context.Context, name string) (*deli
 	}
 	return &deliveryhttp.AgentDetail{
 		AgentInfo: deliveryhttp.AgentInfo{
-			ID:           rec.ID,
-			Name:         rec.Name,
-			ToolsCount:   len(tools),
-			IsSystem:     rec.IsSystem,
+			ID:         rec.ID,
+			Name:       rec.Name,
+			ToolsCount: len(tools),
+			IsSystem:   rec.IsSystem,
 		},
 		ModelID:         rec.ModelID,
 		SystemPrompt:    rec.SystemPrompt,
@@ -236,7 +236,7 @@ func (a *configReloaderHTTPAdapter) invalidateTenantRegistry(ctx context.Context
 		// Fail closed: this branch is multi-tenant only (the eager singleton is
 		// nil), so InvalidateAll would broadcast-evict every tenant's registry.
 		// RequireTenant guarantees a tenant_id on real requests, so refuse rather
-		// than fan out across tenants (cloud-first: no cross-tenant side-effects).
+		// than fan out across tenants (per-tenant: no cross-tenant side-effects).
 		slog.ErrorContext(ctx, "config reload with no tenant_id in multi-tenant mode; skipping registry invalidation")
 		return
 	}

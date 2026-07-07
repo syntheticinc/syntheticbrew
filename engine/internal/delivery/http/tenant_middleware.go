@@ -31,7 +31,7 @@ func NewJWTTenantExtractor(claimKey string) *JWTTenantExtractor {
 // There is deliberately no X-Tenant-ID header fallback: a client-controlled
 // header could otherwise let a validly-signed but tenant-less credential target
 // another tenant's registry / MCP clients (cross-tenant side-effect via
-// /config/reload and admin CRUD) — a cloud-first violation. Tenant identity must
+// /config/reload and admin CRUD) — a cross-tenant-isolation violation. Tenant identity must
 // come only from the verified credential. (No caller sets X-Tenant-ID anywhere
 // in the codebase; removing the fallback changes no legitimate flow.)
 func (e *JWTTenantExtractor) ExtractTenantID(r *http.Request) (string, error) {

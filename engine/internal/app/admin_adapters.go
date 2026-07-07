@@ -595,7 +595,9 @@ func (a *adminCapabilityRepoAdapter) Delete(ctx context.Context, id string) erro
 
 type builderAssistantRestorerAdapter struct {
 	db       *gorm.DB
-	registry interface{ Reload(ctx context.Context) error }
+	registry interface {
+		Reload(ctx context.Context) error
+	}
 }
 
 func (a *builderAssistantRestorerAdapter) RestoreBuilderAssistant(ctx context.Context) error {

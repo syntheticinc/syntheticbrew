@@ -23,8 +23,8 @@ func NewAdminListSchemasTool(repo SchemaRepository) tool.InvokableTool {
 
 func (t *adminListSchemasTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: "admin_list_schemas",
-		Desc: "Lists all schemas. A schema groups agents into a workflow with edges and triggers.",
+		Name:        "admin_list_schemas",
+		Desc:        "Lists all schemas. A schema groups agents into a workflow with edges and triggers.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }
@@ -176,11 +176,11 @@ func (t *adminUpdateSchemaTool) Info(_ context.Context) (*schema.ToolInfo, error
 		Name: "admin_update_schema",
 		Desc: "Updates an existing schema by ID. Set chat_enabled=true to let end users chat with this schema; set entry_agent_id (agent name or UUID) to point chat at the delegator root.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"schema_id":       {Type: schema.String, Desc: "Schema ID to update", Required: true},
-			"name":            {Type: schema.String, Desc: "New name", Required: false},
-			"description":     {Type: schema.String, Desc: "New description", Required: false},
-			"entry_agent_id":  {Type: schema.String, Desc: "Entry agent: accepts either the agent name or its UUID. Pass empty string to clear.", Required: false},
-			"chat_enabled":    {Type: schema.Boolean, Desc: "When true, end-user chat through this schema is allowed.", Required: false},
+			"schema_id":      {Type: schema.String, Desc: "Schema ID to update", Required: true},
+			"name":           {Type: schema.String, Desc: "New name", Required: false},
+			"description":    {Type: schema.String, Desc: "New description", Required: false},
+			"entry_agent_id": {Type: schema.String, Desc: "Entry agent: accepts either the agent name or its UUID. Pass empty string to clear.", Required: false},
+			"chat_enabled":   {Type: schema.Boolean, Desc: "When true, end-user chat through this schema is allowed.", Required: false},
 		}),
 	}, nil
 }

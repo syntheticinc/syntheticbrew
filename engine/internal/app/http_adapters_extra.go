@@ -18,8 +18,8 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
-	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // mcpServiceHTTPAdapter bridges GORMMCPServerRepository to the http.MCPService interface.
@@ -466,9 +466,9 @@ func derefString(p *string) string {
 // byokMW, db, and fallback are optional — when set, any write to a byok.*
 // key triggers a live SetConfig so the middleware hot-swaps without restart.
 type settingServiceHTTPAdapter struct {
-	repo        *configrepo.GORMSettingRepository
-	byokMW      *deliveryhttp.BYOKMiddleware
-	db          *gorm.DB
+	repo         *configrepo.GORMSettingRepository
+	byokMW       *deliveryhttp.BYOKMiddleware
+	db           *gorm.DB
 	byokFallback config.BYOKConfig
 }
 
@@ -719,4 +719,3 @@ func (a *toolMetadataHTTPAdapter) GetAllToolMetadata() []deliveryhttp.ToolMetada
 	}
 	return result
 }
-

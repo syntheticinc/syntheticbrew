@@ -29,7 +29,7 @@ type MCPServerReader interface {
 // on first access. Tenant A never observes or mutates tenant B's clients.
 type Manager struct {
 	perTenant bool
-	single    *ClientRegistry            // used when !perTenant
+	single    *ClientRegistry // used when !perTenant
 	mu        sync.RWMutex
 	tenants   map[string]*ClientRegistry // used when perTenant
 	repo      MCPServerReader

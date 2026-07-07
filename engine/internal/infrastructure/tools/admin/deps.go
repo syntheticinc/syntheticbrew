@@ -19,8 +19,8 @@ type AdminToolDependencies struct {
 	AgentRelationRepo AgentRelationRepository
 	SessionRepo       SessionRepository
 	CapabilityRepo    CapabilityRepository
-	Reloader          func(context.Context)              // AgentRegistry reload callback
-	TransportPolicy   mcp.TransportPolicy // MCP transport restriction policy
+	Reloader          func(context.Context) // AgentRegistry reload callback
+	TransportPolicy   mcp.TransportPolicy   // MCP transport restriction policy
 	// WidgetTokenMinter mints chat-scoped widget tokens for get_embed_snippet.
 	// Nil disables the get_embed_snippet tool at registration time.
 	WidgetTokenMinter WidgetTokenMinter

@@ -43,8 +43,8 @@ func NewAdminListMCPServersTool(repo MCPServerRepository) tool.InvokableTool {
 
 func (t *adminListMCPServersTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: "admin_list_mcp_servers",
-		Desc: "Lists all MCP servers. MCP servers provide external tools (web search, APIs, etc.) to agents.",
+		Name:        "admin_list_mcp_servers",
+		Desc:        "Lists all MCP servers. MCP servers provide external tools (web search, APIs, etc.) to agents.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }

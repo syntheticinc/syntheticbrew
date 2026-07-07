@@ -19,7 +19,7 @@ import (
 // The admin update surface exposes only Name/Type/Command/URL/Args/EnvVars/
 // Enabled — none of the auth_* columns. Because the underlying GORM repo write
 // is a full-row replace (Select("*")), building a fresh model from the admin
-// DTO alone blanked auth_type to '' and tripped the chk_mcp_servers_auth_type
+// DTO alone blanked auth_type to ” and tripped the chk_mcp_servers_auth_type
 // CHECK (SQLSTATE 23514). The fix loads the current row first and overlays only
 // the admin-managed columns.
 //

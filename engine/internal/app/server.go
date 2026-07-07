@@ -438,7 +438,7 @@ func Run(sc ServerConfig) error {
 					}
 					// Tenant-scoped: a tenant's admin/provisioning write invalidates
 					// only its own cached agent registry, never a broadcast eviction
-					// of every tenant (cloud-first). CE has no tenant in ctx, so
+					// of every tenant (per-tenant scope). CE has no tenant in ctx, so
 					// InvalidateAll reloads the single shared registry.
 					if tid := domain.TenantIDFromContext(ctx); tid != "" {
 						registryMgr.InvalidateTenant(tid)

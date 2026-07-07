@@ -23,8 +23,8 @@ func NewAdminListModelsTool(repo ModelRepository) tool.InvokableTool {
 
 func (t *adminListModelsTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: "admin_list_models",
-		Desc: "Lists all LLM model configurations. API keys are never shown.",
+		Name:        "admin_list_models",
+		Desc:        "Lists all LLM model configurations. API keys are never shown.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }
