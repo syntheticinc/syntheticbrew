@@ -25,19 +25,17 @@ func NewJWTTenantExtractor(claimKey string) *JWTTenantExtractor {
 	return &JWTTenantExtractor{claimKey: claimKey}
 }
 
-// ExtractTenantID extracts tenant_id from the request context.
-// The auth middleware should have already parsed the JWT and stored claims in context.
+// ExtractTenantID returns the tenant_id the auth middleware stamped into the
+// request context from the VERIFIED JWT claim.
+//
+// There is deliberately no X-Tenant-ID header fallback: a client-controlled
+// header could otherwise let a validly-signed but tenant-less credential target
+// another tenant's registry / MCP clients (cross-tenant side-effect via
+// /config/reload and admin CRUD) — a cloud-first violation. Tenant identity must
+// come only from the verified credential. (No caller sets X-Tenant-ID anywhere
+// in the codebase; removing the fallback changes no legitimate flow.)
 func (e *JWTTenantExtractor) ExtractTenantID(r *http.Request) (string, error) {
-	// In Cloud mode, tenant_id comes from JWT claims set by auth middleware.
-	// Check the context for tenant_id (set by upstream auth middleware).
-	tenantID := domain.TenantIDFromContext(r.Context())
-	if tenantID != "" {
-		return tenantID, nil
-	}
-
-	// Fallback: check header (for internal/service-to-service calls)
-	tenantID = r.Header.Get("X-Tenant-ID")
-	return tenantID, nil
+	return domain.TenantIDFromContext(r.Context()), nil
 }
 
 // TenantMiddleware injects tenant_id into the request context.
