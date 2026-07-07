@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 // --- stubs ---
@@ -70,7 +72,7 @@ func (m *stubMinter) MintChatToken(context.Context, string) (string, error) {
 func TestProvisionAgent_HappyPath(t *testing.T) {
 	ar, sr := &stubAgentRepo{}, &stubSchemaRepo{}
 	reloaded := false
-	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, reloader: func() { reloaded = true }}
+	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, reloader: func(context.Context) { reloaded = true }}
 
 	out, err := tool.InvokableRun(context.Background(),
 		`{"name":"support","system_prompt":"You are a support agent."}`)
@@ -95,9 +97,35 @@ func TestProvisionAgent_HappyPath(t *testing.T) {
 	}
 }
 
+// TestProvisionAgent_ThreadsTenantCtxToReloader guards the Fable #1 fix: the
+// admin/provisioning tools must hand the request ctx (carrying tenant_id) to the
+// reloader so agent-registry invalidation is tenant-scoped, never a cross-tenant
+// InvalidateAll broadcast. Pre-fix the reloader was func() and could only broadcast.
+func TestProvisionAgent_ThreadsTenantCtxToReloader(t *testing.T) {
+	const tenant = "22222222-2222-2222-2222-222222222222"
+	var gotTenant string
+	tool := &provisionAgentTool{
+		agentRepo:  &stubAgentRepo{},
+		schemaRepo: &stubSchemaRepo{},
+		reloader:   func(ctx context.Context) { gotTenant = domain.TenantIDFromContext(ctx) },
+	}
+
+	ctx := domain.WithTenantID(context.Background(), tenant)
+	out, err := tool.InvokableRun(ctx, `{"name":"support","system_prompt":"x"}`)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if strings.Contains(out, "[ERROR]") {
+		t.Fatalf("expected success, got: %s", out)
+	}
+	if gotTenant != tenant {
+		t.Fatalf("reloader must receive the request tenant ctx; got %q want %q", gotTenant, tenant)
+	}
+}
+
 func TestProvisionAgent_RejectsManagementTool(t *testing.T) {
 	ar, sr := &stubAgentRepo{}, &stubSchemaRepo{}
-	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, reloader: func() {}}
+	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, reloader: func(context.Context) {}}
 
 	out, err := tool.InvokableRun(context.Background(),
 		`{"name":"pwn","system_prompt":"x","tools":["admin_delete_agent"]}`)
@@ -114,7 +142,7 @@ func TestProvisionAgent_RejectsManagementTool(t *testing.T) {
 }
 
 func TestProvisionAgent_RequiresNameAndPrompt(t *testing.T) {
-	tool := &provisionAgentTool{agentRepo: &stubAgentRepo{}, schemaRepo: &stubSchemaRepo{}, reloader: func() {}}
+	tool := &provisionAgentTool{agentRepo: &stubAgentRepo{}, schemaRepo: &stubSchemaRepo{}, reloader: func(context.Context) {}}
 	for _, tc := range []struct{ args, want string }{
 		{`{"system_prompt":"x"}`, "name is required"},
 		{`{"name":"a"}`, "system_prompt is required"},

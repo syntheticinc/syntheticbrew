@@ -103,10 +103,10 @@ func (t *adminGetSchemaTool) InvokableRun(ctx context.Context, argsJSON string, 
 
 type adminCreateSchemaTool struct {
 	repo     SchemaRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminCreateSchemaTool(repo SchemaRepository, reloader func()) tool.InvokableTool {
+func NewAdminCreateSchemaTool(repo SchemaRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminCreateSchemaTool{repo: repo, reloader: reloader}
 }
 
@@ -148,7 +148,7 @@ func (t *adminCreateSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminCreateSchema] created schema", "name", args.Name, "id", record.ID)
@@ -160,14 +160,14 @@ func (t *adminCreateSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 type adminUpdateSchemaTool struct {
 	repo      SchemaRepository
 	agentRepo AgentRepository
-	reloader  func()
+	reloader  func(context.Context)
 }
 
 // NewAdminUpdateSchemaTool wires the update-schema tool. agentRepo is used to
 // resolve the `entry_agent_id` parameter when it comes in as an agent name
 // (the LLM finds name resolution more natural than UUIDs). Passing nil is
 // allowed — the tool then requires entry_agent_id to be a UUID.
-func NewAdminUpdateSchemaTool(repo SchemaRepository, agentRepo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminUpdateSchemaTool(repo SchemaRepository, agentRepo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminUpdateSchemaTool{repo: repo, agentRepo: agentRepo, reloader: reloader}
 }
 
@@ -230,7 +230,7 @@ func (t *adminUpdateSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminUpdateSchema] updated schema", "id", args.SchemaID)
@@ -272,10 +272,10 @@ func isLikelyUUID(s string) bool {
 
 type adminDeleteSchemaTool struct {
 	repo     SchemaRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminDeleteSchemaTool(repo SchemaRepository, reloader func()) tool.InvokableTool {
+func NewAdminDeleteSchemaTool(repo SchemaRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminDeleteSchemaTool{repo: repo, reloader: reloader}
 }
 
@@ -310,7 +310,7 @@ func (t *adminDeleteSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 
 	slog.InfoContext(ctx, "[AdminDeleteSchema] deleted schema", "id", args.SchemaID)

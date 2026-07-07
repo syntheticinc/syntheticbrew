@@ -101,10 +101,10 @@ func (t *adminGetAgentTool) InvokableRun(ctx context.Context, argsJSON string, _
 
 type adminCreateAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminCreateAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminCreateAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminCreateAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -176,14 +176,14 @@ func (t *adminCreateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 		return fmt.Sprintf("[ERROR] Failed to create agent: %v", err), nil
 	}
 
-	t.reload()
+	t.reload(ctx)
 	slog.InfoContext(ctx, "[AdminCreateAgent] created agent", "name", args.Name)
 	return fmt.Sprintf("Agent %q created successfully (lifecycle=%s, model=%s).", args.Name, args.Lifecycle, coalesce(args.Model, "none")), nil
 }
 
-func (t *adminCreateAgentTool) reload() {
+func (t *adminCreateAgentTool) reload(ctx context.Context) {
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 }
 
@@ -191,10 +191,10 @@ func (t *adminCreateAgentTool) reload() {
 
 type adminUpdateAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminUpdateAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminUpdateAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminUpdateAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -266,14 +266,14 @@ func (t *adminUpdateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
 	}
 
-	t.reload()
+	t.reload(ctx)
 	slog.InfoContext(ctx, "[AdminUpdateAgent] updated agent", "name", args.Name)
 	return fmt.Sprintf("Agent %q updated successfully.", args.Name), nil
 }
 
-func (t *adminUpdateAgentTool) reload() {
+func (t *adminUpdateAgentTool) reload(ctx context.Context) {
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 }
 
@@ -281,10 +281,10 @@ func (t *adminUpdateAgentTool) reload() {
 
 type adminDeleteAgentTool struct {
 	repo     AgentRepository
-	reloader func()
+	reloader func(context.Context)
 }
 
-func NewAdminDeleteAgentTool(repo AgentRepository, reloader func()) tool.InvokableTool {
+func NewAdminDeleteAgentTool(repo AgentRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &adminDeleteAgentTool{repo: repo, reloader: reloader}
 }
 
@@ -324,7 +324,7 @@ func (t *adminDeleteAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 	slog.InfoContext(ctx, "[AdminDeleteAgent] deleted agent", "name", args.Name)
 	return fmt.Sprintf("Agent %q deleted successfully.", args.Name), nil

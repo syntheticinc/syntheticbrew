@@ -68,16 +68,16 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 		return NewAdminListMCPServersTool(deps.MCPServerRepo)
 	})
 	store.Register("admin_create_mcp_server", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminCreateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy)
+		return NewAdminCreateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy, deps.MCPSyncer)
 	})
 	store.Register("admin_update_mcp_server", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminUpdateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy)
+		return NewAdminUpdateMCPServerTool(deps.MCPServerRepo, reloader, deps.TransportPolicy, deps.MCPSyncer)
 	})
 	store.Register("admin_delete_mcp_server", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminDeleteMCPServerTool(deps.MCPServerRepo, reloader)
+		return NewAdminDeleteMCPServerTool(deps.MCPServerRepo, reloader, deps.MCPSyncer)
 	})
 	store.Register("admin_set_mcp_server_enabled", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminSetMCPServerEnabledTool(deps.MCPServerRepo, reloader)
+		return NewAdminSetMCPServerEnabledTool(deps.MCPServerRepo, reloader, deps.MCPSyncer)
 	})
 
 	// Granular agent attachment tools (append-style wrappers around admin_update_agent)

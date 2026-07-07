@@ -416,6 +416,14 @@ func Run(sc ServerConfig) error {
 
 		// Wire admin tools into builtin store for builder-assistant.
 		if components.AgentToolResolver != nil {
+			// mcpSyncer keeps the live per-tenant MCP client registry in step
+			// with the provisioning tools' lifecycle writes (same tenant-scoped
+			// path as the REST reconnectAfterCRUD hook). Nil on the legacy
+			// no-DB boot where the manager has no reader — tools skip the sync.
+			var mcpSyncer admintools.MCPClientSyncer
+			if mcpManager != nil {
+				mcpSyncer = newMCPClientSyncAdapter(mcpManager)
+			}
 			admintools.RegisterAdminTools(components.AgentToolResolver.BuiltinStore(), admintools.AdminToolDependencies{
 				AgentRepo:         newAdminAgentRepoAdapter(configrepo.NewGORMAgentRepository(pgDB)),
 				SchemaRepo:        newAdminSchemaRepoAdapter(configrepo.NewGORMSchemaRepository(pgDB)),
@@ -424,13 +432,23 @@ func Run(sc ServerConfig) error {
 				AgentRelationRepo: newAdminAgentRelationRepoAdapter(configrepo.NewGORMAgentRelationRepository(pgDB), configrepo.NewGORMAgentRepository(pgDB)),
 				SessionRepo:       newAdminSessionRepoAdapter(configrepo.NewGORMSessionRepository(pgDB)),
 				CapabilityRepo:    newAdminCapabilityRepoAdapter(configrepo.NewGORMCapabilityRepository(pgDB)),
-				Reloader: func() {
-					if registryMgr != nil {
-						registryMgr.InvalidateAll()
+				Reloader: func(ctx context.Context) {
+					if registryMgr == nil {
+						return
 					}
+					// Tenant-scoped: a tenant's admin/provisioning write invalidates
+					// only its own cached agent registry, never a broadcast eviction
+					// of every tenant (cloud-first). CE has no tenant in ctx, so
+					// InvalidateAll reloads the single shared registry.
+					if tid := domain.TenantIDFromContext(ctx); tid != "" {
+						registryMgr.InvalidateTenant(tid)
+						return
+					}
+					registryMgr.InvalidateAll()
 				},
 				TransportPolicy:   sc.Plugin.TransportPolicy(),
 				WidgetTokenMinter: &widgetTokenMinterAdapter{repo: apiTokenRepo},
+				MCPSyncer:         mcpSyncer,
 			})
 			slog.InfoContext(ctx, "admin tools registered into builtin store")
 		}

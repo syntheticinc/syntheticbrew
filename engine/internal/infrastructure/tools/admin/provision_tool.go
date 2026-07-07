@@ -41,14 +41,14 @@ type WidgetTokenMinter interface {
 type provisionAgentTool struct {
 	agentRepo  AgentRepository
 	schemaRepo SchemaRepository
-	reloader   func()
+	reloader   func(context.Context)
 }
 
 // NewProvisionAgentTool wires the one-shot agent provisioning tool. It composes
 // existing repos to create a chat-enabled schema, the agent, and the membership
 // (entry-agent) binding in a single call so external MCP clients do not have to
 // orchestrate three separate admin calls.
-func NewProvisionAgentTool(agentRepo AgentRepository, schemaRepo SchemaRepository, reloader func()) tool.InvokableTool {
+func NewProvisionAgentTool(agentRepo AgentRepository, schemaRepo SchemaRepository, reloader func(context.Context)) tool.InvokableTool {
 	return &provisionAgentTool{agentRepo: agentRepo, schemaRepo: schemaRepo, reloader: reloader}
 }
 
@@ -112,7 +112,7 @@ func (t *provisionAgentTool) InvokableRun(ctx context.Context, argsJSON string, 
 		return errMsg, nil
 	}
 
-	t.reload()
+	t.reload(ctx)
 	slog.InfoContext(ctx, "[ProvisionAgent] provisioned agent",
 		"agent", args.Name, "schema", schemaName, "model_bound", args.ModelName != "")
 
@@ -216,9 +216,9 @@ func (t *provisionAgentTool) bindEntryAgent(ctx context.Context, agentName, sche
 	return agentID, ""
 }
 
-func (t *provisionAgentTool) reload() {
+func (t *provisionAgentTool) reload(ctx context.Context) {
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
 	}
 }
 

@@ -26,13 +26,45 @@ import (
 //
 // mcpManager is invoked AFTER successful Create/Update/Patch/Delete to keep
 // the runtime catalog in sync with the DB without a manual /config/reload.
-// Per-server granularity (PATCH chirp-tools never touches slack-bot of the
+// Per-server granularity (PATCH server-a never touches server-b of the
 // same tenant), tenant-scoped (tenant A's CRUD never affects tenant B). When
 // nil (legacy boot path) auto-reconnect is silently skipped — runtime catches
 // up at next /config/reload or restart.
 type mcpServiceHTTPAdapter struct {
 	repo       *configrepo.GORMMCPServerRepository
 	mcpManager *mcp.Manager
+}
+
+// mcpSyncTenant resolves the tenant for an MCP client-sync operation, falling
+// back to the CE sentinel. Single source of tenant derivation for both the
+// REST CRUD hooks and the admin-tool sync adapter.
+func mcpSyncTenant(ctx context.Context) string {
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
+	return tenantID
+}
+
+// mcpClientSyncAdapter is the single tenant-scoped MCP client syncer shared by
+// the REST CRUD hooks and the admin-tool provisioning path (admintools.
+// MCPClientSyncer). It derives the tenant from ctx and drives per-server
+// reconnect / disconnect on the live per-tenant registry — never a
+// process-global broadcast, so tenant A's write never touches tenant B.
+type mcpClientSyncAdapter struct {
+	mcpManager *mcp.Manager
+}
+
+func newMCPClientSyncAdapter(m *mcp.Manager) *mcpClientSyncAdapter {
+	return &mcpClientSyncAdapter{mcpManager: m}
+}
+
+func (a *mcpClientSyncAdapter) ReconnectServer(ctx context.Context, name string) error {
+	return a.mcpManager.ReconnectServer(ctx, mcpSyncTenant(ctx), name)
+}
+
+func (a *mcpClientSyncAdapter) DisconnectServer(ctx context.Context, name string) error {
+	return a.mcpManager.DisconnectServer(ctx, mcpSyncTenant(ctx), name)
 }
 
 // reconnectAfterCRUD is the post-write hook for Create/Update/Patch. Failure
@@ -43,13 +75,9 @@ func (a *mcpServiceHTTPAdapter) reconnectAfterCRUD(ctx context.Context, name str
 	if a.mcpManager == nil {
 		return
 	}
-	tenantID := domain.TenantIDFromContext(ctx)
-	if tenantID == "" {
-		tenantID = domain.CETenantID
-	}
-	if err := a.mcpManager.ReconnectServer(ctx, tenantID, name); err != nil {
+	if err := newMCPClientSyncAdapter(a.mcpManager).ReconnectServer(ctx, name); err != nil {
 		slog.WarnContext(ctx, "mcp auto-reconnect after CRUD failed",
-			"name", name, "tenant_id", tenantID, "error", err)
+			"name", name, "tenant_id", mcpSyncTenant(ctx), "error", err)
 	}
 }
 
@@ -59,13 +87,9 @@ func (a *mcpServiceHTTPAdapter) disconnectAfterDelete(ctx context.Context, name 
 	if a.mcpManager == nil {
 		return
 	}
-	tenantID := domain.TenantIDFromContext(ctx)
-	if tenantID == "" {
-		tenantID = domain.CETenantID
-	}
-	if err := a.mcpManager.DisconnectServer(ctx, tenantID, name); err != nil {
+	if err := newMCPClientSyncAdapter(a.mcpManager).DisconnectServer(ctx, name); err != nil {
 		slog.WarnContext(ctx, "mcp auto-disconnect after DELETE failed",
-			"name", name, "tenant_id", tenantID, "error", err)
+			"name", name, "tenant_id", mcpSyncTenant(ctx), "error", err)
 	}
 }
 
@@ -398,11 +422,7 @@ func (a *mcpServiceHTTPAdapter) RefreshMCPServer(ctx context.Context, name strin
 	if a.mcpManager == nil {
 		return 0, pkgerrors.NotFound(fmt.Sprintf("mcp server not registered: %s", name))
 	}
-	tenantID := domain.TenantIDFromContext(ctx)
-	if tenantID == "" {
-		tenantID = domain.CETenantID
-	}
-	count, err := a.mcpManager.RefreshServer(ctx, tenantID, name)
+	count, err := a.mcpManager.RefreshServer(ctx, mcpSyncTenant(ctx), name)
 	if err != nil {
 		return 0, pkgerrors.NotFound(fmt.Sprintf("mcp server not registered: %s", name))
 	}

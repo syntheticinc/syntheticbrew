@@ -73,12 +73,13 @@ func (t *adminListMCPServersTool) InvokableRun(ctx context.Context, _ string, _ 
 
 type adminCreateMCPServerTool struct {
 	repo     MCPServerRepository
-	reloader func()
+	reloader func(context.Context)
 	policy   mcp.TransportPolicy
+	syncer   MCPClientSyncer
 }
 
-func NewAdminCreateMCPServerTool(repo MCPServerRepository, reloader func(), policy mcp.TransportPolicy) tool.InvokableTool {
-	return &adminCreateMCPServerTool{repo: repo, reloader: reloader, policy: policy}
+func NewAdminCreateMCPServerTool(repo MCPServerRepository, reloader func(context.Context), policy mcp.TransportPolicy, syncer MCPClientSyncer) tool.InvokableTool {
+	return &adminCreateMCPServerTool{repo: repo, reloader: reloader, policy: policy, syncer: syncer}
 }
 
 func (t *adminCreateMCPServerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -151,7 +152,15 @@ func (t *adminCreateMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
+	}
+	// Dial the freshly created server into the live per-tenant registry so
+	// the very next turn resolves its tools without a restart. Fail-soft:
+	// the DB is the source of truth and any subsequent reload picks it up.
+	if t.syncer != nil {
+		if err := t.syncer.ReconnectServer(ctx, args.Name); err != nil {
+			slog.WarnContext(ctx, "[AdminCreateMCPServer] client sync failed", "name", args.Name, "error", err)
+		}
 	}
 
 	slog.InfoContext(ctx, "[AdminCreateMCPServer] created", "name", args.Name, "type", args.Type)
@@ -162,12 +171,13 @@ func (t *adminCreateMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 
 type adminUpdateMCPServerTool struct {
 	repo     MCPServerRepository
-	reloader func()
+	reloader func(context.Context)
 	policy   mcp.TransportPolicy
+	syncer   MCPClientSyncer
 }
 
-func NewAdminUpdateMCPServerTool(repo MCPServerRepository, reloader func(), policy mcp.TransportPolicy) tool.InvokableTool {
-	return &adminUpdateMCPServerTool{repo: repo, reloader: reloader, policy: policy}
+func NewAdminUpdateMCPServerTool(repo MCPServerRepository, reloader func(context.Context), policy mcp.TransportPolicy, syncer MCPClientSyncer) tool.InvokableTool {
+	return &adminUpdateMCPServerTool{repo: repo, reloader: reloader, policy: policy, syncer: syncer}
 }
 
 func (t *adminUpdateMCPServerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -247,7 +257,14 @@ func (t *adminUpdateMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
+	}
+	// Redial under the post-write name (the update may have renamed it) so the
+	// live registry reflects the new config. Fail-soft — DB is source of truth.
+	if t.syncer != nil {
+		if err := t.syncer.ReconnectServer(ctx, record.Name); err != nil {
+			slog.WarnContext(ctx, "[AdminUpdateMCPServer] client sync failed", "name", record.Name, "error", err)
+		}
 	}
 
 	slog.InfoContext(ctx, "[AdminUpdateMCPServer] updated", "id", args.ServerID)
@@ -258,11 +275,12 @@ func (t *adminUpdateMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 
 type adminDeleteMCPServerTool struct {
 	repo     MCPServerRepository
-	reloader func()
+	reloader func(context.Context)
+	syncer   MCPClientSyncer
 }
 
-func NewAdminDeleteMCPServerTool(repo MCPServerRepository, reloader func()) tool.InvokableTool {
-	return &adminDeleteMCPServerTool{repo: repo, reloader: reloader}
+func NewAdminDeleteMCPServerTool(repo MCPServerRepository, reloader func(context.Context), syncer MCPClientSyncer) tool.InvokableTool {
+	return &adminDeleteMCPServerTool{repo: repo, reloader: reloader, syncer: syncer}
 }
 
 func (t *adminDeleteMCPServerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -288,6 +306,17 @@ func (t *adminDeleteMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 		return "[ERROR] server_id is required", nil
 	}
 
+	// Capture the name BEFORE deleting the row so we can drop the matching
+	// live client afterwards (Delete is keyed by ID, DisconnectServer by name).
+	// A GetByID miss is non-fatal — proceed with the delete and skip the sync.
+	var serverName string
+	if existing, err := t.repo.GetByID(ctx, args.ServerID); err != nil {
+		slog.WarnContext(ctx, "[AdminDeleteMCPServer] pre-delete lookup failed, skipping client sync",
+			"id", args.ServerID, "error", err)
+	} else {
+		serverName = existing.Name
+	}
+
 	if err := t.repo.Delete(ctx, args.ServerID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return fmt.Sprintf("MCP server not found: %s", args.ServerID), nil
@@ -296,7 +325,14 @@ func (t *adminDeleteMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
+	}
+	// Drop the deleted server's live client so its tools stop resolving.
+	// Fail-soft — DB is source of truth.
+	if t.syncer != nil && serverName != "" {
+		if err := t.syncer.DisconnectServer(ctx, serverName); err != nil {
+			slog.WarnContext(ctx, "[AdminDeleteMCPServer] client sync failed", "name", serverName, "error", err)
+		}
 	}
 
 	slog.InfoContext(ctx, "[AdminDeleteMCPServer] deleted", "id", args.ServerID)
@@ -307,14 +343,15 @@ func (t *adminDeleteMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 
 type adminSetMCPServerEnabledTool struct {
 	repo     MCPServerRepository
-	reloader func()
+	reloader func(context.Context)
+	syncer   MCPClientSyncer
 }
 
 // NewAdminSetMCPServerEnabledTool exposes a name-addressed toggle for the
 // mcp_servers.enabled column. The builder-assistant prefers names over UUIDs,
 // so we resolve via List — tenant scope is enforced by the repo layer.
-func NewAdminSetMCPServerEnabledTool(repo MCPServerRepository, reloader func()) tool.InvokableTool {
-	return &adminSetMCPServerEnabledTool{repo: repo, reloader: reloader}
+func NewAdminSetMCPServerEnabledTool(repo MCPServerRepository, reloader func(context.Context), syncer MCPClientSyncer) tool.InvokableTool {
+	return &adminSetMCPServerEnabledTool{repo: repo, reloader: reloader, syncer: syncer}
 }
 
 func (t *adminSetMCPServerEnabledTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -368,7 +405,16 @@ func (t *adminSetMCPServerEnabledTool) InvokableRun(ctx context.Context, argsJSO
 	}
 
 	if t.reloader != nil {
-		t.reloader()
+		t.reloader(ctx)
+	}
+	// Redial so the live registry tracks the row. The enabled flag governs
+	// tool injection at the agent-config layer, not client dialing, so a
+	// disabled server stays dialled (active-disconnect on disable is deferred).
+	// Fail-soft — DB is source of truth.
+	if t.syncer != nil {
+		if err := t.syncer.ReconnectServer(ctx, args.ServerName); err != nil {
+			slog.WarnContext(ctx, "[AdminSetMCPServerEnabled] client sync failed", "name", args.ServerName, "error", err)
+		}
 	}
 
 	slog.InfoContext(ctx, "[AdminSetMCPServerEnabled] updated", "name", args.ServerName, "enabled", *args.Enabled)
