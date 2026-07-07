@@ -31,6 +31,16 @@
   of printing `Server error <status>: <body>` into the chat. The raw response
   body — which can carry server-side operator or error detail — is logged to the
   browser console for operators and never surfaced to the end user.
+- **Embeddable widget rejects links with an unsafe URL scheme.** Agent output is
+  untrusted; `[text](url)` now renders an anchor only for `http`/`https`/`mailto`
+  or scheme-less/relative URLs. A `javascript:` / `data:` / `vbscript:` URL (incl.
+  control-char-obfuscated variants) is dropped to plain text, closing a
+  click-to-XSS vector in the embedding page.
+- **Session error event no longer leaks raw error strings.** `errors.UserMessage`
+  returns a generic fallback for untyped errors instead of the raw Go error
+  string, so internal detail (provider URLs, wrapped technical chains) no longer
+  reaches the end-user chat. The stable error code is still carried on the event
+  for clients that switch on it, and operators still get the full error in logs.
 
 ## [1.10.2] — 2026-07-01
 

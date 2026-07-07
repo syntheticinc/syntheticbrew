@@ -18,10 +18,16 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
 
-  // Links: [text](url)
+  // Links: [text](url) — only render an anchor for an allowlisted scheme
+  // (http/https/mailto) or a scheme-less/relative URL. Prompt-injected agent
+  // output could otherwise smuggle a `javascript:`/`data:` URL that runs script
+  // in the host page on click, so drop the link and keep the (escaped) text.
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    (_match, label, url) =>
+      isSafeLinkUrl(url)
+        ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`
+        : label,
   );
 
   // Process lines for lists and paragraphs
@@ -36,6 +42,17 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// isSafeLinkUrl allows http/https/mailto and scheme-less (relative/anchor) URLs
+// and rejects everything else (javascript:, data:, vbscript:, …). Browsers
+// ignore ASCII whitespace/control chars inside a scheme when resolving an href,
+// so strip them before checking to defeat obfuscation like `java\tscript:`.
+function isSafeLinkUrl(url: string): boolean {
+  const normalized = url.replace(/[\x00-\x20]/g, '').toLowerCase();
+  if (/^(https?:|mailto:)/.test(normalized)) return true;
+  // A leading `scheme:` we did not allow → reject. No scheme → relative → allow.
+  return !/^[a-z][a-z0-9+.-]*:/.test(normalized);
 }
 
 function processLines(html: string): string {

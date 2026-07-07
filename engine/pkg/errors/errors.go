@@ -158,9 +158,18 @@ func DeepestCode(err error) string {
 	return code
 }
 
+// genericUserMessage is surfaced to end users when an error carries no curated,
+// user-facing DomainError message. It never exposes the raw error string, which
+// can leak internal detail (provider URLs, wrapped technical chains) to the
+// client over the session error event. Operators still get the full error via
+// server-side logging and the stable DeepestCode carried alongside.
+const genericUserMessage = "An unexpected error occurred. Please try again."
+
 // UserMessage returns the curated, user-facing message for an error: the
 // Message of the deepest non-CodeInternal DomainError when present (without the
-// "[CODE]" prefix or wrapped technical detail), else the raw error string.
+// "[CODE]" prefix or wrapped technical detail), else a generic fallback. It
+// never returns the raw error string — an untyped error would otherwise leak
+// internal detail to the client.
 func UserMessage(err error) string {
 	if err == nil {
 		return ""
@@ -174,5 +183,5 @@ func UserMessage(err error) string {
 	if best != nil {
 		return best.Message
 	}
-	return err.Error()
+	return genericUserMessage
 }
