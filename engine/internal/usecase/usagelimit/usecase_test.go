@@ -374,3 +374,49 @@ func TestRecordSteps_BumpsStepsNotTurns(t *testing.T) {
 	assert.Equal(t, int64(1), row.TurnsCount, "resume must NOT add a turn")
 	assert.Equal(t, int64(10), row.StepsCount, "resume steps must accrue (4+6)")
 }
+
+func TestEffectiveCount(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	tests := []struct {
+		name            string
+		counter         *domain.UsageCounter
+		unit            string
+		intervalSeconds int64
+		want            int64
+	}{
+		{
+			name:            "nil counter is zero",
+			counter:         nil,
+			unit:            domain.UnitTurns,
+			intervalSeconds: 3600,
+			want:            0,
+		},
+		{
+			name:            "in-window turns",
+			counter:         &domain.UsageCounter{PeriodStart: now.Unix() - 100, TurnsCount: 7, StepsCount: 42},
+			unit:            domain.UnitTurns,
+			intervalSeconds: 3600,
+			want:            7,
+		},
+		{
+			name:            "in-window steps",
+			counter:         &domain.UsageCounter{PeriodStart: now.Unix() - 100, TurnsCount: 7, StepsCount: 42},
+			unit:            domain.UnitSteps,
+			intervalSeconds: 3600,
+			want:            42,
+		},
+		{
+			name:            "rolled-over window is zero",
+			counter:         &domain.UsageCounter{PeriodStart: now.Unix() - 7200, TurnsCount: 7, StepsCount: 42},
+			unit:            domain.UnitTurns,
+			intervalSeconds: 3600,
+			want:            0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EffectiveCount(tt.counter, tt.unit, tt.intervalSeconds, now)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

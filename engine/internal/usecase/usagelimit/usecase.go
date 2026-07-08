@@ -101,7 +101,7 @@ func (e *Enforcer) CheckAllowed(ctx context.Context, userSub string) (domain.Usa
 			return domain.UsageDecision{}, fmt.Errorf("read %s usage counter: %w", sk.scope, err)
 		}
 
-		used := effectiveCount(counter, cfg.Unit, cfg.IntervalSeconds, now)
+		used := EffectiveCount(counter, cfg.Unit, cfg.IntervalSeconds, now)
 		if used >= cfg.LimitValue {
 			slog.InfoContext(ctx, "usage limit reached",
 				"scope", sk.scope, "unit", cfg.Unit, "limit", cfg.LimitValue, "used", used)
@@ -117,9 +117,11 @@ func (e *Enforcer) CheckAllowed(ctx context.Context, userSub string) (domain.Usa
 	return domain.UsageDecision{Allowed: true}, nil
 }
 
-// effectiveCount returns the count that counts against the limit for unit,
+// EffectiveCount returns the count that counts against the limit for unit,
 // treating a window that has rolled over (or a missing counter) as 0.
-func effectiveCount(counter *domain.UsageCounter, unit string, intervalSeconds int64, now time.Time) int64 {
+// Exported so read-only reporting surfaces show the same in-window number the
+// gate enforces.
+func EffectiveCount(counter *domain.UsageCounter, unit string, intervalSeconds int64, now time.Time) int64 {
 	if counter == nil {
 		return 0
 	}

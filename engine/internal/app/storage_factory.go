@@ -90,6 +90,7 @@ func createEngine(
 	snapshotRepo := repository.NewAgentContextRepository(db)
 	messageRepo := repository.NewMessageRepositoryImpl(db)
 	agentEngine := engine.New(snapshotRepo, messageRepo)
+	agentEngine.SetPromptPrefixProvider(newPolicyPromptPrefixProvider(configrepo.NewGORMTenantPolicyRepository(db)))
 	slog.InfoContext(context.Background(), "engine initialized (PostgreSQL)")
 
 	// Load flows.yaml (optional — not required in bootstrap/Docker mode)

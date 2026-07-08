@@ -969,11 +969,22 @@ func Run(sc ServerConfig) error {
 		adminAssistantSessionRepo := configrepo.NewGORMSessionRepository(pgDB)
 		adminAssistantHandler := deliveryhttp.NewAdminAssistantHandler(chatService, builderSchemaResolver, forwardHeadersStore.GetForContext, adminAssistantSessionRepo)
 
+		// Widget bootstrap config — reads the widget_attribution policy through
+		// the tenant-scoped policy repo. Without a DB the handler is wired with a
+		// nil reader and attribution resolves to false.
+		var widgetConfigHandler *deliveryhttp.WidgetConfigHandler
+		if pgDB != nil {
+			widgetConfigHandler = deliveryhttp.NewWidgetConfigHandler(configrepo.NewGORMTenantPolicyRepository(pgDB))
+		} else {
+			widgetConfigHandler = deliveryhttp.NewWidgetConfigHandler(nil)
+		}
+
 		chatDeps := chatRoutesDeps{
 			AuthMW:                httpAuthMW,
 			BYOKMW:                byokMW,
 			ChatHandler:           chatHandler,
 			AdminAssistantHandler: adminAssistantHandler,
+			WidgetConfigHandler:   widgetConfigHandler,
 			AgentManagerExt: &agentManagerHTTPAdapter{
 				repo:        configrepo.NewGORMAgentRepository(pgDB),
 				registry:    agentRegistry,
