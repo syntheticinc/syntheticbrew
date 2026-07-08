@@ -97,6 +97,13 @@ type Plugin interface {
 	// has no quota middleware.
 	SetSchemaCounter(counter SchemaCounter)
 
+	// SetUsageLimitWriter installs a callback a provisioning plugin can invoke
+	// to install a default usage limit on a freshly-created tenant. The engine
+	// wires a writer backed by its tenant-scoped usage-limit repository so the
+	// plugin can set the cap without importing engine internals or the tenant
+	// context key. CE's Noop ignores it because it has no provisioning endpoint.
+	SetUsageLimitWriter(writer UsageLimitWriter)
+
 	// TransportPolicy returns the MCP transport policy for this deployment.
 	// CE / bare-metal deployments return PermissiveTransportPolicy (all
 	// transports allowed). Cloud / managed deployments return
@@ -158,6 +165,35 @@ type SchemaCounterFunc func(ctx context.Context, tenantID string) (int, error)
 // CountSchemas implements SchemaCounter.
 func (f SchemaCounterFunc) CountSchemas(ctx context.Context, tenantID string) (int, error) {
 	return f(ctx, tenantID)
+}
+
+// Usage-limit vocabulary exposed to plugins. These mirror the engine's
+// internal domain constants but live in the public plugin package so an
+// external plugin can name a scope/unit without importing engine internals.
+// The engine writer validates the incoming values, so a drift from the
+// internal constants surfaces as an error rather than a silent mis-write.
+const (
+	UsageScopeTenant = "tenant"
+	UsageScopeUser   = "per_user"
+	UsageUnitTurns   = "turns"
+	UsageUnitSteps   = "steps"
+)
+
+// UsageLimitWriter installs a default usage limit on a tenant. The engine
+// wires a concrete writer over its usage-limit repository; a provisioning
+// plugin calls it inside the request handler so the write runs in the new
+// tenant's context.
+//
+// tenantID is passed explicitly rather than read from ctx so the plugin does
+// not need to know CE's internal tenant context key — the engine-side writer
+// applies its own tenant scoping.
+type UsageLimitWriter interface {
+	// EnsureLimit writes a usage limit for tenantID's scope ONLY when none is
+	// configured yet — it never overwrites an existing limit, so re-provisioning
+	// a tenant (or one whose limit an operator has since changed) is safe.
+	// Returns whether a row was written. A non-nil error means the write failed;
+	// the caller decides whether that should fail provisioning.
+	EnsureLimit(ctx context.Context, tenantID, scope, unit string, limitValue, intervalSeconds int64) (bool, error)
 }
 
 // TenantSeeder populates a freshly-created tenant with default data.

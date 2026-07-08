@@ -290,6 +290,12 @@ func Run(sc ServerConfig) error {
 		// schema_counter.go so the per-tenant scope contract has its own test
 		// surface.
 		sc.Plugin.SetSchemaCounter(NewSchemaCounter(configrepo.NewGORMSchemaRepository(pgDB)))
+
+		// Wire the usage-limit writer so a provisioning plugin can install a
+		// default per-tenant cap through the engine's own tenant-scoped
+		// repository (never clobbering an existing limit). CE's Noop plugin
+		// ignores it — safe to wire unconditionally.
+		sc.Plugin.SetUsageLimitWriter(newEngineUsageLimitWriter(configrepo.NewGORMUsageLimitRepository(pgDB)))
 	}
 
 	// Create infrastructure components (AgentService + WorkManager + AgentPool)
