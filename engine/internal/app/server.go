@@ -45,6 +45,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/activeusers"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
@@ -948,6 +949,14 @@ func Run(sc ServerConfig) error {
 				nil,
 			)
 			chatService.accumulator = usageAccumulator
+			// Active-users gate: caps DISTINCT end users per rolling window
+			// (policy-driven, plugin seam writes only). Applies to BYOK turns
+			// too — it limits platform activity, not model spend.
+			chatService.activeUsers = activeusers.New(
+				configrepo.NewGORMTenantPolicyRepository(pgDB),
+				configrepo.NewGORMActiveUserRepository(pgDB),
+				nil,
+			)
 		}
 		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, forwardHeadersStore.GetForContext)
 

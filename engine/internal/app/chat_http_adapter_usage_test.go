@@ -168,3 +168,151 @@ func TestSettleResumeSteps_BYOKSkips(t *testing.T) {
 		t.Fatalf("BYOK resume must skip settle, got recordSteps=%d take=%d", g.recordStepsCalls, acc.takeCalls)
 	}
 }
+
+// --- active-users gate ---
+
+type fakeActiveUsersGate struct {
+	dec         domain.ActiveUsersDecision
+	checkErr    error
+	checkCalls  int
+	recordCalls int
+	recordSubs  []string
+	recordErr   error
+}
+
+func (f *fakeActiveUsersGate) Check(context.Context, string) (domain.ActiveUsersDecision, error) {
+	f.checkCalls++
+	return f.dec, f.checkErr
+}
+
+func (f *fakeActiveUsersGate) RecordActivity(_ context.Context, userSub string) error {
+	f.recordCalls++
+	f.recordSubs = append(f.recordSubs, userSub)
+	return f.recordErr
+}
+
+func TestGateTurn_ActiveUsersCheckRunsForBYOK(t *testing.T) {
+	au := &fakeActiveUsersGate{dec: domain.ActiveUsersDecision{Allowed: true}}
+	g := &fakeUsageGate{dec: domain.UsageDecision{Allowed: false}} // must not be consulted for BYOK
+	a := &chatServiceHTTPAdapter{usage: g, activeUsers: au}
+	if err := a.gateTurn(context.Background(), "user-1", true); err != nil {
+		t.Fatalf("BYOK turn under user limit must pass, got %v", err)
+	}
+	if au.checkCalls != 1 {
+		t.Fatalf("active-users check must run for BYOK, got %d calls", au.checkCalls)
+	}
+	if g.checkCalls != 0 {
+		t.Fatalf("BYOK must not consult usage gate, got %d calls", g.checkCalls)
+	}
+}
+
+func TestGateTurn_ActiveUsersRejectionMessage(t *testing.T) {
+	au := &fakeActiveUsersGate{dec: domain.ActiveUsersDecision{Allowed: false, Limit: 10, Used: 10}}
+	g := &fakeUsageGate{dec: domain.UsageDecision{Allowed: true}}
+	a := &chatServiceHTTPAdapter{usage: g, activeUsers: au}
+	err := a.gateTurn(context.Background(), "user-new", false)
+	if err == nil || !strings.Contains(err.Error(), "user limit reached") {
+		t.Fatalf("want user-limit error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "10/10") {
+		t.Fatalf("want used/limit in message, got %v", err)
+	}
+	if g.checkCalls != 0 {
+		t.Fatalf("user-limit rejection must short-circuit usage gate, got %d calls", g.checkCalls)
+	}
+}
+
+func TestGateTurn_ActiveUsersRejectsBYOKToo(t *testing.T) {
+	au := &fakeActiveUsersGate{dec: domain.ActiveUsersDecision{Allowed: false, Limit: 10, Used: 10}}
+	a := &chatServiceHTTPAdapter{activeUsers: au}
+	err := a.gateTurn(context.Background(), "user-new", true)
+	if err == nil || !strings.Contains(err.Error(), "user limit reached") {
+		t.Fatalf("BYOK must not bypass user limit, got %v", err)
+	}
+}
+
+func TestGateTurn_NilActiveUsersIsNoOp(t *testing.T) {
+	g := &fakeUsageGate{dec: domain.UsageDecision{Allowed: true}}
+	a := &chatServiceHTTPAdapter{usage: g}
+	if err := a.gateTurn(context.Background(), "user-1", false); err != nil {
+		t.Fatalf("nil activeUsers must be no-op, got %v", err)
+	}
+	if g.checkCalls != 1 {
+		t.Fatalf("usage gate must still run, got %d calls", g.checkCalls)
+	}
+}
+
+func TestSettleTurn_RecordsActivityOnOutput(t *testing.T) {
+	au := &fakeActiveUsersGate{}
+	g := &fakeUsageGate{}
+	acc := &fakeStepTaker{steps: 2}
+	a := &chatServiceHTTPAdapter{usage: g, accumulator: acc, activeUsers: au}
+	sawOutput := true
+	a.settleTurn(context.Background(), "sess-1", "user-1", false, &sawOutput)
+	if au.recordCalls != 1 || au.recordSubs[0] != "user-1" {
+		t.Fatalf("want RecordActivity(user-1) once, got calls=%d subs=%v", au.recordCalls, au.recordSubs)
+	}
+}
+
+func TestSettleTurn_NoOutputDoesNotRecordActivity(t *testing.T) {
+	au := &fakeActiveUsersGate{}
+	g := &fakeUsageGate{}
+	acc := &fakeStepTaker{}
+	a := &chatServiceHTTPAdapter{usage: g, accumulator: acc, activeUsers: au}
+	sawOutput := false
+	a.settleTurn(context.Background(), "sess-1", "user-1", false, &sawOutput)
+	if au.recordCalls != 0 {
+		t.Fatalf("failed turn must NOT record activity, got %d calls", au.recordCalls)
+	}
+}
+
+func TestSettleTurn_BYOKStillRecordsActivity(t *testing.T) {
+	au := &fakeActiveUsersGate{}
+	g := &fakeUsageGate{}
+	acc := &fakeStepTaker{steps: 5}
+	a := &chatServiceHTTPAdapter{usage: g, accumulator: acc, activeUsers: au}
+	sawOutput := true
+	a.settleTurn(context.Background(), "sess-1", "user-1", true, &sawOutput)
+	if au.recordCalls != 1 {
+		t.Fatalf("BYOK turn with output must record activity, got %d calls", au.recordCalls)
+	}
+	if g.recordCalls != 0 || acc.takeCalls != 0 {
+		t.Fatalf("BYOK step settle must stay skipped, got record=%d take=%d", g.recordCalls, acc.takeCalls)
+	}
+}
+
+func TestSettleTurn_NilActiveUsersNoPanic(t *testing.T) {
+	g := &fakeUsageGate{}
+	acc := &fakeStepTaker{steps: 3}
+	a := &chatServiceHTTPAdapter{usage: g, accumulator: acc}
+	sawOutput := true
+	a.settleTurn(context.Background(), "sess-1", "user-1", false, &sawOutput)
+	if g.recordCalls != 1 {
+		t.Fatalf("usage settle must still run with nil activeUsers, got %d", g.recordCalls)
+	}
+}
+
+func TestSettleResumeSteps_RecordsActivity(t *testing.T) {
+	au := &fakeActiveUsersGate{}
+	g := &fakeUsageGate{}
+	acc := &fakeStepTaker{steps: 4}
+	a := &chatServiceHTTPAdapter{usage: g, accumulator: acc, activeUsers: au}
+	a.settleResumeSteps(context.Background(), "sess-1", "user-1", false)
+	if au.recordCalls != 1 || au.recordSubs[0] != "user-1" {
+		t.Fatalf("resume must record activity, got calls=%d subs=%v", au.recordCalls, au.recordSubs)
+	}
+}
+
+func TestSettleResumeSteps_BYOKStillRecordsActivity(t *testing.T) {
+	au := &fakeActiveUsersGate{}
+	g := &fakeUsageGate{}
+	acc := &fakeStepTaker{steps: 4}
+	a := &chatServiceHTTPAdapter{usage: g, accumulator: acc, activeUsers: au}
+	a.settleResumeSteps(context.Background(), "sess-1", "user-1", true)
+	if au.recordCalls != 1 {
+		t.Fatalf("BYOK resume must record activity, got %d calls", au.recordCalls)
+	}
+	if g.recordStepsCalls != 0 {
+		t.Fatalf("BYOK resume step settle must stay skipped, got %d", g.recordStepsCalls)
+	}
+}

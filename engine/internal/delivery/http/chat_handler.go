@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -68,11 +69,11 @@ func NewChatHandler(service ChatService, schemas SchemaNameResolver, forwardHead
 }
 
 type chatRequest struct {
-	Message         string                 `json:"message"`
-	UserSub         string                 `json:"user_sub"`                   // fallback when no JWT present (tests/CE-local)
-	SessionID       string                 `json:"session_id"`
-	Stream          *bool                  `json:"stream,omitempty"`           // default true
-	Headers         map[string]string      `json:"headers,omitempty"`          // optional headers forwarded to MCP tool calls
+	Message         string                  `json:"message"`
+	UserSub         string                  `json:"user_sub"` // fallback when no JWT present (tests/CE-local)
+	SessionID       string                  `json:"session_id"`
+	Stream          *bool                   `json:"stream,omitempty"`           // default true
+	Headers         map[string]string       `json:"headers,omitempty"`          // optional headers forwarded to MCP tool calls
 	ResumeInterrupt *resumeInterruptRequest `json:"resume_interrupt,omitempty"` // HITL resume — mutually exclusive with Message
 }
 
@@ -214,37 +215,57 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// resolveUserSub returns the authenticated end-user identifier.
+// visitorSubRe bounds a body-supplied visitor id: short, URL/log-safe charset.
+var visitorSubRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+// resolveUserSub returns the effective end-user identifier for a chat request.
 //
-// Preference order:
-//   1. UserSub from auth context (JWT `sub` claim, or api_token name —
-//      auth middleware populates this for both authenticated actor types).
-//   2. Anonymous fallback to request body field — ONLY for unauthenticated
-//      requests (CE local / public widget).
+// Per actor type:
 //
-// Authenticated actors (api_token, admin JWT) MUST NOT fall back to the
-// body field: that path was the chirp 1.1.3 impersonation hole — an
-// api_token holder with ScopeChat could create sessions under any
-// user_sub by setting it in the request body. Auth middleware now
-// stamps the canonical identity into ctx for both branches; if it's
-// missing for an authenticated actor we treat the request as unauth
-// (caller returns 401) rather than honouring the body.
+//	admin      → ctx sub only; the body field is NEVER trusted.
+//	api_token  → ctx sub (token name) is the canonical identity; empty ctx
+//	             sub → "" (caller 401s — regression guard, never the body).
+//	             When the body field matches visitorSubRe and the combined
+//	             id fits 255 bytes, the visitor is namespaced under the
+//	             token: "<token-name>:<visitor>". Otherwise the token name
+//	             alone (backward compatible).
+//	(other)    → ctx sub when present, else the body field (CE local /
+//	             public widget / tests).
+//
+// The api_token namespacing gives each website visitor a distinct identity
+// while staying impersonation-safe: the token-name prefix means a client can
+// never mint a sub equal to a JWT subject or another token's visitors, and
+// rotating visitor ids only inflates the distinct-user count (conservative
+// for any per-user or user-count limit). Per-visitor subs also make
+// session/memory isolation stricter than the previous behavior where every
+// visitor behind one token shared the token name.
 //
 // An empty result signals unauthenticated — caller must 401.
 func resolveUserSub(r *http.Request, fallback string) string {
-	if sub := domain.UserSubFromContext(r.Context()); sub != "" {
-		return sub
-	}
+	ctxSub := domain.UserSubFromContext(r.Context())
 	actorType, _ := r.Context().Value(ContextKeyActorType).(string)
-	if actorType == "api_token" || actorType == "admin" {
-		// Authenticated but no UserSub stamped — never fall back to
-		// client-controlled body. Defensive: post-Phase-0 this should
-		// be unreachable because both branches stamp ctx; if it ever
-		// fires it's a regression in auth_middleware to surface, not a
-		// silent impersonation.
-		return ""
+	switch actorType {
+	case "admin":
+		return ctxSub
+	case "api_token":
+		if ctxSub == "" {
+			// Authenticated but no UserSub stamped — never fall back to
+			// the client-controlled body. Defensive: auth_middleware stamps
+			// the token name for every api_token actor; if this fires it's
+			// a middleware regression to surface, not a silent
+			// impersonation (that was the 1.1.3 hole).
+			return ""
+		}
+		if visitorSubRe.MatchString(fallback) && len(ctxSub)+1+len(fallback) <= 255 {
+			return ctxSub + ":" + fallback
+		}
+		return ctxSub
+	default:
+		if ctxSub != "" {
+			return ctxSub
+		}
+		return fallback
 	}
-	return fallback
 }
 
 // handleNonStreaming collects SSE events and returns a single JSON response.

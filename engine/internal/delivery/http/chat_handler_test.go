@@ -1,12 +1,17 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 )
 
 func TestHandleNonStreaming_EmptyMessageEventDoesNotOverwrite(t *testing.T) {
@@ -88,9 +93,9 @@ func TestHandleNonStreaming_EmptyMessageEventDoesNotOverwrite(t *testing.T) {
 				sseEvent("error", map[string]interface{}{"content": "exceeds max steps"}),
 				sseEvent("done", map[string]interface{}{"session_id": "sess-7"}),
 			},
-			wantMsg:  "exceeds max steps",
-			wantSID:  "sess-7",
-			wantErr:  "exceeds max steps",
+			wantMsg: "exceeds max steps",
+			wantSID: "sess-7",
+			wantErr: "exceeds max steps",
 		},
 		{
 			name: "error event with message keeps both",
@@ -99,9 +104,9 @@ func TestHandleNonStreaming_EmptyMessageEventDoesNotOverwrite(t *testing.T) {
 				sseEvent("error", map[string]interface{}{"content": "model timeout"}),
 				sseEvent("done", map[string]interface{}{"session_id": "sess-8"}),
 			},
-			wantMsg:  "partial answer",
-			wantSID:  "sess-8",
-			wantErr:  "model timeout",
+			wantMsg: "partial answer",
+			wantSID: "sess-8",
+			wantErr: "model timeout",
 		},
 		{
 			name: "error event with message field instead of content",
@@ -109,9 +114,9 @@ func TestHandleNonStreaming_EmptyMessageEventDoesNotOverwrite(t *testing.T) {
 				sseEvent("error", map[string]interface{}{"message": "rate limited", "code": "429"}),
 				sseEvent("done", map[string]interface{}{"session_id": "sess-9"}),
 			},
-			wantMsg:  "rate limited",
-			wantSID:  "sess-9",
-			wantErr:  "rate limited",
+			wantMsg: "rate limited",
+			wantSID: "sess-9",
+			wantErr: "rate limited",
 		},
 	}
 
@@ -146,5 +151,125 @@ func sseEvent(eventType string, data map[string]interface{}) SSEEvent {
 	return SSEEvent{
 		Type: eventType,
 		Data: string(jsonBytes),
+	}
+}
+
+// chatRequestWithActor builds a request carrying the auth-middleware context
+// values (actor type + stamped UserSub) that resolveUserSub reads.
+func chatRequestWithActor(actorType, ctxSub string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/schemas/test/chat", nil)
+	ctx := req.Context()
+	if actorType != "" {
+		ctx = context.WithValue(ctx, ContextKeyActorType, actorType)
+	}
+	if ctxSub != "" {
+		ctx = domain.WithUserSub(ctx, ctxSub)
+	}
+	return req.WithContext(ctx)
+}
+
+func TestResolveUserSub(t *testing.T) {
+	// 190-char token name + ":" + 64-char visitor = exactly 255 (boundary).
+	longToken := strings.Repeat("t", 190)
+	overToken := strings.Repeat("t", 191)
+	maxVisitor := strings.Repeat("v", 64)
+
+	tests := []struct {
+		name      string
+		actorType string
+		ctxSub    string
+		fallback  string
+		want      string
+	}{
+		{
+			name:      "api_token with valid visitor id namespaces under token",
+			actorType: "api_token",
+			ctxSub:    "web-widget",
+			fallback:  "visitor-42",
+			want:      "web-widget:visitor-42",
+		},
+		{
+			name:      "api_token with path-traversal charset falls back to token name",
+			actorType: "api_token",
+			ctxSub:    "web-widget",
+			fallback:  "../x",
+			want:      "web-widget",
+		},
+		{
+			name:      "api_token with non-ASCII visitor falls back to token name",
+			actorType: "api_token",
+			ctxSub:    "web-widget",
+			fallback:  "тест",
+			want:      "web-widget",
+		},
+		{
+			name:      "api_token with 65-char visitor falls back to token name",
+			actorType: "api_token",
+			ctxSub:    "web-widget",
+			fallback:  strings.Repeat("a", 65),
+			want:      "web-widget",
+		},
+		{
+			name:      "api_token with empty body returns token name",
+			actorType: "api_token",
+			ctxSub:    "web-widget",
+			fallback:  "",
+			want:      "web-widget",
+		},
+		{
+			name:      "api_token without ctx sub returns empty (regression guard)",
+			actorType: "api_token",
+			ctxSub:    "",
+			fallback:  "visitor-42",
+			want:      "",
+		},
+		{
+			name:      "api_token combined id at 255 bytes is namespaced",
+			actorType: "api_token",
+			ctxSub:    longToken,
+			fallback:  maxVisitor,
+			want:      longToken + ":" + maxVisitor,
+		},
+		{
+			name:      "api_token combined id over 255 bytes falls back to token name",
+			actorType: "api_token",
+			ctxSub:    overToken,
+			fallback:  maxVisitor,
+			want:      overToken,
+		},
+		{
+			name:      "admin ignores body field",
+			actorType: "admin",
+			ctxSub:    "admin-sub",
+			fallback:  "visitor-42",
+			want:      "admin-sub",
+		},
+		{
+			name:      "admin without ctx sub returns empty",
+			actorType: "admin",
+			ctxSub:    "",
+			fallback:  "visitor-42",
+			want:      "",
+		},
+		{
+			name:      "no actor with ctx sub prefers ctx",
+			actorType: "",
+			ctxSub:    "ctx-sub",
+			fallback:  "body-sub",
+			want:      "ctx-sub",
+		},
+		{
+			name:      "no actor without ctx sub falls back to body",
+			actorType: "",
+			ctxSub:    "",
+			fallback:  "body-sub",
+			want:      "body-sub",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := chatRequestWithActor(tt.actorType, tt.ctxSub)
+			assert.Equal(t, tt.want, resolveUserSub(req, tt.fallback))
+		})
 	}
 }
