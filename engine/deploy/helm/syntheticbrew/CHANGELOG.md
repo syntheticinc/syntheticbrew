@@ -7,6 +7,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-08
+
+### Changed
+
+- Bump `appVersion` to `1.12.0` to track the engine release that adds the
+  `UsageLimitWriter` provisioning extension point. No template or values
+  changes — CE behaviour is unchanged (the extension point is inert in CE).
+
 ## [0.12.0] - 2026-07-04
 
 ### Changed

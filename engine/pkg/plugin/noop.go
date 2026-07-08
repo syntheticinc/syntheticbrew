@@ -42,6 +42,10 @@ func (Noop) SetTenantSeeder(TenantSeeder) {}
 // has no consumer. Defined for Plugin-interface completeness.
 func (Noop) SetSchemaCounter(SchemaCounter) {}
 
+// SetUsageLimitWriter is a no-op. CE has no provisioning endpoint, so there is
+// no writer to wire.
+func (Noop) SetUsageLimitWriter(UsageLimitWriter) {}
+
 // TransportPolicy returns PermissiveTransportPolicy — CE allows all transports.
 func (Noop) TransportPolicy() TransportPolicy { return PermissiveTransportPolicy{} }
 

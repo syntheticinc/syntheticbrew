@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.12.0] — 2026-07-08
+
+### Added
+
+- **Plugin extension point `UsageLimitWriter` (`Plugin.SetUsageLimitWriter`).**
+  A provisioning plugin can install a default usage limit on a freshly-created
+  tenant through the engine's own tenant-scoped repository, without importing
+  engine internals or knowing the tenant context key — the same contract as the
+  tenant seeder. The write is an atomic insert-if-absent (repository
+  `CreateIfAbsent`, `ON CONFLICT DO NOTHING`), so it never overwrites an
+  existing (e.g. operator-adjusted) limit and re-provisioning a tenant is safe.
+  CE's `Noop` plugin ignores it.
+
 ## [1.11.0] — 2026-07-04
 
 ### Added
