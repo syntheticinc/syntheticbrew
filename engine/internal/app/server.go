@@ -296,6 +296,20 @@ func Run(sc ServerConfig) error {
 		// repository (never clobbering an existing limit). CE's Noop plugin
 		// ignores it — safe to wire unconditionally.
 		sc.Plugin.SetUsageLimitWriter(newEngineUsageLimitWriter(configrepo.NewGORMUsageLimitRepository(pgDB)))
+
+		// Wire the tenant-policy seam so a plugin can write and read protected
+		// per-tenant policy entries through the engine's own tenant-scoped
+		// repository. No HTTP route exposes this table — the seam is the only
+		// write path. CE's Noop plugin ignores both — safe to wire
+		// unconditionally.
+		policyRepo := configrepo.NewGORMTenantPolicyRepository(pgDB)
+		sc.Plugin.SetTenantPolicyWriter(newEngineTenantPolicyWriter(policyRepo))
+		sc.Plugin.SetTenantPolicyReader(newEngineTenantPolicyReader(policyRepo))
+
+		// Wire the knowledge-document counter so a plugin can count a tenant's
+		// documents in-process, mirroring the schema counter. CE's Noop plugin
+		// ignores it — safe to wire unconditionally.
+		sc.Plugin.SetKnowledgeDocumentCounter(NewKnowledgeDocumentCounter(configrepo.NewGORMKnowledgeRepository(pgDB)))
 	}
 
 	// Create infrastructure components (AgentService + WorkManager + AgentPool)

@@ -46,6 +46,15 @@ func (Noop) SetSchemaCounter(SchemaCounter) {}
 // no writer to wire.
 func (Noop) SetUsageLimitWriter(UsageLimitWriter) {}
 
+// SetTenantPolicyWriter is a no-op. Nothing writes tenant policies in CE.
+func (Noop) SetTenantPolicyWriter(TenantPolicyWriter) {}
+
+// SetTenantPolicyReader is a no-op. Nothing reads tenant policies in CE.
+func (Noop) SetTenantPolicyReader(TenantPolicyReader) {}
+
+// SetKnowledgeDocumentCounter is a no-op. CE has no consumer for the counter.
+func (Noop) SetKnowledgeDocumentCounter(KnowledgeDocumentCounter) {}
+
 // TransportPolicy returns PermissiveTransportPolicy — CE allows all transports.
 func (Noop) TransportPolicy() TransportPolicy { return PermissiveTransportPolicy{} }
 

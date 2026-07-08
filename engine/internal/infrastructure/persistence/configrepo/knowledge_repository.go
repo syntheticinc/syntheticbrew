@@ -200,6 +200,22 @@ func (r *GORMKnowledgeRepository) DeleteChunksByKB(ctx context.Context, kbID str
 	return nil
 }
 
+// CountDocuments returns the number of knowledge documents in the current
+// tenant across all knowledge bases. Documents in status "error" are excluded
+// — they hold no indexed content and should not count against a document cap.
+func (r *GORMKnowledgeRepository) CountDocuments(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&models.KnowledgeDocument{}).
+		Scopes(tenantScope(ctx)).
+		Where("status <> ?", "error").
+		Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("count documents: %w", err)
+	}
+	return count, nil
+}
+
 // GetStatsByKBs returns document count, chunk count, and last indexed time for given KB IDs (tenant-scoped).
 func (r *GORMKnowledgeRepository) GetStatsByKBs(ctx context.Context, kbIDs []string) (docCount int, chunkCount int, lastIndexed *time.Time, err error) {
 	if len(kbIDs) == 0 {
