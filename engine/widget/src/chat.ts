@@ -75,14 +75,36 @@ export function endUserHttpMessage(status: number): string {
 
 const SESSION_KEY_PREFIX = 'bb_widget_session_';
 
+/** One visitor key per origin — deliberately NOT per schema: the same person
+ *  chatting with two schemas of one deployment must count as one distinct
+ *  user. */
+const VISITOR_KEY = 'bb_widget_visitor';
+
+const VISITOR_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+function generateVisitorId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '');
+  }
+  // crypto.randomUUID requires a secure context; the visitor id only needs
+  // uniqueness, not unpredictability, so Math.random is an acceptable fallback.
+  let id = '';
+  for (let i = 0; i < 32; i++) {
+    id += Math.floor(Math.random() * 16).toString(16);
+  }
+  return id;
+}
+
 export class ChatClient {
   private config: ChatConfig;
   private sessionId: string | null;
+  private visitorId: string;
   private abortController: AbortController | null = null;
 
   constructor(config: ChatConfig) {
     this.config = config;
     this.sessionId = this.loadSessionId();
+    this.visitorId = this.loadOrCreateVisitorId();
   }
 
   private storageKey(): string {
@@ -104,6 +126,29 @@ export class ChatClient {
     } catch {
       // localStorage unavailable — session will not persist
     }
+  }
+
+  private loadOrCreateVisitorId(): string {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(VISITOR_KEY);
+    } catch {
+      // localStorage unavailable — a fresh in-memory id is created below.
+    }
+    if (stored && VISITOR_ID_PATTERN.test(stored)) {
+      return stored;
+    }
+
+    // Missing or garbage stored value — regenerate.
+    const id = generateVisitorId();
+    try {
+      localStorage.setItem(VISITOR_KEY, id);
+    } catch {
+      // localStorage unavailable — keep the in-memory id for the page
+      // lifetime. Each page load then counts as a new visitor: slight
+      // distinct-user inflation, acceptable.
+    }
+    return id;
   }
 
   abort(): void {
@@ -135,6 +180,34 @@ export class ChatClient {
     );
   }
 
+  /** Fetch the operator widget config (engine `GET /api/v1/widget-config`,
+   *  contract: `{"attribution": true|false}`). Fail-quiet: config must never
+   *  break chat — non-200, network error or bad JSON all resolve to
+   *  `{ attribution: false }`. */
+  async fetchWidgetConfig(): Promise<{ attribution: boolean }> {
+    const url = `${this.config.endpoint}/api/v1/widget-config`;
+
+    const headers: Record<string, string> = {};
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    }
+
+    try {
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        return { attribution: false };
+      }
+      const data: unknown = await response.json();
+      const attribution =
+        typeof data === 'object' &&
+        data !== null &&
+        (data as Record<string, unknown>).attribution === true;
+      return { attribution };
+    } catch {
+      return { attribution: false };
+    }
+  }
+
   private async dispatch(
     extra: Record<string, unknown>,
     callbacks: ChatCallbacks,
@@ -153,6 +226,9 @@ export class ChatClient {
     }
 
     const body: Record<string, unknown> = { ...extra };
+    // The server namespaces user_sub under the API token; visitor-id rotation
+    // only inflates the distinct-user count.
+    body['user_sub'] = this.visitorId;
     if (this.sessionId) {
       body['session_id'] = this.sessionId;
     }

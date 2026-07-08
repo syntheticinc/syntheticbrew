@@ -68,6 +68,7 @@ export class WidgetUI {
     // Build UI
     this.buildBubble();
     this.buildPanel();
+    void this.applyAttribution();
 
     // Show welcome message if configured
     if (config.welcomeMessage) {
@@ -142,6 +143,26 @@ export class WidgetUI {
     this.panel.appendChild(inputArea);
 
     this.shadow.appendChild(this.panel);
+  }
+
+  /** Render the "Powered by SyntheticBrew" badge in the header when the
+   *  operator's widget config enables attribution. fetchWidgetConfig is
+   *  fail-quiet ({ attribution: false } on any failure), so a missing or
+   *  broken config endpoint leaves the header untouched. */
+  private async applyAttribution(): Promise<void> {
+    const { attribution } = await this.client.fetchWidgetConfig();
+    if (!attribution) return;
+
+    const title = this.panel.querySelector('.bb-header-title');
+    if (!title) return;
+
+    const badge = document.createElement('a');
+    badge.className = 'bb-attribution';
+    badge.href = 'https://syntheticbrew.ai?utm_source=widget';
+    badge.target = '_blank';
+    badge.rel = 'noopener noreferrer';
+    badge.textContent = 'Powered by SyntheticBrew';
+    title.insertAdjacentElement('afterend', badge);
   }
 
   private toggle(): void {
