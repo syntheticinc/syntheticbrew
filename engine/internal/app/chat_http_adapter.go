@@ -45,9 +45,9 @@ type usageGate interface {
 // user count for anonymous traffic is best-effort: it can be inflated (never
 // deflated — rotation only adds), and per_user usage limits degrade to
 // advisory for anonymous widgets. Abuse is bounded by the edge per-IP rate
-// limit (an infra concern) and the platform-funded demo key's own turn cap;
-// enforce-mode blocking only affects the tenant's own sandbox and paid tiers
-// run in monitor mode, so the blast radius is contained.
+// limit (an infra concern); enforce-mode blocking affects only the tenant's
+// own scope, and an operator can configure the gate in monitor mode (count
+// without blocking) instead of enforce.
 type activeUsersGate interface {
 	Check(ctx context.Context, userSub string) (domain.ActiveUsersDecision, error)
 	RecordActivity(ctx context.Context, userSub string) error
