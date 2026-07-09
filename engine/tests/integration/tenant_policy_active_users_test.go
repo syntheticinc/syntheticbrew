@@ -42,7 +42,7 @@ func TestTenantPolicy_Repository(t *testing.T) {
 		require.NotNil(t, got)
 		assert.Equal(t, "100", got.Value)
 
-		// Upsert overwrites — a plan change must replace the previous value.
+		// Upsert overwrites — a subsequent Set must replace the previous value.
 		require.NoError(t, policies.Set(ctx, domain.TenantPolicy{Key: domain.PolicyActiveUsersLimit, Value: "2000"}))
 		got, err = policies.Get(ctx, domain.PolicyActiveUsersLimit)
 		require.NoError(t, err)

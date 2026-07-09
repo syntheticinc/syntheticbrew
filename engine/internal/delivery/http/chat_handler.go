@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -256,7 +257,13 @@ func resolveUserSub(r *http.Request, fallback string) string {
 			// impersonation (that was the 1.1.3 hole).
 			return ""
 		}
-		if visitorSubRe.MatchString(fallback) && len(ctxSub)+1+len(fallback) <= 255 {
+		// Namespace the per-visitor id under the token, but only when the token
+		// name has no ':' — token creation forbids ':' in names, so a ':' here
+		// means an unexpected/legacy name; refuse to namespace rather than risk
+		// a "<name>:<visitor>" that collides with another principal's sub.
+		if visitorSubRe.MatchString(fallback) &&
+			!strings.Contains(ctxSub, ":") &&
+			len(ctxSub)+1+len(fallback) <= 255 {
 			return ctxSub + ":" + fallback
 		}
 		return ctxSub

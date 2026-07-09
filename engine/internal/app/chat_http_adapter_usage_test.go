@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/llm"
 )
@@ -203,6 +204,29 @@ func TestGateTurn_ActiveUsersCheckRunsForBYOK(t *testing.T) {
 	}
 	if g.checkCalls != 0 {
 		t.Fatalf("BYOK must not consult usage gate, got %d calls", g.checkCalls)
+	}
+}
+
+func TestGateTurn_ActiveUsersSkippedForAdminActor(t *testing.T) {
+	au := &fakeActiveUsersGate{dec: domain.ActiveUsersDecision{Allowed: false, Limit: 100, Used: 100}} // would block
+	a := &chatServiceHTTPAdapter{activeUsers: au}
+	ctx := context.WithValue(context.Background(), deliveryhttp.ContextKeyActorType, "admin")
+	if err := a.gateTurn(ctx, "operator-sub", false); err != nil {
+		t.Fatalf("operator (admin) traffic must never be blocked by the user limit, got %v", err)
+	}
+	if au.checkCalls != 0 {
+		t.Fatalf("admin actor must not be counted/checked, got %d calls", au.checkCalls)
+	}
+}
+
+func TestSettleTurn_ActiveUsersSkippedForAdminActor(t *testing.T) {
+	au := &fakeActiveUsersGate{}
+	a := &chatServiceHTTPAdapter{activeUsers: au}
+	ctx := context.WithValue(context.Background(), deliveryhttp.ContextKeyActorType, "admin")
+	sawOutput := true
+	a.settleTurn(ctx, "sess-1", "operator-sub", false, &sawOutput)
+	if au.recordCalls != 0 {
+		t.Fatalf("admin actor must not mint an active user, got %d records", au.recordCalls)
 	}
 }
 

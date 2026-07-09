@@ -36,9 +36,29 @@ type usageGate interface {
 // for BYOK turns too: it limits platform activity (a user existing), not whose
 // model key pays for the turn. Defined consumer-side; the concrete
 // *activeusers.Gate satisfies it.
+//
+// Trust model for the identity it counts: for authenticated end-users the
+// user_sub is a verified JWT subject. For anonymous widget traffic the user_sub
+// is "<token-name>:<visitor-id>" where the visitor-id is client-asserted (the
+// widget stores it in localStorage). A holder of the public widget key can
+// therefore rotate the visitor-id to mint fresh identities, so the distinct-
+// user count for anonymous traffic is best-effort: it can be inflated (never
+// deflated — rotation only adds), and per_user usage limits degrade to
+// advisory for anonymous widgets. Abuse is bounded by the edge per-IP rate
+// limit (an infra concern) and the platform-funded demo key's own turn cap;
+// enforce-mode blocking only affects the tenant's own sandbox and paid tiers
+// run in monitor mode, so the blast radius is contained.
 type activeUsersGate interface {
 	Check(ctx context.Context, userSub string) (domain.ActiveUsersDecision, error)
 	RecordActivity(ctx context.Context, userSub string) error
+}
+
+// isOperatorActor reports whether the request is operator (admin) traffic
+// rather than a deployment end-user. The admin builder-assistant chats run
+// through the same chat service; operators must not count toward or be blocked
+// by the end-user limit.
+func isOperatorActor(ctx context.Context) bool {
+	return deliveryhttp.ActorTypeFromContext(ctx) == "admin"
 }
 
 // stepTaker registers and drains the per-session step count accumulated during a
@@ -297,7 +317,11 @@ func (a *chatServiceHTTPAdapter) gateTurn(ctx context.Context, userSub string, b
 	// whose model key pays for the turn. Same accepted check-then-settle race
 	// as the turn gate below: concurrent first turns of new users can
 	// overshoot the limit by the request concurrency, once per window.
-	if a.activeUsers != nil {
+	//
+	// Operator traffic is exempt: the admin builder-assistant runs through this
+	// same service, but the operator is not one of the deployment's END users
+	// and must never be counted toward — or blocked by — the active-user limit.
+	if a.activeUsers != nil && !isOperatorActor(ctx) {
 		dec, err := a.activeUsers.Check(ctx, userSub)
 		if err != nil {
 			return fmt.Errorf("check user limit: %w", err)
@@ -333,8 +357,9 @@ func (a *chatServiceHTTPAdapter) gateTurn(ctx context.Context, userSub string, b
 func (a *chatServiceHTTPAdapter) settleTurn(ctx context.Context, sessionID, userSub string, byok bool, sawOutput *bool) {
 	// Activity settles for BYOK turns too (mirror of the unconditional check
 	// in gateTurn), but only when the turn produced real output — a turn that
-	// errored before any output must not mint an active user.
-	if a.activeUsers != nil && *sawOutput {
+	// errored before any output must not mint an active user. Operator traffic
+	// (admin builder-assistant) is exempt, mirroring the gate.
+	if a.activeUsers != nil && *sawOutput && !isOperatorActor(ctx) {
 		if err := a.activeUsers.RecordActivity(context.WithoutCancel(ctx), userSub); err != nil {
 			slog.WarnContext(ctx, "record user activity failed", "session_id", sessionID, "error", err)
 		}

@@ -196,6 +196,16 @@ func TestResolveUserSub(t *testing.T) {
 			want:      "web-widget",
 		},
 		{
+			// A ctxSub containing ':' (unexpected/legacy name, or an external
+			// JWT subject) must NOT be namespaced — the combined id could
+			// collide with another principal's canonical sub.
+			name:      "api_token whose ctxSub contains colon is not namespaced",
+			actorType: "api_token",
+			ctxSub:    "team:alice",
+			fallback:  "visitor-42",
+			want:      "team:alice",
+		},
+		{
 			name:      "api_token with non-ASCII visitor falls back to token name",
 			actorType: "api_token",
 			ctxSub:    "web-widget",

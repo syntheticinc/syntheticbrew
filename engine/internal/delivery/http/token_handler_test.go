@@ -99,6 +99,20 @@ func TestTokenHandler_CreateToken_EmptyName(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "name required")
 }
 
+func TestTokenHandler_CreateToken_ColonInNameRejected(t *testing.T) {
+	repo := newMockTokenRepository()
+	h := NewTokenHandler(repo)
+
+	body := `{"name":"support:alice","scopes_mask":1}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/tokens", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	h.CreateToken(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "must not contain ':'")
+}
+
 func TestTokenHandler_CreateToken_DuplicateName(t *testing.T) {
 	repo := newMockTokenRepository()
 	repo.createErr = fmt.Errorf("duplicate name")

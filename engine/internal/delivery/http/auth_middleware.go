@@ -42,6 +42,15 @@ const (
 	ContextKeyScopes contextKey = "scopes"
 )
 
+// ActorTypeFromContext returns the authenticated actor type ("admin" or
+// "api_token"), or "" when none was stamped. Exported so packages outside the
+// delivery layer can distinguish operator traffic from end-user traffic
+// without importing the unexported context-key type.
+func ActorTypeFromContext(ctx context.Context) string {
+	actorType, _ := ctx.Value(ContextKeyActorType).(string)
+	return actorType
+}
+
 // Scope bitmask constants matching ERD api_tokens.scopes_mask.
 const (
 	ScopeChat          = 1

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -75,6 +76,14 @@ func (h *TokenHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
 		return
 	}
+	// The token name becomes the caller's identity, and for widget traffic a
+	// per-visitor id is appended as "<name>:<visitor>". Forbid ':' in the name
+	// so a name can never be crafted to collide with another principal's
+	// namespaced identity.
+	if strings.Contains(req.Name, ":") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name must not contain ':'"})
+		return
+	}
 
 	// Bug 3: resolve the final bitmask from both `scopes_mask` and the
 	// symbolic `scopes` list. A token with mask=0 would authenticate but
@@ -135,4 +144,3 @@ func (h *TokenHandler) DeleteToken(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
