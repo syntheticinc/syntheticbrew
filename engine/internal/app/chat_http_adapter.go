@@ -53,12 +53,15 @@ type activeUsersGate interface {
 	RecordActivity(ctx context.Context, userSub string) error
 }
 
-// isOperatorActor reports whether the request is operator (admin) traffic
-// rather than a deployment end-user. The admin builder-assistant chats run
-// through the same chat service; operators must not count toward or be blocked
-// by the end-user limit.
-func isOperatorActor(ctx context.Context) bool {
-	return deliveryhttp.ActorTypeFromContext(ctx) == "admin"
+// isOperatorChat reports whether the request is the operator's own builder-
+// assistant rather than a deployment end-user. The admin builder-assistant
+// runs through the same chat service; operators must not count toward or be
+// blocked by the end-user limit. This is a route-level marker, NOT actor-based:
+// JWT-authenticated end users (e.g. behind the identity broker) present as the
+// "admin" actor too, so only the explicit marker set by the admin-assistant
+// handler distinguishes operator traffic.
+func isOperatorChat(ctx context.Context) bool {
+	return deliveryhttp.IsOperatorChat(ctx)
 }
 
 // stepTaker registers and drains the per-session step count accumulated during a
@@ -321,7 +324,7 @@ func (a *chatServiceHTTPAdapter) gateTurn(ctx context.Context, userSub string, b
 	// Operator traffic is exempt: the admin builder-assistant runs through this
 	// same service, but the operator is not one of the deployment's END users
 	// and must never be counted toward — or blocked by — the active-user limit.
-	if a.activeUsers != nil && !isOperatorActor(ctx) {
+	if a.activeUsers != nil && !isOperatorChat(ctx) {
 		dec, err := a.activeUsers.Check(ctx, userSub)
 		if err != nil {
 			return fmt.Errorf("check user limit: %w", err)
@@ -359,7 +362,7 @@ func (a *chatServiceHTTPAdapter) settleTurn(ctx context.Context, sessionID, user
 	// in gateTurn), but only when the turn produced real output — a turn that
 	// errored before any output must not mint an active user. Operator traffic
 	// (admin builder-assistant) is exempt, mirroring the gate.
-	if a.activeUsers != nil && *sawOutput && !isOperatorActor(ctx) {
+	if a.activeUsers != nil && *sawOutput && !isOperatorChat(ctx) {
 		if err := a.activeUsers.RecordActivity(context.WithoutCancel(ctx), userSub); err != nil {
 			slog.WarnContext(ctx, "record user activity failed", "session_id", sessionID, "error", err)
 		}

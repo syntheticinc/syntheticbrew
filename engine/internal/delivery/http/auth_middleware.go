@@ -51,6 +51,25 @@ func ActorTypeFromContext(ctx context.Context) string {
 	return actorType
 }
 
+// contextKeyOperatorChat marks a chat request as the operator's own builder-
+// assistant, not a deployment end-user. It is set by the admin-assistant
+// handler and read by the chat service to keep operator traffic out of the
+// distinct-end-user accounting. It is NOT actor-based: JWT-authenticated end
+// users (e.g. behind the identity broker) present as the "admin" actor too, so
+// only this explicit route-level marker distinguishes the operator surface.
+const contextKeyOperatorChat contextKey = "operator_chat"
+
+// WithOperatorChat marks the context as operator (builder-assistant) traffic.
+func WithOperatorChat(ctx context.Context) context.Context {
+	return context.WithValue(ctx, contextKeyOperatorChat, true)
+}
+
+// IsOperatorChat reports whether the context was marked as operator traffic.
+func IsOperatorChat(ctx context.Context) bool {
+	v, _ := ctx.Value(contextKeyOperatorChat).(bool)
+	return v
+}
+
 // Scope bitmask constants matching ERD api_tokens.scopes_mask.
 const (
 	ScopeChat          = 1

@@ -207,26 +207,42 @@ func TestGateTurn_ActiveUsersCheckRunsForBYOK(t *testing.T) {
 	}
 }
 
-func TestGateTurn_ActiveUsersSkippedForAdminActor(t *testing.T) {
+func TestGateTurn_ActiveUsersSkippedForOperatorChat(t *testing.T) {
 	au := &fakeActiveUsersGate{dec: domain.ActiveUsersDecision{Allowed: false, Limit: 100, Used: 100}} // would block
 	a := &chatServiceHTTPAdapter{activeUsers: au}
-	ctx := context.WithValue(context.Background(), deliveryhttp.ContextKeyActorType, "admin")
+	ctx := deliveryhttp.WithOperatorChat(context.Background())
 	if err := a.gateTurn(ctx, "operator-sub", false); err != nil {
-		t.Fatalf("operator (admin) traffic must never be blocked by the user limit, got %v", err)
+		t.Fatalf("operator builder-assistant traffic must never be blocked by the user limit, got %v", err)
 	}
 	if au.checkCalls != 0 {
-		t.Fatalf("admin actor must not be counted/checked, got %d calls", au.checkCalls)
+		t.Fatalf("operator chat must not be counted/checked, got %d calls", au.checkCalls)
 	}
 }
 
-func TestSettleTurn_ActiveUsersSkippedForAdminActor(t *testing.T) {
-	au := &fakeActiveUsersGate{}
+func TestGateTurn_ActiveUsersRunsForJWTEndUser(t *testing.T) {
+	// An end-user authenticated via a JWT (e.g. behind the identity broker)
+	// presents as the "admin" actor but is NOT operator chat — the gate must
+	// still count and enforce them.
+	au := &fakeActiveUsersGate{dec: domain.ActiveUsersDecision{Allowed: false, Limit: 2, Used: 2}}
 	a := &chatServiceHTTPAdapter{activeUsers: au}
 	ctx := context.WithValue(context.Background(), deliveryhttp.ContextKeyActorType, "admin")
+	err := a.gateTurn(ctx, "end-user-sub", false)
+	if err == nil || !strings.Contains(err.Error(), "user limit reached") {
+		t.Fatalf("a JWT end-user over the limit must be gate-rejected, got %v", err)
+	}
+	if au.checkCalls != 1 {
+		t.Fatalf("JWT end-user must be checked, got %d calls", au.checkCalls)
+	}
+}
+
+func TestSettleTurn_ActiveUsersSkippedForOperatorChat(t *testing.T) {
+	au := &fakeActiveUsersGate{}
+	a := &chatServiceHTTPAdapter{activeUsers: au}
+	ctx := deliveryhttp.WithOperatorChat(context.Background())
 	sawOutput := true
 	a.settleTurn(ctx, "sess-1", "operator-sub", false, &sawOutput)
 	if au.recordCalls != 0 {
-		t.Fatalf("admin actor must not mint an active user, got %d records", au.recordCalls)
+		t.Fatalf("operator chat must not mint an active user, got %d records", au.recordCalls)
 	}
 }
 
