@@ -107,19 +107,28 @@ function redirectToLanding(): void {
   window.location.href = `${LANDING_URL}/login?return_to=${returnTo}`;
 }
 
-// bootstrapAuth runs the correct acquisition flow for the active mode.
-// Idempotent: if a token is already in localStorage, it's a no-op.
-// Exported so the api client can re-run it on 401 without needing the
-// React tree.
-export async function bootstrapAuth(): Promise<boolean> {
-  if (api.isAuthenticated()) return true;
+// consumeHandoffToken synchronously applies a fragment handoff token when
+// present. A fresh handoff token always wins over a cached session — the
+// cached one may be expired or belong to another user, and trusting it first
+// bounced the handoff to the login page. It must run BEFORE the first render:
+// with a (stale) cached token present the route tree mounts immediately and
+// its data fetches would otherwise race the async bootstrap, 401 and redirect.
+export function consumeHandoffToken(): boolean {
+  if (AUTH_MODE !== 'external') return false;
+  const hashToken = parseHashToken();
+  if (!hashToken) return false;
+  api.setToken(hashToken);
+  return true;
+}
 
+// bootstrapAuth runs the correct acquisition flow for the active mode.
+// External mode consumes a fragment handoff token first (it always wins over
+// a cached session); local mode is a no-op when a token is already cached.
+// Exported so the api client can re-run it on 401 without the React tree.
+export async function bootstrapAuth(): Promise<boolean> {
   if (AUTH_MODE === 'external') {
-    const hashToken = parseHashToken();
-    if (hashToken) {
-      api.setToken(hashToken);
-      return true;
-    }
+    if (consumeHandoffToken()) return true;
+    if (api.isAuthenticated()) return true;
     const minted = await mintFromCloudSession();
     if (minted) {
       api.setToken(minted);
@@ -130,6 +139,8 @@ export async function bootstrapAuth(): Promise<boolean> {
     return false;
   }
 
+  if (api.isAuthenticated()) return true;
+
   // local mode: ask the engine for a fresh session token.
   const res = await api.localSession();
   api.setToken(res.access_token);
@@ -137,7 +148,10 @@ export async function bootstrapAuth(): Promise<boolean> {
 }
 
 export function useAuthProvider(): AuthContextType {
-  const [isAuthenticated, setIsAuthenticated] = useState(api.isAuthenticated());
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    consumeHandoffToken();
+    return api.isAuthenticated();
+  });
 
   useEffect(() => {
     let cancelled = false;

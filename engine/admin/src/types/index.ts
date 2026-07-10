@@ -533,20 +533,18 @@ export interface WidgetSnippetConfig {
 // V2: Usage / Quota types
 // ============================================================================
 
-export interface UsageMetric {
-  name: string;
-  label: string;
+// Mirrors the engine's GET /usage-status response.
+// limit === null means no limit is configured.
+export interface UsageStatusMetric {
   used: number;
-  limit: number;
-  unit: string;
+  limit: number | null;
 }
 
-export interface UsageData {
-  plan: string;
-  billing_cycle_start: string;
-  billing_cycle_end: string;
-  metrics: UsageMetric[];
-  stripe_portal_url?: string;
+export interface UsageStatusData {
+  active_users: UsageStatusMetric;
+  schemas: UsageStatusMetric;
+  knowledge_documents: UsageStatusMetric;
+  turns: UsageStatusMetric;
 }
 
 // ============================================================================
