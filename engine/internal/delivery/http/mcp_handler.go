@@ -142,7 +142,7 @@ type MCPHandler struct {
 
 // NewMCPHandler creates an MCPHandler.
 // policy enforces deployment-specific transport restrictions (e.g. blocking
-// stdio in Cloud mode). Pass mcp.PermissiveTransportPolicy{} for CE.
+// stdio in multi-tenant mode). Pass mcp.PermissiveTransportPolicy{} for CE.
 func NewMCPHandler(service MCPService, policy mcp.TransportPolicy) *MCPHandler {
 	return &MCPHandler{service: service, policy: policy}
 }

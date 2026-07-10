@@ -32,12 +32,19 @@ type turnCounterReader interface {
 	Read(ctx context.Context, userSub string) (*domain.UsageCounter, error)
 }
 
+// userSchemaCounter counts user-created schemas scoped by `tenant_id` from the
+// context. Engine-managed system schemas (e.g. builder-schema) are excluded so
+// they do not inflate the tenant's reported schema usage.
+type userSchemaCounter interface {
+	CountUserSchemas(ctx context.Context) (int64, error)
+}
+
 // usageStatusAdapter composes the tenant-scoped stores into the read-only
 // usage aggregates served by GET /api/v1/usage-status.
 type usageStatusAdapter struct {
 	policies    usageStatusPolicyReader
 	activeUsers activeUserCounter
-	schemas     SchemaListerByTenant
+	schemas     userSchemaCounter
 	knowledge   KnowledgeDocumentCounterByTenant
 	limits      turnLimitReader
 	counters    turnCounterReader
@@ -48,7 +55,7 @@ type usageStatusAdapter struct {
 func newUsageStatusAdapter(
 	policies usageStatusPolicyReader,
 	activeUsers activeUserCounter,
-	schemas SchemaListerByTenant,
+	schemas userSchemaCounter,
 	knowledge KnowledgeDocumentCounterByTenant,
 	limits turnLimitReader,
 	counters turnCounterReader,
@@ -81,7 +88,7 @@ func (a *usageStatusAdapter) UsageStatus(ctx context.Context) (deliveryhttp.Usag
 		return deliveryhttp.UsageStatusResponse{}, fmt.Errorf("count active users: %w", err)
 	}
 
-	schemaRecords, err := a.schemas.List(ctx)
+	schemasUsed, err := a.schemas.CountUserSchemas(ctx)
 	if err != nil {
 		return deliveryhttp.UsageStatusResponse{}, fmt.Errorf("count schemas: %w", err)
 	}
@@ -102,7 +109,7 @@ func (a *usageStatusAdapter) UsageStatus(ctx context.Context) (deliveryhttp.Usag
 			Limit: policyLimit(policies, domain.PolicyActiveUsersLimit),
 		},
 		Schemas: deliveryhttp.UsageStatusMetric{
-			Used:  int64(len(schemaRecords)),
+			Used:  schemasUsed,
 			Limit: policyLimit(policies, domain.PolicySchemasLimit),
 		},
 		KnowledgeDocuments: deliveryhttp.UsageStatusMetric{

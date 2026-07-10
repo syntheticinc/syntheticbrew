@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 )
 
 func int64Ptr(v int64) *int64 { return &v }
@@ -34,10 +33,10 @@ func (f fakeActiveUserCounter) CountActive(ctx context.Context) (int64, error) {
 	return f.count, nil
 }
 
-type fakeSchemaLister struct{ records []configrepo.SchemaRecord }
+type fakeUserSchemaCounter struct{ count int64 }
 
-func (f fakeSchemaLister) List(ctx context.Context) ([]configrepo.SchemaRecord, error) {
-	return f.records, nil
+func (f fakeUserSchemaCounter) CountUserSchemas(ctx context.Context) (int64, error) {
+	return f.count, nil
 }
 
 type fakeKnowledgeCounter struct{ count int64 }
@@ -125,7 +124,7 @@ func TestUsageStatusAdapter_Compose(t *testing.T) {
 			adapter := newUsageStatusAdapter(
 				&fakeUsagePolicyReader{values: tt.policies},
 				fakeActiveUserCounter{count: 3},
-				fakeSchemaLister{records: []configrepo.SchemaRecord{{ID: "s1"}, {ID: "s2"}}},
+				fakeUserSchemaCounter{count: 2},
 				fakeKnowledgeCounter{count: 7},
 				fakeTurnLimitReader{cfg: tt.limitCfg},
 				fakeTurnCounterReader{counter: tt.counter},

@@ -17,6 +17,7 @@ const (
 	EnvAuthMode             = "SYNTHETICBREW_AUTH_MODE"
 	EnvJWTKeysDir           = "SYNTHETICBREW_JWT_KEYS_DIR"
 	EnvJWTPublicKeyPath     = "SYNTHETICBREW_JWT_PUBLIC_KEY_PATH"
+	EnvJWTExpectedAudience  = "SYNTHETICBREW_JWT_EXPECTED_AUDIENCE"
 	EnvLocalSessionTTL      = "SYNTHETICBREW_LOCAL_SESSION_TTL"
 	EnvEmbedURL             = "EMBED_URL"
 	EnvEmbedModel           = "EMBED_MODEL"

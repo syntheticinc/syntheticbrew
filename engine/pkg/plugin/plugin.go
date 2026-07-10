@@ -25,12 +25,12 @@ type ModelSelectorConfigurator interface {
 }
 
 // stepsLimitKey is the private context key used to propagate the per-tenant
-// step limit from EE entitlements middleware to the step callback.
+// step limit from the external plugin's entitlements middleware to the step callback.
 type stepsLimitKey struct{}
 
 // WithStepsLimit returns ctx with the monthly step limit attached. Called by
-// EE's entitlementsMiddleware so the CE step callback can read the limit
-// without importing EE types.
+// the external plugin's entitlements middleware so the CE step callback can
+// read the limit without importing the external plugin's types.
 func WithStepsLimit(ctx context.Context, limit int) context.Context {
 	return context.WithValue(ctx, stepsLimitKey{}, limit)
 }
@@ -70,7 +70,7 @@ type Plugin interface {
 	CheckSessionAllowed(ctx context.Context) string
 
 	// OnAgentStep is invoked by the runtime after every agent step. Plugins
-	// use it to report usage for billing/metering and to enforce quotas.
+	// use it to report per-step usage and to enforce configured limits.
 	// stepsLimit is the monthly cap read from context by the CE callback
 	// (0 means no enforcement). Returns ErrStepsQuotaExceeded when the
 	// tenant's monthly budget is exhausted; the caller cancels the request
@@ -82,17 +82,17 @@ type Plugin interface {
 
 	// SetTenantSeeder installs a callback the plugin can invoke when it
 	// accepts a tenant-provisioning request. The engine wires a seeder backed
-	// by its schema/agent repositories so that EE provisioning can populate a
-	// freshly-created tenant with default data without importing engine
-	// internals. CE's Noop ignores the seeder.
+	// by its schema/agent repositories so that a plugin's provisioning can
+	// populate a freshly-created tenant with default data without importing
+	// engine internals. CE's Noop ignores the seeder.
 	SetTenantSeeder(seeder TenantSeeder)
 
 	// SetSchemaCounter installs a callback the plugin can call to count
-	// schemas visible to the tenant in the current request context. EE's
-	// quota middleware uses it to enforce SchemasLimit without issuing an
+	// schemas visible to the tenant in the current request context. An external
+	// plugin's quota middleware uses it to enforce SchemasLimit without issuing an
 	// internal HTTP sub-request to itself — the earlier sub-request design
 	// hard-coded the loopback port and silently failed (fail-open) whenever
-	// the engine ran on a non-default port (Cloud containers bind 8443, the
+	// the engine ran on a non-default port (hosted deployments bind 8443, the
 	// sub-request targeted 9555). CE's Noop ignores the counter because it
 	// has no quota middleware.
 	SetSchemaCounter(counter SchemaCounter)
@@ -125,7 +125,7 @@ type Plugin interface {
 
 	// TransportPolicy returns the MCP transport policy for this deployment.
 	// CE / bare-metal deployments return PermissiveTransportPolicy (all
-	// transports allowed). Cloud / managed deployments return
+	// transports allowed). Managed / multi-tenant deployments return
 	// RestrictedTransportPolicy (stdio blocked to prevent host code execution).
 	TransportPolicy() TransportPolicy
 
@@ -143,15 +143,15 @@ type Plugin interface {
 	// Docs MCP entry.
 	DocsMCPEndpoint() string
 
-	// KGEnforcer returns the optional Cloud quota/metering enforcer for
-	// Knowledge Graph entity writes. Nil means no enforcement (CE/EE default).
+	// KGEnforcer returns the optional limit enforcer for
+	// Knowledge Graph entity writes. Nil means no enforcement (the CE default).
 	// Engine fail-closes on enforcer errors — quota cannot be bypassed.
 	KGEnforcer() KGEnforcer
 
 	// KGCounter returns the optional counter source for tenant-level KG
 	// stats (bundles count, entities count). Used in the admin UI bundles
-	// header and billing displays. Nil means the engine reads counts
-	// directly from the database without plan enrichment.
+	// header and usage displays. Nil means the engine reads counts
+	// directly from the database without extra enrichment.
 	KGCounter() KGCounter
 
 	// Stop releases any background resources held by the plugin

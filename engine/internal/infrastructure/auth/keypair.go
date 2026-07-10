@@ -11,11 +11,11 @@ import (
 )
 
 // Keypair is a loaded or freshly-generated Ed25519 keypair used by local-mode
-// admin session issuance. In Cloud mode only the public half is present
+// admin session issuance. In external mode only the public half is present
 // (provided via config); the private half lives in the landing service.
 type Keypair struct {
 	Public  ed25519.PublicKey
-	Private ed25519.PrivateKey // nil when only the public key was loaded (Cloud mode)
+	Private ed25519.PrivateKey // nil when only the public key was loaded (external mode)
 }
 
 // LoadOrGenerateKeypair returns an Ed25519 keypair for signing local-admin
@@ -95,7 +95,7 @@ func writeHexFileExcl(path string, data []byte, mode os.FileMode) error {
 }
 
 // LoadPublicKey reads an Ed25519 public key from a hex-encoded file.
-// Used in Cloud mode where only the public half is configured.
+// Used in external mode where only the public half is configured.
 func LoadPublicKey(path string) (ed25519.PublicKey, error) {
 	raw, err := readHexFile(path, ed25519.PublicKeySize)
 	if err != nil {

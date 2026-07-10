@@ -181,9 +181,9 @@ func TestLogger_Log_CETenantFallback(t *testing.T) {
 		"CE fallback must stamp the CETenantID sentinel")
 }
 
-// TestLogger_Log_CloudTenantStamp verifies that a Cloud-style ctx with a
+// TestLogger_Log_CloudTenantStamp verifies that a multi-tenant-style ctx with a
 // tenant_id attached is persisted verbatim — this is the Bug 1 regression.
-// Without the fix, all audit rows land under the CE sentinel even in Cloud.
+// Without the fix, all audit rows land under the CE sentinel even in multi-tenant mode.
 func TestLogger_Log_CloudTenantStamp(t *testing.T) {
 	db := setupTestDB(t)
 	logger := NewLogger(db)

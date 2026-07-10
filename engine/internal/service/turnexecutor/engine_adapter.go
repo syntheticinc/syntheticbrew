@@ -321,7 +321,7 @@ func convertToolCallRecorderToEngine(recorder ToolCallRecorder) react.ToolCallRe
 type eventCallbackEmitter struct {
 	// ctx carries the turn's tenant_id into the best-effort history mirror.
 	// Without it the interrupt_request/resume rows were written under the CE
-	// default tenant and a Cloud (multi-tenant) GET /sessions/{id}/messages —
+	// default tenant and a multi-tenant GET /sessions/{id}/messages —
 	// tenant-scoped — excluded them, so the widget vanished from history.
 	ctx         context.Context
 	cb          func(event *domain.AgentEvent) error

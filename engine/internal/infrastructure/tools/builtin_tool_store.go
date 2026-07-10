@@ -50,7 +50,7 @@ func (s *BuiltinToolStore) Names() []string {
 // MCPClientProvider provides MCP tools for a given MCP server name.
 // Defined on the consumer side (AgentToolResolver).
 //
-// ctx carries tenant_id (Cloud) so the provider can route to the correct
+// ctx carries tenant_id (multi-tenant) so the provider can route to the correct
 // per-tenant ClientRegistry. CE implementations may ignore ctx — the
 // singleton registry is shared across all callers.
 type MCPClientProvider interface {

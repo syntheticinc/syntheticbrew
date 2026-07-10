@@ -17,7 +17,7 @@ import "sync"
 // Discarded.
 //
 // It is process-global but strictly session-keyed: one session's turn never
-// reads or resets another's counter, so it is safe under the Cloud multi-tenant
+// reads or resets another's counter, so it is safe under the multi-tenant
 // invariant (session ids are unique across tenants).
 type StepAccumulator struct {
 	mu     sync.Mutex

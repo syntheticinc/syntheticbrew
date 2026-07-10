@@ -112,7 +112,7 @@ type chatServiceHTTPAdapter struct {
 	registry    *flowregistry.SessionRegistry
 	processor   *sessionprocessor.Processor
 	agents      *agentregistry.AgentRegistry // non-nil in single-tenant (CE) mode
-	registryMgr *agentregistry.Manager       // non-nil in multi-tenant (Cloud/EE) mode
+	registryMgr *agentregistry.Manager       // non-nil in multi-tenant mode
 	schemas     schemaChatRepo               // optional — nil in tests / no-DB mode
 	sessions    chatSessionPersister         // optional — nil when no DB
 	chatEnabled bool                         // false when no LLM model configured

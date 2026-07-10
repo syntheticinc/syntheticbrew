@@ -19,7 +19,7 @@ type Claims struct {
 	Scopes   int
 }
 
-// Scope constants mirrored here so verifier implementations (e.g. EE EdDSA
+// Scope constants mirrored here so verifier implementations (e.g. an external EdDSA
 // verifier) can set correct bitmasks without importing internal/delivery/http.
 // Values must stay in sync with the ScopeXxx constants in that package.
 const (

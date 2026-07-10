@@ -5,28 +5,30 @@ import (
 	"fmt"
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
-	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
-// SchemaListerByTenant lists schemas scoped by `tenant_id` from the context.
-type SchemaListerByTenant interface {
-	List(ctx context.Context) ([]configrepo.SchemaRecord, error)
+// UserSchemaCounter counts user-created schemas scoped by `tenant_id` from the
+// context. Engine-managed system schemas are excluded so they do not consume
+// the tenant's schema quota.
+type UserSchemaCounter interface {
+	CountUserSchemas(ctx context.Context) (int64, error)
 }
 
-// NewSchemaCounter returns a SchemaCounterFunc for plugin-provided quota
+// NewSchemaCounter returns a SchemaCounterFunc for plugin-provided limit
 // middleware to enforce SchemasLimit. Empty tenant_id short-circuits to 0
-// (CE single-tenant has no quota plugin wired).
-func NewSchemaCounter(repo SchemaListerByTenant) pluginpkg.SchemaCounterFunc {
+// (the base single-tenant engine has no limit plugin wired). The count
+// excludes engine-managed system schemas.
+func NewSchemaCounter(repo UserSchemaCounter) pluginpkg.SchemaCounterFunc {
 	return func(ctx context.Context, tenantID string) (int, error) {
 		if tenantID == "" {
 			return 0, nil
 		}
 		scoped := domain.WithTenantID(ctx, tenantID)
-		recs, err := repo.List(scoped)
+		count, err := repo.CountUserSchemas(scoped)
 		if err != nil {
 			return 0, fmt.Errorf("count schemas: %w", err)
 		}
-		return len(recs), nil
+		return int(count), nil
 	}
 }

@@ -38,7 +38,7 @@ type EventStream struct {
 	// callback chain (which has no ctx of its own). The processing goroutine
 	// detaches cancellation but preserves values, so this is the session's
 	// tenant. Without it the interrupts row was created under the CE default
-	// tenant and a Cloud (multi-tenant) resume lookup could not find it (404).
+	// tenant and a multi-tenant resume lookup could not find it (404).
 	ctx           context.Context
 	sessionID     string
 	publisher     EventPublisher

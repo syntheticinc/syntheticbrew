@@ -26,7 +26,7 @@ func NewLogger(db *gorm.DB) *Logger {
 // Entry represents an audit event to be recorded.
 //
 // ActorID is the authenticated identity of the caller: the JWT `sub` claim
-// for admin requests (Cloud JWT or CE local-admin synthetic sub) or the API
+// for admin requests (external JWT or CE local-admin synthetic sub) or the API
 // token name for `bb_*` tokens. It is persisted verbatim to audit_logs.actor_sub —
 // no FK to a users table (identity is external).
 type Entry struct {
@@ -64,7 +64,7 @@ func (l *Logger) Log(ctx context.Context, entry Entry) error {
 		actorSub = &s
 	}
 
-	// Stamp tenant_id from context so Cloud writes land under the right
+	// Stamp tenant_id from context so multi-tenant writes land under the right
 	// tenant. CE has no tenant middleware wired so ctx is empty — fall back
 	// to the CE sentinel to preserve single-tenant semantics. Never 000...000
 	// (zero UUID): the column default is the CE tenant sentinel, and some

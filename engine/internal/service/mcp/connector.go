@@ -10,7 +10,7 @@ import (
 // ConnectAll iterates the persisted MCP server records and dials each one,
 // registering successful clients with the supplied registry. Failures are
 // logged and skipped so a single broken endpoint does not abort the boot
-// sequence. policy is consulted before opening stdio transports; Cloud
+// sequence. policy is consulted before opening stdio transports; multi-tenant
 // deployments pass a RestrictedTransportPolicy that blocks stdio (host code
 // execution is forbidden in multi-tenant builds).
 //

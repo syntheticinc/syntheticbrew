@@ -54,7 +54,7 @@ func TestManager_InvalidateTenant_IsolatesOtherTenants(t *testing.T) {
 		Name: "support", ModelName: "gpt-4", SystemPrompt: "x",
 		Lifecycle: "persistent", ToolExecution: "sequential", MaxSteps: 10, MaxContextSize: 8000,
 	})
-	mgr := NewManager(reader, true) // perTenant (cloud/EE)
+	mgr := NewManager(reader, true) // perTenant (multi-tenant)
 
 	ctxA := domain.WithTenantID(context.Background(), tenantA)
 	ctxB := domain.WithTenantID(context.Background(), tenantB)

@@ -64,7 +64,7 @@ const (
 	// first boot, issues short-lived admin sessions via POST /auth/local-session,
 	// `sub` is the synthetic `local-admin`, `tenant_id` is empty.
 	AuthModeLocal = "local"
-	// AuthModeExternal: Cloud / hosted — tokens are signed by an external issuer
+	// AuthModeExternal: hosted — tokens are signed by an external issuer
 	// (landing service). Engine loads only the public key; there is no
 	// /auth/local-session route.
 	AuthModeExternal = "external"
@@ -88,6 +88,12 @@ type BootstrapSecurity struct {
 	// JWTPublicKeyPath is the path to the Ed25519 public key of the external
 	// issuer. Required when AuthMode == "external".
 	JWTPublicKeyPath string `mapstructure:"jwt_public_key_path"`
+
+	// JWTExpectedAudience is the canonical URI this deployment accepts as the
+	// `aud` claim of an audience-bound JWT (e.g. its public MCP endpoint URL).
+	// Empty (default) rejects every token that carries an aud claim; tokens
+	// without one are unaffected either way. Optional in both auth modes.
+	JWTExpectedAudience string `mapstructure:"jwt_expected_audience"`
 
 	// LocalSessionTTL is the lifetime of admin sessions issued by
 	// /api/v1/auth/local-session in local mode. Defaults to 1h. Standard
@@ -267,25 +273,26 @@ func stringToTrimmedSliceHookFunc(sep string) mapstructure.DecodeHookFunc {
 // the single registry that must stay in sync with env_vars.go.
 func bindEnvVars(v *viper.Viper) {
 	bindings := map[string]string{
-		"database.url":                 EnvDatabaseURL,
-		"engine.host":                  EnvEngineHost,
-		"engine.port":                  EnvEnginePort,
-		"engine.internal_port":         EnvInternalPort,
-		"engine.cors_origins":          EnvCORSOrigins,
-		"security.auth_mode":           EnvAuthMode,
-		"security.jwt_keys_dir":        EnvJWTKeysDir,
-		"security.jwt_public_key_path": EnvJWTPublicKeyPath,
-		"security.local_session_ttl":   EnvLocalSessionTTL,
-		"embeddings.url":               EnvEmbedURL,
-		"embeddings.model":             EnvEmbedModel,
-		"embeddings.dim":               EnvEmbedDim,
-		"debug.model_debug_dir":        EnvDebugModel,
-		"mcp.docs_url":                 EnvDocsMCPURL,
-		"lsp.disable_download":         EnvDisableLSPDownload,
-		"updates.versions_url":         EnvVersionsURL,
-		"seed.bootstrap_admin_token":   EnvBootstrapAdminToken,
-		"byok.enabled":                 EnvBYOKEnabled,
-		"byok.allowed_providers":       EnvBYOKAllowedProviders,
+		"database.url":                   EnvDatabaseURL,
+		"engine.host":                    EnvEngineHost,
+		"engine.port":                    EnvEnginePort,
+		"engine.internal_port":           EnvInternalPort,
+		"engine.cors_origins":            EnvCORSOrigins,
+		"security.auth_mode":             EnvAuthMode,
+		"security.jwt_keys_dir":          EnvJWTKeysDir,
+		"security.jwt_public_key_path":   EnvJWTPublicKeyPath,
+		"security.jwt_expected_audience": EnvJWTExpectedAudience,
+		"security.local_session_ttl":     EnvLocalSessionTTL,
+		"embeddings.url":                 EnvEmbedURL,
+		"embeddings.model":               EnvEmbedModel,
+		"embeddings.dim":                 EnvEmbedDim,
+		"debug.model_debug_dir":          EnvDebugModel,
+		"mcp.docs_url":                   EnvDocsMCPURL,
+		"lsp.disable_download":           EnvDisableLSPDownload,
+		"updates.versions_url":           EnvVersionsURL,
+		"seed.bootstrap_admin_token":     EnvBootstrapAdminToken,
+		"byok.enabled":                   EnvBYOKEnabled,
+		"byok.allowed_providers":         EnvBYOKAllowedProviders,
 	}
 	for key, env := range bindings {
 		// BindEnv associates a Viper key with one or more env var names.
@@ -334,6 +341,7 @@ func expandBootstrapEnvVars(cfg *BootstrapConfig) {
 	cfg.Security.AuthMode = expandEnvVars(cfg.Security.AuthMode)
 	cfg.Security.JWTKeysDir = expandEnvVars(cfg.Security.JWTKeysDir)
 	cfg.Security.JWTPublicKeyPath = expandEnvVars(cfg.Security.JWTPublicKeyPath)
+	cfg.Security.JWTExpectedAudience = expandEnvVars(cfg.Security.JWTExpectedAudience)
 	cfg.Logging.Level = expandEnvVars(cfg.Logging.Level)
 	cfg.Embeddings.URL = expandEnvVars(cfg.Embeddings.URL)
 	cfg.Embeddings.Model = expandEnvVars(cfg.Embeddings.Model)

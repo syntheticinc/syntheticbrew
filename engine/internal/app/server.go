@@ -95,7 +95,7 @@ func Run(sc ServerConfig) error {
 	// turn, keyed by session id. Driven by the same per-step signal the agent
 	// runtime already fires (the step callback below) and drained once by the
 	// usage-limit settle when a turn completes. Session-keyed, so it is safe
-	// under the Cloud multi-tenant invariant (session ids are unique across
+	// under the multi-tenant invariant (session ids are unique across
 	// tenants).
 	usageAccumulator := usagelimit.NewStepAccumulator()
 
@@ -666,7 +666,7 @@ func Run(sc ServerConfig) error {
 				if err != nil {
 					return fmt.Errorf("load/generate local jwt keypair: %w", err)
 				}
-				verifier, err := auth.NewEdDSAVerifier(kp.Public)
+				verifier, err := auth.NewEdDSAVerifier(kp.Public, bootstrapCfg.Security.JWTExpectedAudience)
 				if err != nil {
 					return fmt.Errorf("build local EdDSA verifier: %w", err)
 				}
@@ -677,7 +677,7 @@ func Run(sc ServerConfig) error {
 				if err != nil {
 					return fmt.Errorf("load external jwt public key: %w", err)
 				}
-				verifier, err := auth.NewEdDSAVerifier(pub)
+				verifier, err := auth.NewEdDSAVerifier(pub, bootstrapCfg.Security.JWTExpectedAudience)
 				if err != nil {
 					return fmt.Errorf("build external EdDSA verifier: %w", err)
 				}

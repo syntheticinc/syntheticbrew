@@ -11,7 +11,7 @@ type DeploymentMode string
 
 const (
 	DeploymentModeCE    DeploymentMode = "ce"    // Community Edition (self-hosted)
-	DeploymentModeCloud DeploymentMode = "cloud" // Cloud (managed)
+	DeploymentModeCloud DeploymentMode = "cloud" // managed (multi-tenant)
 )
 
 // TierEnforcer validates whether a tool is allowed in the current deployment mode.

@@ -13,7 +13,7 @@ import (
 // to unauthenticated callers — the CE "local admin" flow.
 //
 // Only wired into the router when AUTH_MODE=local (CE single-node installs).
-// In Cloud/external mode the route 404s; admin sessions are minted by the
+// In external mode the route 404s; admin sessions are minted by the
 // landing service and handed to the SPA via URL fragment.
 //
 // There is no username/password check: if the engine process itself is

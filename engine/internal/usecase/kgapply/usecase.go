@@ -59,8 +59,9 @@ type CollisionDetector interface {
 	Detect(ctx context.Context, tenantID, excludeBundle string, newToolNames []string) ([]string, error)
 }
 
-// QuotaEnforcer gates writes by tenant quota. Cloud implementations call the
-// metering service; CE/EE may pass a nil enforcer to the Usecase constructor.
+// QuotaEnforcer gates writes by tenant quota. A plugin provides the limit
+// enforcer; callers may pass a nil enforcer to the Usecase constructor to
+// disable it.
 type QuotaEnforcer interface {
 	OnEntityWrite(ctx context.Context, tenantID, bundleName string, deltaEntities int, deltaBytes int64) error
 }
@@ -130,14 +131,14 @@ type Usecase struct {
 	entityRepo  EntityRepository
 	validator   SchemaValidator
 	collision   CollisionDetector
-	enforcer    QuotaEnforcer // nullable (CE/EE)
+	enforcer    QuotaEnforcer // nullable (single-tenant)
 	locker      AdvisoryLocker
 	txRunner    TransactionRunner
 	invalidator BundleInvalidator // nullable; production wires kgtools.Provider
 }
 
 // New constructs a Usecase. enforcer may be nil to disable quota enforcement
-// (CE / EE on-prem). Every other dependency is required.
+// (single-tenant deployments). Every other dependency is required.
 func New(
 	bundleRepo BundleRepository,
 	schemaRepo SchemaRepository,

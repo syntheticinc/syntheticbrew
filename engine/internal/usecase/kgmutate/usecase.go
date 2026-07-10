@@ -56,7 +56,7 @@ type CollisionDetector interface {
 }
 
 // QuotaEnforcer gates writes by tenant quota. nil enforcer => no enforcement
-// (CE/EE default). Cloud implementations call the metering service.
+// (the default). A plugin implementation may enforce configured limits.
 type QuotaEnforcer interface {
 	OnEntityWrite(ctx context.Context, tenantID, bundleName string, deltaEntities int, deltaBytes int64) error
 }
@@ -134,7 +134,7 @@ func (u *Usecase) invalidate(tenantID, bundleName string) {
 }
 
 // New constructs the usecase with the given dependencies. enforcer may be nil
-// to disable quota gates (CE/EE single-tenant default).
+// to disable quota gates (single-tenant default).
 func New(
 	bundleRepo BundleRepository,
 	schemaRepo SchemaRepository,

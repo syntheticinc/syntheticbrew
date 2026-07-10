@@ -68,6 +68,21 @@ func (r *GORMSchemaRepository) List(ctx context.Context) ([]SchemaRecord, error)
 	return records, nil
 }
 
+// CountUserSchemas returns the number of user-created schemas for the tenant.
+// Engine-managed system schemas (is_system = true, e.g. the builder-schema)
+// are excluded so they do not consume the tenant's schema quota. Tenant-scoped.
+func (r *GORMSchemaRepository) CountUserSchemas(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&models.SchemaModel{}).
+		Scopes(tenantScope(ctx)).
+		Where("is_system = ?", false).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count user schemas: %w", err)
+	}
+	return count, nil
+}
+
 // GetByID returns a single schema by ID with derived agent membership (tenant-scoped).
 func (r *GORMSchemaRepository) GetByID(ctx context.Context, id string) (*SchemaRecord, error) {
 	var schema models.SchemaModel
