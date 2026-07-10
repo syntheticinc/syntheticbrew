@@ -51,7 +51,7 @@ func setupSchemaQuotaDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// TestSchemaQuota_ExcludesSystemSchema reproduces B6: a fresh free tenant is
+// TestSchemaQuota_ExcludesSystemSchema reproduces B6: a freshly provisioned tenant is
 // seeded with one user schema ("my-workspace") plus one engine-managed system
 // schema ("builder-schema"). Both the quota counter (the plugin limit gate) and the
 // usage-status aggregate must count only the user schema — otherwise a tenant
