@@ -39,7 +39,7 @@ type FlowProviderResolution struct {
 // shape:
 //
 //   - registry != nil → single-tenant CE: use the registry directly.
-//   - registry == nil && manager != nil → multi-tenant Cloud: build a
+//   - registry == nil && manager != nil → multi-tenant: build a
 //     TenantAwareFlowProvider and use it.
 //   - both nil → degraded mode: return the fallback so the engine can still
 //     boot against the static FlowManager (yaml flows).

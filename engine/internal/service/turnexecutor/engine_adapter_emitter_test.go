@@ -23,10 +23,10 @@ func (r *recordingHistoryRepo) Create(ctx context.Context, m *domain.Message) er
 	return nil
 }
 
-// Regression for the Cloud bug "interrupt_request missing from history": the
+// Regression for the multi-tenant bug "interrupt_request missing from history": the
 // tool-emitted interrupt_request/resume are mirrored to the messages table by
 // eventCallbackEmitter. It used context.Background() → CE default tenant → a
-// Cloud (multi-tenant) tenant-scoped GET /sessions/{id}/messages excluded the
+// multi-tenant tenant-scoped GET /sessions/{id}/messages excluded the
 // row, so the widget vanished on reload. The mirror must use the turn tenant.
 func TestEventCallbackEmitter_InterruptHistoryUsesTurnTenant(t *testing.T) {
 	const tenant = "11111111-1111-1111-1111-111111111111"

@@ -17,6 +17,14 @@ import (
 // MessageCompressor compresses message history to fit within token budget.
 type MessageCompressor func(ctx context.Context, messages []*schema.Message) []*schema.Message
 
+// PromptPrefixProvider supplies a deployment-injected prefix for the effective
+// system prompt of top-level agent executions. "" = no prefix. Implementations
+// must be fast and non-failing (read-through cache); the engine treats the
+// value as opaque text.
+type PromptPrefixProvider interface {
+	PromptPrefix(ctx context.Context) string
+}
+
 // Consumer-side interfaces
 
 // SnapshotRepository provides persistence for agent context snapshots
@@ -85,6 +93,7 @@ const (
 type Engine struct {
 	snapshotRepo SnapshotRepository
 	historyRepo  HistoryRepository
+	promptPrefix PromptPrefixProvider
 }
 
 // New creates a new Engine
@@ -100,6 +109,12 @@ func New(snapshotRepo SnapshotRepository, historyRepo HistoryRepository) *Engine
 // the messages table without re-wiring DI from server.go.
 func (e *Engine) HistoryRepo() HistoryRepository {
 	return e.historyRepo
+}
+
+// SetPromptPrefixProvider installs the deployment-injected prompt-prefix
+// source. nil is valid and disables prefixing.
+func (e *Engine) SetPromptPrefixProvider(p PromptPrefixProvider) {
+	e.promptPrefix = p
 }
 
 // Execute runs an agent with full persistence support
@@ -146,12 +161,22 @@ func (e *Engine) Execute(ctx context.Context, cfg ExecutionConfig) (*ExecutionRe
 	// worker agents default to `parallel`.
 	sequentialTools := cfg.Flow == nil || cfg.Flow.ToolExecution != "parallel"
 
+	effectiveConfig := e.buildEffectiveAgentConfig(cfg)
+	// Deployment-injected prompt prefix applies only to top-level executions;
+	// sub-agent runs (spawned workers carry ParentAgentID) keep their flow
+	// prompts untouched.
+	if cfg.ParentAgentID == "" && e.promptPrefix != nil {
+		if prefix := e.promptPrefix.PromptPrefix(ctx); prefix != "" {
+			effectiveConfig = withPromptPrefix(effectiveConfig, prefix)
+		}
+	}
+
 	agentConfig := &react.AgentConfig{
 		ChatModel:                cfg.ChatModel,
 		Tools:                    cfg.Tools,
 		MaxSteps:                 cfg.Flow.MaxSteps,
 		SessionID:                cfg.SessionID,
-		AgentConfig:              e.buildEffectiveAgentConfig(cfg),
+		AgentConfig:              effectiveConfig,
 		ModelName:                cfg.ModelName,
 		ProviderType:             cfg.ProviderType,
 		ProviderBaseURL:          cfg.ProviderBaseURL,
@@ -328,6 +353,26 @@ func (e *Engine) buildEffectiveAgentConfig(cfg ExecutionConfig) *config.AgentCon
 		result.Prompts.SystemPrompt = cfg.Flow.SystemPrompt
 	}
 
+	return &result
+}
+
+// withPromptPrefix returns a copy of cfg whose system prompt starts with
+// prefix (separated from the existing prompt by a blank line; prefix alone
+// when there is no existing prompt). cfg AND its Prompts pointer-field are
+// shallow-copied before mutating — the config may alias a shared Prompts, and
+// copying prevents cross-request mutation of that shared state.
+func withPromptPrefix(cfg *config.AgentConfig, prefix string) *config.AgentConfig {
+	result := *cfg
+	prompts := config.PromptsConfig{}
+	if result.Prompts != nil {
+		prompts = *result.Prompts
+	}
+	existing := prompts.SystemPrompt
+	prompts.SystemPrompt = prefix
+	if existing != "" {
+		prompts.SystemPrompt = prefix + "\n\n" + existing
+	}
+	result.Prompts = &prompts
 	return &result
 }
 

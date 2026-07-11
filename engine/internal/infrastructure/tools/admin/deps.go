@@ -7,7 +7,7 @@ import (
 )
 
 // NOTE: Admin tools operate without tenant scoping (CE = single-tenant by design).
-// Cloud deployments MUST NOT expose admin tools to non-admin agents.
+// Multi-tenant deployments MUST NOT expose admin tools to non-admin agents.
 
 // AdminToolDependencies holds repositories and callbacks for admin tools.
 // Captured in closure at registration time via RegisterAdminTools.

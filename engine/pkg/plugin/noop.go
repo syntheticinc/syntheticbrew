@@ -31,7 +31,7 @@ func (Noop) GRPCServerOptions() []grpc.ServerOption { return nil }
 // CheckSessionAllowed always allows the session.
 func (Noop) CheckSessionAllowed(context.Context) string { return "" }
 
-// OnAgentStep is a no-op. CE has no billing/metering surface.
+// OnAgentStep is a no-op. The base engine has no usage-reporting surface.
 func (Noop) OnAgentStep(context.Context, string, int) error { return nil }
 
 // SetTenantSeeder is a no-op. CE has no provisioning endpoint, so there is
@@ -46,6 +46,15 @@ func (Noop) SetSchemaCounter(SchemaCounter) {}
 // no writer to wire.
 func (Noop) SetUsageLimitWriter(UsageLimitWriter) {}
 
+// SetTenantPolicyWriter is a no-op. Nothing writes tenant policies in CE.
+func (Noop) SetTenantPolicyWriter(TenantPolicyWriter) {}
+
+// SetTenantPolicyReader is a no-op. Nothing reads tenant policies in CE.
+func (Noop) SetTenantPolicyReader(TenantPolicyReader) {}
+
+// SetKnowledgeDocumentCounter is a no-op. CE has no consumer for the counter.
+func (Noop) SetKnowledgeDocumentCounter(KnowledgeDocumentCounter) {}
+
 // TransportPolicy returns PermissiveTransportPolicy — CE allows all transports.
 func (Noop) TransportPolicy() TransportPolicy { return PermissiveTransportPolicy{} }
 
@@ -54,14 +63,14 @@ func (Noop) TransportPolicy() TransportPolicy { return PermissiveTransportPolicy
 func (Noop) PrepareModelSelector(_ ModelSelectorConfigurator, _ model.ToolCallingChatModel) {}
 
 // UsageExtras returns nil. CE exposes only the built-in counters via GET
-// /api/v1/usage; there are no extra billing fields to surface.
+// /api/v1/usage; there are no extra fields to surface.
 func (Noop) UsageExtras(_ context.Context, _ string) map[string]any { return nil }
 
 // DocsMCPEndpoint returns "". CE seed data does not include a Docs MCP entry.
 func (Noop) DocsMCPEndpoint() string { return "" }
 
 // KGEnforcer returns nil — CE has no quota enforcement for Knowledge Graphs.
-// EE and Cloud plugins override to enforce plan limits.
+// A plugin overrides this to enforce configured limits.
 func (Noop) KGEnforcer() KGEnforcer { return nil }
 
 // KGCounter returns nil — CE reads counts directly from the database.

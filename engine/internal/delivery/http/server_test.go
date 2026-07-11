@@ -118,6 +118,50 @@ func TestCORS_Preflight(t *testing.T) {
 	})
 }
 
+func TestCORS_WidgetAPIPublicCrossOrigin(t *testing.T) {
+	// Same-origin default policy for the admin API; the widget API paths must
+	// still accept cross-origin preflights from ANY customer site with the
+	// Authorization header (the widget sends a Bearer chat token).
+	srv := NewServer(0)
+	srv.Router().Get("/api/v1/widget-config", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	srv.Router().Post("/api/v1/schemas/{id}/chat", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	srv.Router().Get("/api/v1/agents", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+
+	cases := []struct {
+		name, method, path string
+	}{
+		{"widget-config GET", http.MethodGet, "/api/v1/widget-config"},
+		{"widget chat POST", http.MethodPost, "/api/v1/schemas/support-bot/chat"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, tc.path, nil)
+			req.Header.Set("Origin", "https://a-customer-site.example")
+			req.Header.Set("Access-Control-Request-Method", tc.method)
+			req.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type")
+			rec := httptest.NewRecorder()
+			srv.Router().ServeHTTP(rec, req)
+
+			assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"),
+				"widget API must allow any origin")
+			assert.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), tc.method)
+			assert.Contains(t, rec.Header().Get("Access-Control-Allow-Headers"), "Authorization",
+				"widget API preflight must allow the Bearer Authorization header")
+		})
+	}
+
+	t.Run("non-widget path stays same-origin", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/agents", nil)
+		req.Header.Set("Origin", "https://a-customer-site.example")
+		req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, req)
+
+		assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"),
+			"a non-widget path must not be exposed cross-origin")
+	})
+}
+
 func TestCORS_ExposedHeaders(t *testing.T) {
 	// Must use an explicitly-allowed origin; the default server uses same-origin policy.
 	srv := NewServerWithCORS(0, []string{"https://example.com"})

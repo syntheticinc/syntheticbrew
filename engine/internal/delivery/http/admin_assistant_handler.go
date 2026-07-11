@@ -104,7 +104,9 @@ func (h *AdminAssistantHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		req.Message = "[Schema: " + req.SchemaContext + "]\n\n" + req.Message
 	}
 
-	ctx := h.buildRequestContext(r)
+	// Operator (builder-assistant) traffic must not count toward — or be
+	// blocked by — the deployment's distinct-end-user limit.
+	ctx := WithOperatorChat(h.buildRequestContext(r))
 	if len(req.Headers) > 0 {
 		existing := domain.GetRequestContext(ctx)
 		merged := make(map[string]string, len(req.Headers))

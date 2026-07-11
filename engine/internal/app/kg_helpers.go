@@ -43,8 +43,8 @@ func (a *kgEnforcerAdapter) OnEntityWrite(
 }
 
 // kgAdvisoryLockerNoop satisfies kgapply.AdvisoryLocker without acquiring an
-// actual database advisory lock. Used in CE/EE single-tenant deployments
-// where bundle apply contention is negligible. Cloud deployments swap in a
+// actual database advisory lock. Used in single-tenant deployments
+// where bundle apply contention is negligible. Multi-tenant deployments swap in a
 // real implementation backed by pg_advisory_xact_lock keyed by
 // hash(tenant_id, bundle_name).
 type kgAdvisoryLockerNoop struct{}

@@ -14,6 +14,7 @@ type chatRoutesDeps struct {
 	ChatHandler           *deliveryhttp.ChatHandler
 	AdminAssistantHandler *deliveryhttp.AdminAssistantHandler
 	AgentManagerExt       *agentManagerHTTPAdapter
+	WidgetConfigHandler   *deliveryhttp.WidgetConfigHandler
 }
 
 // mountChatRoutes registers the schema chat endpoint under auth + BYOK +
@@ -37,6 +38,12 @@ func mountChatRoutes(router chi.Router, deps chatRoutesDeps) {
 				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeChat))
 			}
 			r.Post("/api/v1/schemas/{name}/chat", deps.ChatHandler.Chat)
+			// Widget bootstrap config — same ScopeChat group as the chat POST so
+			// the embedded widget can read its render toggles with the token it
+			// already holds. Carries no tenant-identifying data.
+			if deps.WidgetConfigHandler != nil {
+				r.Get("/api/v1/widget-config", deps.WidgetConfigHandler.Get)
+			}
 		})
 	})
 }

@@ -10,7 +10,7 @@ import (
 
 // Provider holds per-tenant Knowledge Graph tool registries. The first call
 // to ResolveToolsForBundles for a tenant lazily loads that tenant's schemas
-// (just like mcp.Manager.GetForContext) so multi-tenant Cloud deployments
+// (just like mcp.Manager.GetForContext) so multi-tenant deployments
 // pay zero cost for tenants that never use Knowledge Graphs.
 //
 // The Provider satisfies capabilities.KGToolResolver via CapabilityAdapter

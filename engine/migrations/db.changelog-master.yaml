@@ -44,3 +44,6 @@ databaseChangeLog:
   - include:
       file: 015_add_usage_limits_tables.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 016_add_tenant_policies_and_active_users.yaml
+      relativeToChangelogFile: true

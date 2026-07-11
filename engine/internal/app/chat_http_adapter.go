@@ -32,6 +32,38 @@ type usageGate interface {
 	RecordSteps(ctx context.Context, userSub string, steps int) error
 }
 
+// activeUsersGate caps DISTINCT end users per window. Unlike usageGate it runs
+// for BYOK turns too: it limits platform activity (a user existing), not whose
+// model key pays for the turn. Defined consumer-side; the concrete
+// *activeusers.Gate satisfies it.
+//
+// Trust model for the identity it counts: for authenticated end-users the
+// user_sub is a verified JWT subject. For anonymous widget traffic the user_sub
+// is "<token-name>:<visitor-id>" where the visitor-id is client-asserted (the
+// widget stores it in localStorage). A holder of the public widget key can
+// therefore rotate the visitor-id to mint fresh identities, so the distinct-
+// user count for anonymous traffic is best-effort: it can be inflated (never
+// deflated — rotation only adds), and per_user usage limits degrade to
+// advisory for anonymous widgets. Abuse is bounded by the edge per-IP rate
+// limit (an infra concern); enforce-mode blocking affects only the tenant's
+// own scope, and an operator can configure the gate in monitor mode (count
+// without blocking) instead of enforce.
+type activeUsersGate interface {
+	Check(ctx context.Context, userSub string) (domain.ActiveUsersDecision, error)
+	RecordActivity(ctx context.Context, userSub string) error
+}
+
+// isOperatorChat reports whether the request is the operator's own builder-
+// assistant rather than a deployment end-user. The admin builder-assistant
+// runs through the same chat service; operators must not count toward or be
+// blocked by the end-user limit. This is a route-level marker, NOT actor-based:
+// JWT-authenticated end users (e.g. behind the identity broker) present as the
+// "admin" actor too, so only the explicit marker set by the admin-assistant
+// handler distinguishes operator traffic.
+func isOperatorChat(ctx context.Context) bool {
+	return deliveryhttp.IsOperatorChat(ctx)
+}
+
 // stepTaker registers and drains the per-session step count accumulated during a
 // turn. The concrete *usagelimit.StepAccumulator satisfies it. Begin scopes
 // accumulation to owners that settle, so non-settling step sources never leak.
@@ -80,7 +112,7 @@ type chatServiceHTTPAdapter struct {
 	registry    *flowregistry.SessionRegistry
 	processor   *sessionprocessor.Processor
 	agents      *agentregistry.AgentRegistry // non-nil in single-tenant (CE) mode
-	registryMgr *agentregistry.Manager       // non-nil in multi-tenant (Cloud/EE) mode
+	registryMgr *agentregistry.Manager       // non-nil in multi-tenant mode
 	schemas     schemaChatRepo               // optional — nil in tests / no-DB mode
 	sessions    chatSessionPersister         // optional — nil when no DB
 	chatEnabled bool                         // false when no LLM model configured
@@ -94,6 +126,10 @@ type chatServiceHTTPAdapter struct {
 	// skipped entirely.
 	usage       usageGate
 	accumulator stepTaker
+
+	// activeUsers caps distinct end users per rolling window. Nil in no-DB
+	// mode, in which case the gate is skipped entirely.
+	activeUsers activeUsersGate
 }
 
 // resolveRegistry returns the AgentRegistry for the current request context.
@@ -265,9 +301,11 @@ func isBillableOutput(sseType string) bool {
 	}
 }
 
-// gateTurn is the pre-turn usage gate: it blocks the turn with a UsageLimited
-// (HTTP 402) error when a configured limit is exhausted. Skipped when usage
-// limiting is not wired or for BYOK turns (which run on the user's own key).
+// gateTurn is the pre-turn gate: it blocks the turn with a UsageLimited
+// (HTTP 402) error when the active-users limit or a configured usage limit is
+// exhausted. The active-users check applies to every turn; the usage (turn/
+// step) check is skipped when usage limiting is not wired or for BYOK turns
+// (which run on the user's own key).
 //
 // This is a check-then-settle gate, not a reservation: at the exact boundary
 // (used == limit-1) N turns that start concurrently can all pass the gate
@@ -277,6 +315,27 @@ func isBillableOutput(sseType string) bool {
 // accepted trade-off for a usage limit; a hard cap would need a reserve-before-
 // serve counter.
 func (a *chatServiceHTTPAdapter) gateTurn(ctx context.Context, userSub string, byok bool) error {
+	// The active-users gate runs first and unconditionally — including for
+	// BYOK turns: it caps distinct end users existing on the platform, not
+	// whose model key pays for the turn. Same accepted check-then-settle race
+	// as the turn gate below: concurrent first turns of new users can
+	// overshoot the limit by the request concurrency, once per window.
+	//
+	// Operator traffic is exempt: the admin builder-assistant runs through this
+	// same service, but the operator is not one of the deployment's END users
+	// and must never be counted toward — or blocked by — the active-user limit.
+	if a.activeUsers != nil && !isOperatorChat(ctx) {
+		dec, err := a.activeUsers.Check(ctx, userSub)
+		if err != nil {
+			return fmt.Errorf("check user limit: %w", err)
+		}
+		if !dec.Allowed {
+			return pkgerrors.UsageLimited(fmt.Sprintf(
+				"user limit reached: %d/%d active users in the current period — existing users can continue",
+				dec.Used, dec.Limit))
+		}
+	}
+
 	if a.usage == nil || byok {
 		return nil
 	}
@@ -292,11 +351,23 @@ func (a *chatServiceHTTPAdapter) gateTurn(ctx context.Context, userSub string, b
 	return nil
 }
 
-// settleTurn records or discards the turn's accumulated steps once event
-// fan-out ends. Skipped entirely when usage limiting is not wired or for BYOK
-// turns. The record runs on a cancel-detached context so a client disconnect
-// (which cancels ctx as the stream closes) does not abort the counter write.
+// settleTurn settles once event fan-out ends: it records the user's activity
+// (output-producing turns only, BYOK included) and then records or discards
+// the turn's accumulated steps — the step settle alone is skipped when usage
+// limiting is not wired or for BYOK turns. Writes run on a cancel-detached
+// context so a client disconnect (which cancels ctx as the stream closes)
+// does not abort them.
 func (a *chatServiceHTTPAdapter) settleTurn(ctx context.Context, sessionID, userSub string, byok bool, sawOutput *bool) {
+	// Activity settles for BYOK turns too (mirror of the unconditional check
+	// in gateTurn), but only when the turn produced real output — a turn that
+	// errored before any output must not mint an active user. Operator traffic
+	// (admin builder-assistant) is exempt, mirroring the gate.
+	if a.activeUsers != nil && *sawOutput && !isOperatorChat(ctx) {
+		if err := a.activeUsers.RecordActivity(context.WithoutCancel(ctx), userSub); err != nil {
+			slog.WarnContext(ctx, "record user activity failed", "session_id", sessionID, "error", err)
+		}
+	}
+
 	if a.usage == nil || a.accumulator == nil || byok {
 		return
 	}
@@ -310,10 +381,20 @@ func (a *chatServiceHTTPAdapter) settleTurn(ctx context.Context, sessionID, user
 	}
 }
 
-// settleResumeSteps drains and records a HITL resume's steps against the usage
-// counters WITHOUT counting a new turn (turnsDelta 0). Skipped when usage
-// limiting is not wired or for BYOK resumes.
+// settleResumeSteps refreshes the user's activity, then drains and records a
+// HITL resume's steps against the usage counters WITHOUT counting a new turn
+// (turnsDelta 0). The step settle alone is skipped when usage limiting is not
+// wired or for BYOK resumes.
 func (a *chatServiceHTTPAdapter) settleResumeSteps(ctx context.Context, sessionID, userSub string, byok bool) {
+	// A resume implies the user already received an interrupt (real output in
+	// a prior settle), so refresh their activity unconditionally — BYOK too,
+	// mirroring gateTurn/settleTurn.
+	if a.activeUsers != nil {
+		if err := a.activeUsers.RecordActivity(context.WithoutCancel(ctx), userSub); err != nil {
+			slog.WarnContext(ctx, "record user activity failed", "session_id", sessionID, "error", err)
+		}
+	}
+
 	if a.usage == nil || a.accumulator == nil || byok {
 		return
 	}

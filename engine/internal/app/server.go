@@ -45,6 +45,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/activeusers"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
@@ -94,7 +95,7 @@ func Run(sc ServerConfig) error {
 	// turn, keyed by session id. Driven by the same per-step signal the agent
 	// runtime already fires (the step callback below) and drained once by the
 	// usage-limit settle when a turn completes. Session-keyed, so it is safe
-	// under the Cloud multi-tenant invariant (session ids are unique across
+	// under the multi-tenant invariant (session ids are unique across
 	// tenants).
 	usageAccumulator := usagelimit.NewStepAccumulator()
 
@@ -296,6 +297,20 @@ func Run(sc ServerConfig) error {
 		// repository (never clobbering an existing limit). CE's Noop plugin
 		// ignores it — safe to wire unconditionally.
 		sc.Plugin.SetUsageLimitWriter(newEngineUsageLimitWriter(configrepo.NewGORMUsageLimitRepository(pgDB)))
+
+		// Wire the tenant-policy seam so a plugin can write and read protected
+		// per-tenant policy entries through the engine's own tenant-scoped
+		// repository. No HTTP route exposes this table — the seam is the only
+		// write path. CE's Noop plugin ignores both — safe to wire
+		// unconditionally.
+		policyRepo := configrepo.NewGORMTenantPolicyRepository(pgDB)
+		sc.Plugin.SetTenantPolicyWriter(newEngineTenantPolicyWriter(policyRepo))
+		sc.Plugin.SetTenantPolicyReader(newEngineTenantPolicyReader(policyRepo))
+
+		// Wire the knowledge-document counter so a plugin can count a tenant's
+		// documents in-process, mirroring the schema counter. CE's Noop plugin
+		// ignores it — safe to wire unconditionally.
+		sc.Plugin.SetKnowledgeDocumentCounter(NewKnowledgeDocumentCounter(configrepo.NewGORMKnowledgeRepository(pgDB)))
 	}
 
 	// Create infrastructure components (AgentService + WorkManager + AgentPool)
@@ -651,7 +666,7 @@ func Run(sc ServerConfig) error {
 				if err != nil {
 					return fmt.Errorf("load/generate local jwt keypair: %w", err)
 				}
-				verifier, err := auth.NewEdDSAVerifier(kp.Public)
+				verifier, err := auth.NewEdDSAVerifier(kp.Public, bootstrapCfg.Security.JWTExpectedAudience)
 				if err != nil {
 					return fmt.Errorf("build local EdDSA verifier: %w", err)
 				}
@@ -662,7 +677,7 @@ func Run(sc ServerConfig) error {
 				if err != nil {
 					return fmt.Errorf("load external jwt public key: %w", err)
 				}
-				verifier, err := auth.NewEdDSAVerifier(pub)
+				verifier, err := auth.NewEdDSAVerifier(pub, bootstrapCfg.Security.JWTExpectedAudience)
 				if err != nil {
 					return fmt.Errorf("build external EdDSA verifier: %w", err)
 				}
@@ -934,6 +949,14 @@ func Run(sc ServerConfig) error {
 				nil,
 			)
 			chatService.accumulator = usageAccumulator
+			// Active-users gate: caps DISTINCT end users per rolling window
+			// (policy-driven, plugin seam writes only). Applies to BYOK turns
+			// too — it limits platform activity, not model spend.
+			chatService.activeUsers = activeusers.New(
+				configrepo.NewGORMTenantPolicyRepository(pgDB),
+				configrepo.NewGORMActiveUserRepository(pgDB),
+				nil,
+			)
 		}
 		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, forwardHeadersStore.GetForContext)
 
@@ -946,11 +969,22 @@ func Run(sc ServerConfig) error {
 		adminAssistantSessionRepo := configrepo.NewGORMSessionRepository(pgDB)
 		adminAssistantHandler := deliveryhttp.NewAdminAssistantHandler(chatService, builderSchemaResolver, forwardHeadersStore.GetForContext, adminAssistantSessionRepo)
 
+		// Widget bootstrap config — reads the widget_attribution policy through
+		// the tenant-scoped policy repo. Without a DB the handler is wired with a
+		// nil reader and attribution resolves to false.
+		var widgetConfigHandler *deliveryhttp.WidgetConfigHandler
+		if pgDB != nil {
+			widgetConfigHandler = deliveryhttp.NewWidgetConfigHandler(configrepo.NewGORMTenantPolicyRepository(pgDB))
+		} else {
+			widgetConfigHandler = deliveryhttp.NewWidgetConfigHandler(nil)
+		}
+
 		chatDeps := chatRoutesDeps{
 			AuthMW:                httpAuthMW,
 			BYOKMW:                byokMW,
 			ChatHandler:           chatHandler,
 			AdminAssistantHandler: adminAssistantHandler,
+			WidgetConfigHandler:   widgetConfigHandler,
 			AgentManagerExt: &agentManagerHTTPAdapter{
 				repo:        configrepo.NewGORMAgentRepository(pgDB),
 				registry:    agentRegistry,

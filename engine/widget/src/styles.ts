@@ -178,6 +178,25 @@ export function buildStyles(t: ThemeColors, position: string): string {
       font-size: 15px;
       font-weight: 600;
       color: ${t.text};
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bb-attribution {
+      font-size: 11px;
+      opacity: 0.75;
+      color: inherit;
+      text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-left: 8px;
+      /* Auto right margin absorbs the header's free space so the badge hugs
+         the title while the close button stays pinned right. */
+      margin-right: auto;
+    }
+    .bb-attribution:hover {
+      text-decoration: underline;
     }
     .bb-close-btn {
       background: none;

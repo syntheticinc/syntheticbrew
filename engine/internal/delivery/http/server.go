@@ -19,15 +19,23 @@ import (
 // regardless of the admin API's CORS allowlist.
 const widgetPathPrefix = "/widget/"
 
-// isPublicWidgetChatPath reports whether the path is a public chat endpoint
-// invoked by the embeddable widget from a third-party origin. The widget
-// (loaded via <script src="…/widget.js"> on a customer site) calls
-// POST /api/v1/schemas/{id}/chat cross-origin — the request carries an Origin
-// header of the customer's domain, so the response must include a matching
-// Access-Control-Allow-Origin (or wildcard). Tenant isolation is enforced by
-// resolving schema_id → tenant_id in the handler, not by the CORS policy.
-func isPublicWidgetChatPath(path string) bool {
-	// Pattern: /api/v1/schemas/{id}/chat — single segment id, no subpaths.
+// widgetConfigPath is the public widget bootstrap endpoint the embeddable
+// widget GETs cross-origin to read its render toggles (attribution badge).
+const widgetConfigPath = "/api/v1/widget-config"
+
+// isPublicWidgetAPIPath reports whether the path is a public endpoint invoked
+// by the embeddable widget from a third-party origin. The widget (loaded via
+// <script src="…/widget.js"> on a customer site) calls both
+// POST /api/v1/schemas/{id}/chat and GET /api/v1/widget-config cross-origin,
+// each carrying the customer domain's Origin header and a Bearer chat token, so
+// the response must include a matching Access-Control-Allow-Origin and allow
+// the Authorization header. Tenant isolation is enforced by resolving the token
+// → tenant in the handler, not by the CORS policy.
+func isPublicWidgetAPIPath(path string) bool {
+	if path == widgetConfigPath {
+		return true
+	}
+	// Chat pattern: /api/v1/schemas/{id}/chat — single segment id, no subpaths.
 	const prefix = "/api/v1/schemas/"
 	const suffix = "/chat"
 	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
@@ -97,13 +105,16 @@ func NewServerWithCORS(port int, allowedOrigins []string) *Server {
 		})
 	}
 
-	// Widget chat CORS: same permissive policy as widgetCORS, but the widget
-	// posts JSON + reads an SSE stream — it needs POST and extra headers that
-	// the static-bundle policy doesn't allow.
-	widgetChatCORS := cors.Handler(cors.Options{
+	// Widget API CORS: same permissive origin policy as widgetCORS, but the
+	// widget POSTs JSON + reads an SSE stream (chat) and GETs its bootstrap
+	// config, each with a Bearer chat token — so it needs GET+POST, the
+	// Authorization header, and the BYOK headers that the static-bundle policy
+	// doesn't allow. AllowCredentials stays false (the token is a Bearer header,
+	// not a cookie), so the wildcard origin is safe.
+	widgetAPICORS := cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type", "Accept", "X-BYOK-Provider", "X-BYOK-API-Key", "X-BYOK-Model", "X-BYOK-Base-URL"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "X-BYOK-Provider", "X-BYOK-API-Key", "X-BYOK-Model", "X-BYOK-Base-URL"},
 		ExposedHeaders:   []string{"Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           86400,
@@ -118,8 +129,8 @@ func NewServerWithCORS(port int, allowedOrigins []string) *Server {
 				widgetCORS(next).ServeHTTP(w, req)
 				return
 			}
-			if isPublicWidgetChatPath(req.URL.Path) {
-				widgetChatCORS(next).ServeHTTP(w, req)
+			if isPublicWidgetAPIPath(req.URL.Path) {
+				widgetAPICORS(next).ServeHTTP(w, req)
 				return
 			}
 			apiCORS(next).ServeHTTP(w, req)

@@ -53,9 +53,9 @@ func (c *tenantRecordingInterruptCreator) Create(ctx context.Context, _ *domain.
 	return nil
 }
 
-// Regression for the Cloud HITL bug: the interrupts row was created with
+// Regression for the multi-tenant HITL bug: the interrupts row was created with
 // context.Background() → resolved to the CE default tenant → a multi-tenant
-// (Cloud) resume lookup (tenant-scoped) returned 404 "interrupt not found".
+// resume lookup (tenant-scoped) returned 404 "interrupt not found".
 // The row must be stamped with the session's tenant carried by the EventStream
 // ctx (the processing goroutine preserves context values via WithoutCancel).
 func TestSend_InterruptRequest_CreatedUnderSessionTenant(t *testing.T) {

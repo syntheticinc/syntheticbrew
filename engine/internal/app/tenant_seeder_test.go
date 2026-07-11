@@ -12,7 +12,7 @@ import (
 // 2026-05-08 prod regression where SeedTenant hardcoded "My Workspace" — a
 // space + uppercase value that violates the name regex shipped with engine
 // 1.1.0 (chk_schemas_name_format CHECK constraint + ValidateResourceName).
-// Every new signup hit the constraint and EE provisioning returned 500,
+// Every new signup hit the constraint and tenant provisioning returned 500,
 // leaving tenants without a default schema.
 //
 // Whatever default name SeedTenant uses MUST round-trip through the same

@@ -42,7 +42,7 @@ func newTestKeypair(t *testing.T) testKeypair {
 func newTestAuthMiddleware(t *testing.T, tokenVerifier APITokenVerifier) (*AuthMiddleware, testKeypair) {
 	t.Helper()
 	kp := newTestKeypair(t)
-	verifier, err := auth.NewEdDSAVerifier(kp.public)
+	verifier, err := auth.NewEdDSAVerifier(kp.public, "")
 	require.NoError(t, err)
 	return NewAuthMiddlewareWithVerifier(verifier, tokenVerifier), kp
 }
@@ -286,11 +286,19 @@ func TestRequireAdminSession(t *testing.T) {
 	tests := []struct {
 		name        string
 		actorType   string
+		scopes      int
 		expectAllow bool
 	}{
-		{"admin allowed", "admin", true},
-		{"api_token denied", "api_token", false},
-		{"empty denied", "", false},
+		{"admin with admin scope allowed", "admin", ScopeAdmin, true},
+		{"api_token denied even with admin scope", "api_token", ScopeAdmin, false},
+		{"empty actor denied", "", ScopeAdmin, false},
+		// Escalation guard: an audience-bound JWT is stamped actor_type
+		// "admin" by authenticateJWT but carries only the scopes of its
+		// `scope` claim. Provision/manage tokens must not reach
+		// admin-session-only routes (token minting, builder restore).
+		{"admin actor with provision-only scopes denied", "admin", ScopeProvisionMask, false},
+		{"admin actor with manage scopes denied", "admin", ScopeManageMask, false},
+		{"admin actor with zero scopes denied", "admin", 0, false},
 	}
 
 	for _, tt := range tests {
@@ -305,6 +313,7 @@ func TestRequireAdminSession(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			ctx := context.WithValue(req.Context(), ContextKeyActorType, tt.actorType)
+			ctx = context.WithValue(ctx, ContextKeyScopes, tt.scopes)
 			req = req.WithContext(ctx)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -344,7 +353,7 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 }
 
 // TestAuthMiddleware_LogsJWTVerifyFailure is the diagnostic regression for the
-// 2026-04-27 prod incident: cloud chat returned 401 invalid_token but engine
+// 2026-04-27 prod incident: hosted chat returned 401 invalid_token but engine
 // silently swallowed the verifier error so the operator had no idea whether
 // the token was expired, signed with the wrong key, malformed, or missing
 // claims. The middleware now emits a WARN with the underlying error.

@@ -3,7 +3,7 @@ package models
 import "time"
 
 // DefaultTenantID is the sentinel UUID used for the single-tenant default
-// in CE. Cloud assigns real tenant UUIDs on registration; CE stamps every
+// in CE. Multi-tenant deployments assign real tenant UUIDs on registration; CE stamps every
 // row with this constant so the column shape stays identical across
 // editions (V2 §5.8 "Settings + BYOK").
 const DefaultTenantID = "00000000-0000-0000-0000-000000000001"

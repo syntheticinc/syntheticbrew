@@ -46,7 +46,7 @@ type TenantMiddleware struct {
 }
 
 // NewTenantMiddleware creates a new TenantMiddleware.
-// If required is true, requests without tenant_id will be rejected (Cloud mode).
+// If required is true, requests without tenant_id will be rejected (multi-tenant mode).
 // If required is false, requests without tenant_id pass through (CE mode).
 func NewTenantMiddleware(extractor TenantExtractor, required bool) *TenantMiddleware {
 	return &TenantMiddleware{extractor: extractor, required: required}

@@ -3,7 +3,7 @@ package plugin
 import "fmt"
 
 // TransportPolicy decides which MCP transport types are permitted for new
-// MCP server registrations in the current deployment. Cloud / managed
+// MCP server registrations in the current deployment. Managed / multi-tenant
 // environments reject stdio-based transports (local command execution);
 // CE / self-hosted environments accept all.
 type TransportPolicy interface {
@@ -19,7 +19,7 @@ type PermissiveTransportPolicy struct{}
 func (PermissiveTransportPolicy) IsAllowed(string) error { return nil }
 
 // RestrictedTransportPolicy blocks stdio/shell transports that execute
-// arbitrary binaries on the engine host. Used in Cloud / hosted tenants.
+// arbitrary binaries on the engine host. Used in hosted / multi-tenant deployments.
 type RestrictedTransportPolicy struct{}
 
 // IsAllowed returns ErrTransportNotAllowed for stdio (the only transport type

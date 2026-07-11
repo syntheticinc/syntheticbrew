@@ -21,6 +21,7 @@ import (
 	mcpcatalog "github.com/syntheticinc/syntheticbrew/internal/service/mcp"
 	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 	svcschematemplate "github.com/syntheticinc/syntheticbrew/internal/service/schematemplate"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/activeusers"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgapply"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgmutate"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
@@ -582,6 +583,30 @@ func registerHTTPRoutes(deps routesDeps) {
 		// Usage
 		usageHandler := deliveryhttp.NewUsageHandler(pgDB, plugin)
 		r.Get("/api/v1/usage", usageHandler.GetUsage)
+
+		// Usage status — read-only aggregates (active users, schemas, knowledge
+		// documents, turns) against the tenant's configured limits. Gated by
+		// settings:read: these are operator aggregates, not admin-only, and NOT
+		// reachable by chat-scoped widget tokens. All stores are tenant-scoped.
+		if pgDB != nil {
+			usageStatusAdapter := newUsageStatusAdapter(
+				configrepo.NewGORMTenantPolicyRepository(pgDB),
+				activeusers.New(
+					configrepo.NewGORMTenantPolicyRepository(pgDB),
+					configrepo.NewGORMActiveUserRepository(pgDB),
+					nil,
+				),
+				configrepo.NewGORMSchemaRepository(pgDB),
+				configrepo.NewGORMKnowledgeRepository(pgDB),
+				configrepo.NewGORMUsageLimitRepository(pgDB),
+				configrepo.NewGORMUsageCounterRepository(pgDB),
+			)
+			usageStatusHandler := deliveryhttp.NewUsageStatusHandler(usageStatusAdapter)
+			r.Group(func(r chi.Router) {
+				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSettingsRead))
+				r.Get("/api/v1/usage-status", usageStatusHandler.Get)
+			})
+		}
 
 		// Tool Call Log — per-tool-call observability for debugging agent behavior.
 		toolCallRepoOSS := configrepo.NewToolCallEventRepository(pgDB)

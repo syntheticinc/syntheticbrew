@@ -25,12 +25,12 @@ type ModelSelectorConfigurator interface {
 }
 
 // stepsLimitKey is the private context key used to propagate the per-tenant
-// step limit from EE entitlements middleware to the step callback.
+// step limit from the external plugin's entitlements middleware to the step callback.
 type stepsLimitKey struct{}
 
 // WithStepsLimit returns ctx with the monthly step limit attached. Called by
-// EE's entitlementsMiddleware so the CE step callback can read the limit
-// without importing EE types.
+// the external plugin's entitlements middleware so the CE step callback can
+// read the limit without importing the external plugin's types.
 func WithStepsLimit(ctx context.Context, limit int) context.Context {
 	return context.WithValue(ctx, stepsLimitKey{}, limit)
 }
@@ -70,7 +70,7 @@ type Plugin interface {
 	CheckSessionAllowed(ctx context.Context) string
 
 	// OnAgentStep is invoked by the runtime after every agent step. Plugins
-	// use it to report usage for billing/metering and to enforce quotas.
+	// use it to report per-step usage and to enforce configured limits.
 	// stepsLimit is the monthly cap read from context by the CE callback
 	// (0 means no enforcement). Returns ErrStepsQuotaExceeded when the
 	// tenant's monthly budget is exhausted; the caller cancels the request
@@ -82,17 +82,17 @@ type Plugin interface {
 
 	// SetTenantSeeder installs a callback the plugin can invoke when it
 	// accepts a tenant-provisioning request. The engine wires a seeder backed
-	// by its schema/agent repositories so that EE provisioning can populate a
-	// freshly-created tenant with default data without importing engine
-	// internals. CE's Noop ignores the seeder.
+	// by its schema/agent repositories so that a plugin's provisioning can
+	// populate a freshly-created tenant with default data without importing
+	// engine internals. CE's Noop ignores the seeder.
 	SetTenantSeeder(seeder TenantSeeder)
 
 	// SetSchemaCounter installs a callback the plugin can call to count
-	// schemas visible to the tenant in the current request context. EE's
-	// quota middleware uses it to enforce SchemasLimit without issuing an
+	// schemas visible to the tenant in the current request context. An external
+	// plugin's quota middleware uses it to enforce SchemasLimit without issuing an
 	// internal HTTP sub-request to itself — the earlier sub-request design
 	// hard-coded the loopback port and silently failed (fail-open) whenever
-	// the engine ran on a non-default port (Cloud containers bind 8443, the
+	// the engine ran on a non-default port (hosted deployments bind 8443, the
 	// sub-request targeted 9555). CE's Noop ignores the counter because it
 	// has no quota middleware.
 	SetSchemaCounter(counter SchemaCounter)
@@ -104,9 +104,28 @@ type Plugin interface {
 	// context key. CE's Noop ignores it because it has no provisioning endpoint.
 	SetUsageLimitWriter(writer UsageLimitWriter)
 
+	// SetTenantPolicyWriter installs a callback a plugin can invoke to write
+	// protected per-tenant policy entries. The engine wires a writer backed by
+	// its tenant-scoped policy repository so the plugin can upsert/delete
+	// entries without importing engine internals or the tenant context key.
+	// CE's Noop ignores it because nothing writes policies in CE.
+	SetTenantPolicyWriter(writer TenantPolicyWriter)
+
+	// SetTenantPolicyReader installs a callback a plugin can invoke to read
+	// protected per-tenant policy entries. The engine wires a reader backed by
+	// its tenant-scoped policy repository. CE's Noop ignores it because
+	// nothing reads policies in CE.
+	SetTenantPolicyReader(reader TenantPolicyReader)
+
+	// SetKnowledgeDocumentCounter installs a callback the plugin can call to
+	// count knowledge documents belonging to the tenant, mirroring
+	// SetSchemaCounter: an in-process count instead of an internal HTTP
+	// sub-request. CE's Noop ignores the counter because it has no consumer.
+	SetKnowledgeDocumentCounter(counter KnowledgeDocumentCounter)
+
 	// TransportPolicy returns the MCP transport policy for this deployment.
 	// CE / bare-metal deployments return PermissiveTransportPolicy (all
-	// transports allowed). Cloud / managed deployments return
+	// transports allowed). Managed / multi-tenant deployments return
 	// RestrictedTransportPolicy (stdio blocked to prevent host code execution).
 	TransportPolicy() TransportPolicy
 
@@ -124,15 +143,15 @@ type Plugin interface {
 	// Docs MCP entry.
 	DocsMCPEndpoint() string
 
-	// KGEnforcer returns the optional Cloud quota/metering enforcer for
-	// Knowledge Graph entity writes. Nil means no enforcement (CE/EE default).
+	// KGEnforcer returns the optional limit enforcer for
+	// Knowledge Graph entity writes. Nil means no enforcement (the CE default).
 	// Engine fail-closes on enforcer errors — quota cannot be bypassed.
 	KGEnforcer() KGEnforcer
 
 	// KGCounter returns the optional counter source for tenant-level KG
 	// stats (bundles count, entities count). Used in the admin UI bundles
-	// header and billing displays. Nil means the engine reads counts
-	// directly from the database without plan enrichment.
+	// header and usage displays. Nil means the engine reads counts
+	// directly from the database without extra enrichment.
 	KGCounter() KGCounter
 
 	// Stop releases any background resources held by the plugin
@@ -178,6 +197,81 @@ const (
 	UsageUnitTurns   = "turns"
 	UsageUnitSteps   = "steps"
 )
+
+// Tenant-policy vocabulary exposed to plugins. The key constants mirror the
+// engine's internal domain constants but live in the public plugin package so
+// an external plugin can name a policy without importing engine internals.
+// The engine writer validates the incoming key, so a drift from the internal
+// constants surfaces as an error rather than a silent mis-write.
+const (
+	PolicySystemPromptPrefix      = "system_prompt_prefix"
+	PolicyWidgetAttribution       = "widget_attribution"
+	PolicyActiveUsersLimit        = "active_users_limit"
+	PolicyActiveUsersMode         = "active_users_mode"
+	PolicyKnowledgeDocumentsLimit = "knowledge_documents_limit"
+	PolicySchemasLimit            = "schemas_limit"
+)
+
+// Canonical values for on/off toggle policies and for gate-mode policies.
+const (
+	PolicyValueOn     = "on"
+	PolicyValueOff    = "off"
+	PolicyModeEnforce = "enforce"
+	PolicyModeMonitor = "monitor"
+)
+
+// TenantPolicyWriter writes protected per-tenant policy entries. The engine
+// wires a concrete writer over its tenant-scoped policy repository; a plugin
+// calls it to install or update policy values for a tenant.
+//
+// SetPolicy is a full upsert — unlike UsageLimitWriter.EnsureLimit, which is
+// write-once, SetPolicy overwrites an existing value for the key so a plugin
+// can move a tenant between policy states at any time. DeletePolicy removes
+// the entry; deleting an absent key is not an error.
+//
+// tenantID is passed explicitly rather than read from ctx so the plugin does
+// not need to know CE's internal tenant context key — the engine-side writer
+// applies its own tenant scoping.
+type TenantPolicyWriter interface {
+	SetPolicy(ctx context.Context, tenantID, key, value string) error
+	DeletePolicy(ctx context.Context, tenantID, key string) error
+}
+
+// TenantPolicyReader reads protected per-tenant policy entries in bulk. The
+// engine wires a concrete reader over its tenant-scoped policy repository.
+//
+// GetPolicies returns a key→value map for the requested keys; keys with no
+// configured entry are simply absent from the map. An empty tenantID yields
+// (nil, nil) — CE / single-tenant mode has no policy surface.
+type TenantPolicyReader interface {
+	GetPolicies(ctx context.Context, tenantID string, keys []string) (map[string]string, error)
+}
+
+// KnowledgeDocumentCounter returns the number of knowledge documents
+// belonging to tenantID. The engine wires a concrete counter over its
+// knowledge repository, mirroring SchemaCounter: an in-process count instead
+// of an internal HTTP sub-request.
+//
+// tenantID is passed explicitly rather than read from ctx so the plugin does
+// not need to know about CE's internal tenant context key — the engine-side
+// counter applies its own tenant scoping.
+//
+// A non-nil error means "counting failed" — the plugin decides whether to
+// fail-open or fail-closed depending on policy. Empty tenantID should yield
+// (0, nil) — CE / single-tenant mode has no enforcement surface.
+type KnowledgeDocumentCounter interface {
+	CountKnowledgeDocuments(ctx context.Context, tenantID string) (int, error)
+}
+
+// KnowledgeDocumentCounterFunc adapts a plain function to the
+// KnowledgeDocumentCounter interface so callers can wire an inline closure
+// without declaring a new type.
+type KnowledgeDocumentCounterFunc func(ctx context.Context, tenantID string) (int, error)
+
+// CountKnowledgeDocuments implements KnowledgeDocumentCounter.
+func (f KnowledgeDocumentCounterFunc) CountKnowledgeDocuments(ctx context.Context, tenantID string) (int, error) {
+	return f(ctx, tenantID)
+}
 
 // UsageLimitWriter installs a default usage limit on a tenant. The engine
 // wires a concrete writer over its usage-limit repository; a provisioning

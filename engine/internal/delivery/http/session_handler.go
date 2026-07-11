@@ -121,8 +121,8 @@ type UpdateSessionRequest struct {
 
 // SessionMetadataMaxBytes is the upper bound on per-session JSON metadata.
 // Engine treats the field as opaque storage; clients should not exceed this
-// per call. 16KB matches the soft envelope used by major SaaS metadata
-// fields (Stripe metadata, GitHub repo metadata).
+// per call. 16KB is a generous envelope for opaque per-session client
+// metadata.
 const SessionMetadataMaxBytes = 16 * 1024
 
 // SessionService provides session CRUD operations.

@@ -16,7 +16,7 @@ const (
 	// ToolTierCapability (Tier 2) — auto-injected by capabilities: memory_recall, memory_store, knowledge_search
 	ToolTierCapability ToolTier = 2
 
-	// ToolTierSelfHosted (Tier 3) — CE only, blocked in Cloud: read_file, write_file, execute_command, etc.
+	// ToolTierSelfHosted (Tier 3) — CE only, blocked in multi-tenant mode: read_file, write_file, execute_command, etc.
 	ToolTierSelfHosted ToolTier = 3
 
 	// ToolTierMCP (Tier 4) — from connected MCP servers: web_search, external APIs, etc.
@@ -50,7 +50,7 @@ func CapabilityToolNames() []string {
 	}
 }
 
-// SelfHostedToolNames returns the Tier 3 tool names blocked in Cloud.
+// SelfHostedToolNames returns the Tier 3 tool names blocked in multi-tenant mode.
 func SelfHostedToolNames() []string {
 	return []string{
 		"read_file",
@@ -91,7 +91,7 @@ func ClassifyToolTier(toolName string) ToolTier {
 		return ToolTierCore
 	}
 	// admin_* tools — orchestration over other platform objects. Treated as
-	// self-hosted so that Cloud tenants don't grant arbitrary admin tool use
+	// self-hosted so that tenants in multi-tenant deployments don't grant arbitrary admin tool use
 	// to agents through the default MCP fallthrough. Admin HTTP layer still
 	// rejects these names at agent create/update time; this extra guard keeps
 	// seed agents / runtime-built tool lists honest.

@@ -44,8 +44,8 @@ func createChatModel(cfg config.Config) (model.ToolCallingChatModel, error) {
 // The env-derived model (cfg.LLM) is only a fallback for env-only deployments
 // whose DB carries no default.
 //
-// CE/Cloud safety: only the CE sentinel tenant's default is loaded here. In
-// Cloud (--mode cloud, multi-tenant) the sentinel has no default, so this
+// CE and multi-tenant safety: only the CE sentinel tenant's default is loaded here. In
+// multi-tenant mode the sentinel has no default, so this
 // returns the env/nil fallback and per-tenant model resolution at chat time is
 // unchanged.
 func resolveBootChatModel(cfg config.Config, db *gorm.DB) (model.ToolCallingChatModel, string, error) {

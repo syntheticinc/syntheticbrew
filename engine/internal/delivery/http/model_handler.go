@@ -175,7 +175,7 @@ func (h *ModelHandler) List(w http.ResponseWriter, r *http.Request) {
 // (SCC-03). It enforces a well-formed absolute http/https URL; it intentionally
 // does NOT block private/localhost hosts — self-hosted CE legitimately points
 // at ollama on localhost, on-prem gateways, and Azure private endpoints.
-// Destination/egress policy for multi-tenant Cloud belongs in the plugin layer,
+// Destination/egress policy for multi-tenant deployments belongs in the plugin layer,
 // not in the CE engine.
 func validateModelBaseURL(raw string) string {
 	u, err := url.ParseRequestURI(raw)

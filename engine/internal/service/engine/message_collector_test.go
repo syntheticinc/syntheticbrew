@@ -13,7 +13,7 @@ import (
 
 // captureCtxHistoryRepo records the ctx passed to every Create call. Used to
 // verify that MessageCollector propagates the tenant_id from its constructor
-// ctx into DB writes — without it, Cloud users lose their assistant/tool/
+// ctx into DB writes — without it, multi-tenant users lose their assistant/tool/
 // reasoning rows on reload (the 2026-04-27 "last AI message disappears" bug).
 type captureCtxHistoryRepo struct {
 	mu       sync.Mutex

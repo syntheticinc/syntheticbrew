@@ -42,132 +42,91 @@ const (
 	ContextKeyScopes contextKey = "scopes"
 )
 
+// ActorTypeFromContext returns the authenticated actor type ("admin" or
+// "api_token"), or "" when none was stamped. Exported so packages outside the
+// delivery layer can distinguish operator traffic from end-user traffic
+// without importing the unexported context-key type.
+func ActorTypeFromContext(ctx context.Context) string {
+	actorType, _ := ctx.Value(ContextKeyActorType).(string)
+	return actorType
+}
+
+// contextKeyOperatorChat marks a chat request as the operator's own builder-
+// assistant, not a deployment end-user. It is set by the admin-assistant
+// handler and read by the chat service to keep operator traffic out of the
+// distinct-end-user accounting. It is NOT actor-based: JWT-authenticated end
+// users (e.g. behind the identity broker) present as the "admin" actor too, so
+// only this explicit route-level marker distinguishes the operator surface.
+const contextKeyOperatorChat contextKey = "operator_chat"
+
+// WithOperatorChat marks the context as operator (builder-assistant) traffic.
+func WithOperatorChat(ctx context.Context) context.Context {
+	return context.WithValue(ctx, contextKeyOperatorChat, true)
+}
+
+// IsOperatorChat reports whether the context was marked as operator traffic.
+func IsOperatorChat(ctx context.Context) bool {
+	v, _ := ctx.Value(contextKeyOperatorChat).(bool)
+	return v
+}
+
 // Scope bitmask constants matching ERD api_tokens.scopes_mask.
+//
+// Canonical definitions live in internal/authprim (leaf package) so
+// non-delivery layers — e.g. the EdDSA JWT verifier in
+// internal/infrastructure/auth, which parses the JWT `scope` claim — share
+// one registry without importing the delivery layer. Re-exported here under
+// the original names because delivery code and its callers are the primary
+// consumers.
 const (
-	ScopeChat          = 1
-	ScopeTasks         = 2
-	ScopeAgentsRead    = 4
-	ScopeConfig        = 8
-	ScopeAdmin         = 16
-	ScopeAgentsWrite   = 32
-	ScopeModelsRead    = 64
-	ScopeModelsWrite   = 128
-	ScopeMCPRead       = 256
-	ScopeMCPWrite      = 512
-	ScopeTriggersRead  = 1024
-	ScopeTriggersWrite = 2048
-	ScopeSchemasRead   = 4096
-	ScopeSchemasWrite  = 8192
+	ScopeChat          = authprim.ScopeChat
+	ScopeTasks         = authprim.ScopeTasks
+	ScopeAgentsRead    = authprim.ScopeAgentsRead
+	ScopeConfig        = authprim.ScopeConfig
+	ScopeAdmin         = authprim.ScopeAdmin
+	ScopeAgentsWrite   = authprim.ScopeAgentsWrite
+	ScopeModelsRead    = authprim.ScopeModelsRead
+	ScopeModelsWrite   = authprim.ScopeModelsWrite
+	ScopeMCPRead       = authprim.ScopeMCPRead
+	ScopeMCPWrite      = authprim.ScopeMCPWrite
+	ScopeTriggersRead  = authprim.ScopeTriggersRead
+	ScopeTriggersWrite = authprim.ScopeTriggersWrite
+	ScopeSchemasRead   = authprim.ScopeSchemasRead
+	ScopeSchemasWrite  = authprim.ScopeSchemasWrite
 
-	// Granular scopes added in 1.1.4 to retire legacy RequireAdminSession
-	// gates on /sessions, /audit, /settings, /tools/metadata, /resilience.
-	// ScopeAdmin (=16) still acts as a superscope and bypasses any specific
-	// scope check via RequireScope — admin tooling stays unchanged.
-	ScopeSessionsRead    = 16384
-	ScopeSessionsWrite   = 32768
-	ScopeSettingsRead    = 65536
-	ScopeSettingsWrite   = 131072
-	ScopeAuditRead       = 262144
-	ScopeResilienceRead  = 524288
-	ScopeResilienceWrite = 1048576
-	ScopeToolsRead       = 2097152
+	ScopeSessionsRead    = authprim.ScopeSessionsRead
+	ScopeSessionsWrite   = authprim.ScopeSessionsWrite
+	ScopeSettingsRead    = authprim.ScopeSettingsRead
+	ScopeSettingsWrite   = authprim.ScopeSettingsWrite
+	ScopeAuditRead       = authprim.ScopeAuditRead
+	ScopeResilienceRead  = authprim.ScopeResilienceRead
+	ScopeResilienceWrite = authprim.ScopeResilienceWrite
+	ScopeToolsRead       = authprim.ScopeToolsRead
 
-	// ScopeManage is a dedicated bit carrying destructive (delete) authority
-	// over provisioned resources through the MCP server endpoint. The existing
-	// Scope*Write bits conflate update and delete, so this new bit is the only
-	// way to split "may create/update" (provision) from "may also delete"
-	// (manage) without repurposing the write bits. It survives the token
-	// name→mask conversion, so the MCP per-tool scope table can require it for
-	// delete tools while a provision-only token is rejected. ScopeAdmin still
-	// implies it (superscope in RequireScope and the MCP scope check).
-	ScopeManage = 4194304
+	ScopeManage = authprim.ScopeManage
 )
 
-// ScopeAPI is the virtual catch-all integration scope. It is NOT a separate
-// bit — it expands into the union of every non-admin operation permitted to
-// an integration: chat, tasks, sessions, and read-only access to agents,
-// schemas, models, and MCP servers. Admin-only surfaces (agent CRUD, schema
-// CRUD, model CRUD, MCP CRUD, config, token management) are deliberately
-// excluded so an "api" token cannot reconfigure the tenant it runs under.
+// Composite masks — see authprim for the full rationale of each.
 //
-// Bug 3: clients POST /auth/tokens with `scopes: ["api"]` — we expand that
-// name into the mask below. An empty mask was previously stored (0), which
-// authenticated the token but 403'd every request.
-const ScopeAPIMask = ScopeChat | ScopeTasks | ScopeAgentsRead | ScopeModelsRead | ScopeMCPRead | ScopeTriggersRead | ScopeSchemasRead | ScopeSessionsRead | ScopeSettingsRead | ScopeAuditRead | ScopeResilienceRead | ScopeToolsRead
-
-// ScopeProvisionMask is the composite mask for the "provision" scope granted
-// to MCP-server integrations that build agents/schemas/models/MCP servers.
-// It is the union of every relevant read bit plus the create/update write
-// bits. It deliberately excludes ScopeManage: a provision token may create and
-// update, but the MCP per-tool scope table rejects the destructive delete
-// tools because they require ScopeManage. The existing Scope*Write bits
-// conflate update and delete at the REST layer, so the delete split is
-// enforced only at the MCP layer via the scope table + this dedicated bit.
-const ScopeProvisionMask = ScopeAgentsRead | ScopeAgentsWrite |
-	ScopeSchemasRead | ScopeSchemasWrite |
-	ScopeModelsRead | ScopeModelsWrite |
-	ScopeMCPRead | ScopeMCPWrite |
-	ScopeSessionsRead
-
-// ScopeManageMask is the composite mask for the "manage" scope: everything
-// provision grants plus the dedicated ScopeManage bit that unlocks the
-// destructive delete tools at the MCP per-tool scope table.
-const ScopeManageMask = ScopeProvisionMask | ScopeManage
+// Bug 3 (ScopeAPIMask): clients POST /auth/tokens with `scopes: ["api"]` —
+// we expand that name into the mask. An empty mask was previously stored
+// (0), which authenticated the token but 403'd every request.
+const (
+	ScopeAPIMask       = authprim.ScopeAPIMask
+	ScopeProvisionMask = authprim.ScopeProvisionMask
+	ScopeManageMask    = authprim.ScopeManageMask
+)
 
 // ScopeNameToMask maps canonical scope name tokens accepted by
 // POST /auth/tokens `scopes: [...]` to their underlying bitmask.
-//
-// Granular names ("chat", "tasks", "agents:read", ...) map to a single bit.
-// Composite names ("api", "admin") expand into a union. Unknown names are
-// ignored silently; the resulting mask is the bitwise OR of all recognised
-// tokens. An all-unknown list therefore yields mask=0, which is still a
-// hard reject at RequireScope time — never a silent privilege escalation.
-var ScopeNameToMask = map[string]int{
-	"chat":             ScopeChat,
-	"tasks":            ScopeTasks,
-	"agents:read":      ScopeAgentsRead,
-	"agents":           ScopeAgentsRead, // alias: "agents" => read-only
-	"agents:write":     ScopeAgentsWrite,
-	"config":           ScopeConfig,
-	"admin":            ScopeAdmin,
-	"models:read":      ScopeModelsRead,
-	"models":           ScopeModelsRead,
-	"models:write":     ScopeModelsWrite,
-	"mcp:read":         ScopeMCPRead,
-	"mcp":              ScopeMCPRead,
-	"mcp:write":        ScopeMCPWrite,
-	"schemas:read":     ScopeSchemasRead,
-	"schemas":          ScopeSchemasRead,
-	"schemas:write":    ScopeSchemasWrite,
-	"sessions:read":    ScopeSessionsRead,
-	"sessions":         ScopeSessionsRead,
-	"sessions:write":   ScopeSessionsWrite,
-	"settings:read":    ScopeSettingsRead,
-	"settings":         ScopeSettingsRead,
-	"settings:write":   ScopeSettingsWrite,
-	"audit:read":       ScopeAuditRead,
-	"audit":            ScopeAuditRead,
-	"resilience:read":  ScopeResilienceRead,
-	"resilience":       ScopeResilienceRead,
-	"resilience:write": ScopeResilienceWrite,
-	"tools:read":       ScopeToolsRead,
-	"tools":            ScopeToolsRead,
-	"api":              ScopeAPIMask,
-	"provision":        ScopeProvisionMask,
-	"manage":           ScopeManageMask,
-}
+// Canonical registry lives in authprim.
+var ScopeNameToMask = authprim.ScopeNameToMask
 
 // ScopesToMask converts a list of scope names into a bitmask. Unknown
 // names are dropped (no error) — defensive against front-end typos that
 // might otherwise privilege-escalate. An empty list returns 0.
 func ScopesToMask(scopes []string) int {
-	mask := 0
-	for _, s := range scopes {
-		if bit, ok := ScopeNameToMask[s]; ok {
-			mask |= bit
-		}
-	}
-	return mask
+	return authprim.ScopesToMask(scopes)
 }
 
 // APITokenInfo is the decoded API-token record returned by the verifier.
@@ -189,7 +148,7 @@ type AuthMiddleware struct {
 }
 
 // NewAuthMiddlewareWithVerifier creates an AuthMiddleware backed by the given
-// JWT verifier. Wave 7 collapsed CE and Cloud onto a single EdDSA verifier,
+// JWT verifier. Wave 7 collapsed CE and multi-tenant modes onto a single EdDSA verifier,
 // so there is no longer a "default HMAC" constructor — the caller is
 // responsible for building (or loading) the verifier.
 func NewAuthMiddlewareWithVerifier(jwtVerifier pluginpkg.JWTVerifier, tokenVerifier APITokenVerifier) *AuthMiddleware {
@@ -350,11 +309,16 @@ func RequireScope(scope int) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireAdminSession ensures only admin JWT (not API token) can access.
+// RequireAdminSession ensures only an admin-scoped JWT (not an API token)
+// can access. The actor-type check alone is not enough: authenticateJWT
+// stamps "admin" for every valid JWT, including audience-bound tokens whose
+// scope claim grants less than full admin. Requiring the ScopeAdmin bit keeps
+// such tokens away from admin-session-only routes (e.g. API-token minting).
 func RequireAdminSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		actorType, _ := r.Context().Value(ContextKeyActorType).(string)
-		if actorType != "admin" {
+		scopes, _ := r.Context().Value(ContextKeyScopes).(int)
+		if actorType != "admin" || scopes&ScopeAdmin == 0 {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "admin session required"})
 			return
 		}

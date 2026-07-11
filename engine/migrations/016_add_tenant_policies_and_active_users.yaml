@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 016_add_tenant_policies_and_active_users
+      author: syntheticbrew
+      comment: |
+        tenant_policies: protected per-tenant key/value entries written only
+        through the plugin seam (the settings table is tenant-writable via HTTP
+        and therefore unsuitable). active_users: one row per (tenant, user_sub);
+        active-in-window = COUNT(*) WHERE last_active_at > now() - window.
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE tenant_policies (
+                id         uuid         NOT NULL DEFAULT gen_random_uuid(),
+                tenant_id  uuid         NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                key        varchar(100) NOT NULL,
+                value      text         NOT NULL DEFAULT '',
+                created_at timestamptz  NOT NULL DEFAULT now(),
+                updated_at timestamptz  NOT NULL DEFAULT now(),
+                CONSTRAINT pk_tenant_policies PRIMARY KEY (id),
+                CONSTRAINT uq_tenant_policies_tenant_key UNIQUE (tenant_id, key),
+                CONSTRAINT chk_tenant_policies_key CHECK (key ~ '^[a-z0-9_]{1,100}$')
+              );
+
+              CREATE TABLE active_users (
+                tenant_id      uuid         NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+                user_sub       varchar(255) NOT NULL,
+                last_active_at timestamptz  NOT NULL DEFAULT now(),
+                created_at     timestamptz  NOT NULL DEFAULT now(),
+                CONSTRAINT pk_active_users PRIMARY KEY (tenant_id, user_sub)
+              );
+
+              CREATE INDEX idx_active_users_tenant_last_active
+                ON active_users (tenant_id, last_active_at);
+        - rollback:
+            sql: |
+              DROP TABLE IF EXISTS active_users;
+              DROP TABLE IF EXISTS tenant_policies;

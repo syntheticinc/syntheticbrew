@@ -1,6 +1,6 @@
 // Package mcp re-exports the TransportPolicy types from pkg/plugin so that
 // internal packages can import them via the shorter mcpcatalog alias without
-// depending on the public plugin package directly. External modules (e.g. EE)
+// depending on the public plugin package directly. External modules
 // must import pkg/plugin instead to satisfy Go's internal package visibility rules.
 package mcp
 

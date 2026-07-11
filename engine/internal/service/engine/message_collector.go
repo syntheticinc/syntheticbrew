@@ -20,7 +20,7 @@ type MessageCollector struct {
 	// writeCtx carries tenant_id (and other request-scoped values) into DB
 	// writes triggered by the eino callback chain. handleEvent runs from a
 	// callback signature without ctx (`func(*domain.AgentEvent) error`), so
-	// without this stored ctx writes fall back to CETenantID and Cloud users
+	// without this stored ctx writes fall back to CETenantID and multi-tenant users
 	// lose their assistant/tool/reasoning rows on reload.
 	writeCtx    context.Context
 	messages    []*schema.Message

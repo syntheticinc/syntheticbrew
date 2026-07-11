@@ -101,8 +101,8 @@ func TestMCPHandler_Create_CE_AllowsStdio(t *testing.T) {
 }
 
 // TestMCPHandler_Create_Cloud_BlocksStdio verifies that stdio transport is
-// rejected with 400 in Cloud deployment mode (the security gate that
-// prevents arbitrary RCE on the Cloud-hosted engine host).
+// rejected with 400 in multi-tenant deployment mode (the security gate that
+// prevents arbitrary RCE on the hosted engine host).
 func TestMCPHandler_Create_Cloud_BlocksStdio(t *testing.T) {
 	t.Setenv("SYNTHETICBREW_MODE", "cloud")
 
@@ -151,7 +151,7 @@ func TestMCPHandler_Create_RejectsDocker(t *testing.T) {
 }
 
 // TestMCPHandler_Create_Cloud_AllowsHTTP verifies HTTP/SSE transports still
-// work in Cloud (they stay network-bound and don't spawn processes).
+// work in multi-tenant mode (they stay network-bound and don't spawn processes).
 func TestMCPHandler_Create_Cloud_AllowsHTTP(t *testing.T) {
 	t.Setenv("SYNTHETICBREW_MODE", "cloud")
 
