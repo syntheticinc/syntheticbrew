@@ -7,6 +7,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-07-11
+
+### Changed
+
+- Bump `appVersion` to `1.13.1` to track the engine patch that makes the admin
+  over-limit banner non-blocking (was a full-screen "Limit Reached" modal that
+  trapped over-limit users). No template or values changes.
+
 ## [0.12.2] - 2026-07-11
 
 ### Changed

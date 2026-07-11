@@ -4,22 +4,24 @@ import type { UsageStatusData } from '../types';
 
 const DISMISS_KEY = 'syntheticbrew_quota_banner_dismissed';
 
-const METRICS: Array<{ key: keyof UsageStatusData; label: string }> = [
+const METRICS: Array<{ key: keyof UsageStatusData; label: string; recover?: string }> = [
   { key: 'active_users', label: 'Monthly active users' },
-  { key: 'schemas', label: 'Schemas' },
-  { key: 'knowledge_documents', label: 'Knowledge documents' },
+  { key: 'schemas', label: 'Schemas', recover: 'schema' },
+  { key: 'knowledge_documents', label: 'Knowledge documents', recover: 'document' },
   { key: 'turns', label: 'Turns' },
 ];
 
 interface WorstMetric {
   label: string;
   pct: number;
+  // Countable resources (schemas, documents) let an over-limit user
+  // self-recover by deleting one; recover is the singular noun for that hint.
+  recover?: string;
 }
 
 export default function QuotaBanner() {
   const [status, setStatus] = useState<UsageStatusData | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     // Reappear on page load (clear previous dismissal)
@@ -43,77 +45,38 @@ export default function QuotaBanner() {
     import.meta.env.VITE_AUTH_MODE === 'external' && landingUrl ? `${landingUrl}/billing` : null;
 
   // Find the worst metric (unlimited metrics never warn)
-  const worstMetric = METRICS.reduce<WorstMetric | null>((acc, { key, label }) => {
+  const worstMetric = METRICS.reduce<WorstMetric | null>((acc, { key, label, recover }) => {
     const m = status?.[key];
     if (!m || m.limit === null || m.limit <= 0) return acc;
     const pct = (m.used / m.limit) * 100;
-    if (!acc || pct > acc.pct) return { label, pct };
+    if (!acc || pct > acc.pct) return { label, pct, recover };
     return acc;
   }, null);
-
-  // Strictly over limit → modal block. 100% of a legit plan is not "over".
-  if (worstMetric && worstMetric.pct > 100) {
-    if (!showModal) {
-      // Auto-show modal on first detection
-      setTimeout(() => setShowModal(true), 100);
-    }
-
-    return showModal ? (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-        <div className="bg-brand-dark-surface border border-red-500/30 rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-400">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </div>
-            <h2 className="text-lg font-semibold text-brand-light font-mono">Limit Reached</h2>
-          </div>
-          <p className="text-sm text-brand-shade2 mb-2 font-mono">
-            You've used <span className="text-red-400 font-semibold">{worstMetric.pct.toFixed(0)}%</span> of your{' '}
-            <span className="text-brand-light">{worstMetric.label}</span> limit.
-          </p>
-          <p className="text-xs text-brand-shade3 mb-6 font-mono">
-            {upgradeUrl
-              ? 'Upgrade your plan to continue using SyntheticBrew without interruption.'
-              : 'Raise or remove the configured limit to continue using SyntheticBrew.'}
-          </p>
-          <div className="flex items-center gap-3">
-            {upgradeUrl && (
-              <a
-                href={upgradeUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 px-4 py-2.5 bg-brand-accent hover:bg-brand-accent-hover text-brand-light rounded-btn text-sm font-semibold font-mono transition-colors text-center"
-              >
-                Upgrade Plan
-              </a>
-            )}
-            <button
-              onClick={() => setShowModal(false)}
-              className="px-4 py-2.5 text-brand-shade3 hover:text-brand-light text-sm font-mono transition-colors"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      </div>
-    ) : null;
-  }
 
   if (dismissed || !worstMetric || worstMetric.pct < 80) {
     return null;
   }
 
-  // 80-94% → yellow, 95-99% → red
-  const isRed = worstMetric.pct >= 95;
+  // Never block the UI: over-limit is a non-blocking red banner that tells the
+  // user how to self-recover (delete a resource) — walling the whole dashboard
+  // behind an "upgrade" modal traps users who just need to delete a schema to
+  // get back under their limit. 80-94% amber, 95%+ red.
+  const pct = worstMetric.pct;
+  const isOver = pct > 100;
+  const isRed = pct >= 95;
   const bgClass = isRed ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30';
   const textClass = isRed ? 'text-red-400' : 'text-amber-400';
-  const message = isRed
-    ? `Almost at limit — ${worstMetric.label} at ${worstMetric.pct.toFixed(0)}%.`
-    : `You've used ${worstMetric.pct.toFixed(0)}% of your ${worstMetric.label} limit this month.`;
+
+  let message: string;
+  if (isOver && worstMetric.recover) {
+    message = `Over your ${worstMetric.label} limit (${pct.toFixed(0)}%). Remove a ${worstMetric.recover} to get back under your limit${upgradeUrl ? ', or upgrade' : ''}.`;
+  } else if (isOver) {
+    message = `Over your ${worstMetric.label} limit (${pct.toFixed(0)}%). ${upgradeUrl ? 'Upgrade for a higher limit' : 'Raise the configured limit'}.`;
+  } else if (isRed) {
+    message = `Almost at limit — ${worstMetric.label} at ${pct.toFixed(0)}%.`;
+  } else {
+    message = `You've used ${pct.toFixed(0)}% of your ${worstMetric.label} limit this month.`;
+  }
 
   return (
     <div className={`flex items-center justify-between px-4 py-2 border-b ${bgClass} shrink-0`}>

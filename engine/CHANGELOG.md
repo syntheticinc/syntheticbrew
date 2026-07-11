@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.1] — 2026-07-11
+
+### Fixed
+
+- **Admin over-limit banner no longer traps the user.** A tenant strictly over
+  a usage limit was walled behind a full-screen "Limit Reached" modal whose
+  Dismiss did not stick (it re-opened ~100ms after every dismiss), so an
+  over-limit user could not reach the delete action to get back under the limit
+  — the only way out was to upgrade. Over-limit is now a non-blocking banner
+  that, for countable resources (schemas, documents), tells the user to remove
+  one to recover (or upgrade); the dashboard stays fully usable underneath.
+
 ## [1.13.0] — 2026-07-11
 
 ### Added
