@@ -8,12 +8,18 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/go-chi/chi/v5"
 	"google.golang.org/grpc"
 )
+
+// ErrSchemaQuotaExceeded is returned by Plugin.OnSchemaCreate when creating
+// the requested schemas would exceed the tenant's configured limit. Callers
+// surface it as a payment-required condition instead of a generic failure.
+var ErrSchemaQuotaExceeded = errors.New("schema quota exceeded")
 
 // ModelSelectorConfigurator is a minimal interface for registering models.
 // Implemented by *llm.ModelSelector (internal CE type).
@@ -79,6 +85,16 @@ type Plugin interface {
 	// An empty tenantID means the call is outside any tenant scope
 	// (CE/self-hosted); implementations should no-op and return nil.
 	OnAgentStep(ctx context.Context, tenantID string, stepsLimit int) error
+
+	// OnSchemaCreate is invoked before the engine persists new user-facing
+	// schemas — single creations pass n=1, batch operations (e.g. a template
+	// fork) pass the whole batch size so the decision covers the batch
+	// atomically. Returning ErrSchemaQuotaExceeded (or any error) aborts the
+	// creation. System bootstrap paths (seeding) do not call it.
+	//
+	// An empty tenantID means the call is outside any tenant scope
+	// (CE/self-hosted); implementations should no-op and return nil.
+	OnSchemaCreate(ctx context.Context, tenantID string, n int) error
 
 	// SetTenantSeeder installs a callback the plugin can invoke when it
 	// accepts a tenant-provisioning request. The engine wires a seeder backed
