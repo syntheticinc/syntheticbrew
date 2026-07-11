@@ -38,7 +38,7 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 		return NewAdminGetSchemaTool(deps.SchemaRepo)
 	})
 	store.Register("admin_create_schema", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewAdminCreateSchemaTool(deps.SchemaRepo, reloader)
+		return NewAdminCreateSchemaTool(deps.SchemaCreator, reloader)
 	})
 	store.Register("admin_update_schema", func(_ tools.ToolDependencies) tool.InvokableTool {
 		return NewAdminUpdateSchemaTool(deps.SchemaRepo, deps.AgentRepo, reloader)
@@ -132,7 +132,7 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 
 	// Provisioning tools — high-level one-shot helpers for external MCP clients.
 	store.Register("provision_agent", func(_ tools.ToolDependencies) tool.InvokableTool {
-		return NewProvisionAgentTool(deps.AgentRepo, deps.SchemaRepo, reloader)
+		return NewProvisionAgentTool(deps.AgentRepo, deps.SchemaRepo, deps.SchemaCreator, reloader)
 	})
 	// get_embed_snippet needs a token minter; skip registration when absent so
 	// the tool never surfaces without the ability to mint a key.

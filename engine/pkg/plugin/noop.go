@@ -34,6 +34,9 @@ func (Noop) CheckSessionAllowed(context.Context) string { return "" }
 // OnAgentStep is a no-op. The base engine has no usage-reporting surface.
 func (Noop) OnAgentStep(context.Context, string, int) error { return nil }
 
+// OnSchemaCreate is a no-op — CE enforces no schema limit.
+func (Noop) OnSchemaCreate(context.Context, string, int) error { return nil }
+
 // SetTenantSeeder is a no-op. CE has no provisioning endpoint, so there is
 // nothing to wire the seeder into.
 func (Noop) SetTenantSeeder(TenantSeeder) {}

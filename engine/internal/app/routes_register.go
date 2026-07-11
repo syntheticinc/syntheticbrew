@@ -421,10 +421,14 @@ func registerHTTPRoutes(deps routesDeps) {
 
 		// Schemas (with agent_relations). Chat access on a schema is
 		// controlled by schemas.chat_enabled; edge graph lives in
-		// agent_relations (source→target delegation).
+		// agent_relations (source→target delegation). Creation routes through
+		// the guarded schemacreate usecase — the shared seam with the admin
+		// tools and the template fork — so the plugin quota decision covers
+		// every path.
 		agentRelationRepo := configrepo.NewGORMAgentRelationRepository(pgDB)
+		schemaCreateUC := newSchemaCreateUsecase(schemaRepo, plugin)
 		schemaHandler := deliveryhttp.NewSchemaHandler(
-			&schemaServiceHTTPAdapter{repo: schemaRepo, db: pgDB},
+			&schemaServiceHTTPAdapter{repo: schemaRepo, db: pgDB, creator: schemaCreateUC},
 			&agentRelationServiceHTTPAdapter{repo: agentRelationRepo, agentRepo: agentRepo, schemaRepo: schemaRepo, db: pgDB},
 			schemaRepo,
 		)
@@ -568,7 +572,7 @@ func registerHTTPRoutes(deps routesDeps) {
 		// authenticated user; fork requires schemas-write scope.
 		if pgDB != nil {
 			tmplRepo := configrepo.NewGORMSchemaTemplateRepository(pgDB)
-			forkSvc := svcschematemplate.NewForkService(pgDB, tmplRepo)
+			forkSvc := svcschematemplate.NewForkService(pgDB, tmplRepo, plugin)
 			forkAdapter := svcschematemplate.NewUsecaseForkerAdapter(forkSvc)
 			tmplUC := ucschematemplate.New(tmplRepo, forkAdapter)
 			tmplHandler := deliveryhttp.NewSchemaTemplateHandler(tmplUC, "1.0")

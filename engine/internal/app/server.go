@@ -446,8 +446,11 @@ func Run(sc ServerConfig) error {
 				mcpSyncer = newMCPClientSyncAdapter(mcpManager)
 			}
 			admintools.RegisterAdminTools(components.AgentToolResolver.BuiltinStore(), admintools.AdminToolDependencies{
-				AgentRepo:         newAdminAgentRepoAdapter(configrepo.NewGORMAgentRepository(pgDB)),
-				SchemaRepo:        newAdminSchemaRepoAdapter(configrepo.NewGORMSchemaRepository(pgDB)),
+				AgentRepo:  newAdminAgentRepoAdapter(configrepo.NewGORMAgentRepository(pgDB)),
+				SchemaRepo: newAdminSchemaRepoAdapter(configrepo.NewGORMSchemaRepository(pgDB)),
+				// Guarded creation path: tool-driven schema creation passes the
+				// same plugin quota seam as the REST handler and the fork.
+				SchemaCreator:     newAdminSchemaCreatorAdapter(newSchemaCreateUsecase(configrepo.NewGORMSchemaRepository(pgDB), sc.Plugin)),
 				MCPServerRepo:     newAdminMCPServerRepoAdapter(configrepo.NewGORMMCPServerRepository(pgDB)),
 				ModelRepo:         newAdminModelRepoAdapter(configrepo.NewGORMLLMProviderRepository(pgDB)),
 				AgentRelationRepo: newAdminAgentRelationRepoAdapter(configrepo.NewGORMAgentRelationRepository(pgDB), configrepo.NewGORMAgentRepository(pgDB)),

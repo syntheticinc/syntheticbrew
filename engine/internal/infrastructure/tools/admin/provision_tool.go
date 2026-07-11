@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // validateEndpoint normalizes a caller-supplied engine base URL. It returns the
@@ -39,17 +41,19 @@ type WidgetTokenMinter interface {
 // --- provision_agent ---
 
 type provisionAgentTool struct {
-	agentRepo  AgentRepository
-	schemaRepo SchemaRepository
-	reloader   func(context.Context)
+	agentRepo     AgentRepository
+	schemaRepo    SchemaRepository
+	schemaCreator SchemaCreator
+	reloader      func(context.Context)
 }
 
 // NewProvisionAgentTool wires the one-shot agent provisioning tool. It composes
 // existing repos to create a chat-enabled schema, the agent, and the membership
 // (entry-agent) binding in a single call so external MCP clients do not have to
-// orchestrate three separate admin calls.
-func NewProvisionAgentTool(agentRepo AgentRepository, schemaRepo SchemaRepository, reloader func(context.Context)) tool.InvokableTool {
-	return &provisionAgentTool{agentRepo: agentRepo, schemaRepo: schemaRepo, reloader: reloader}
+// orchestrate three separate admin calls. Schema creation goes through the
+// guarded creator (quota seam); schemaRepo remains for the entry-agent update.
+func NewProvisionAgentTool(agentRepo AgentRepository, schemaRepo SchemaRepository, schemaCreator SchemaCreator, reloader func(context.Context)) tool.InvokableTool {
+	return &provisionAgentTool{agentRepo: agentRepo, schemaRepo: schemaRepo, schemaCreator: schemaCreator, reloader: reloader}
 }
 
 func (t *provisionAgentTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -156,14 +160,16 @@ func parseProvisionArgs(argsJSON string) (provisionAgentArgs, string, string) {
 	return args, schemaName, ""
 }
 
-// createSchema mirrors admin_create_schema.
+// createSchema mirrors admin_create_schema: same guarded creation path, so
+// the quota decision covers provisioning exactly like the other facades.
 func (t *provisionAgentTool) createSchema(ctx context.Context, agentName, schemaName string) (*SchemaRecord, string) {
-	schemaRec := &SchemaRecord{Name: schemaName, Description: fmt.Sprintf("Chat schema for agent %q", agentName)}
-	if err := t.schemaRepo.Create(ctx, schemaRec); err != nil {
-		if isConflictErr(err) {
+	schemaRec, err := t.schemaCreator.CreateSchema(ctx, schemaName, fmt.Sprintf("Chat schema for agent %q", agentName))
+	if err != nil {
+		var domainErr *pkgerrors.DomainError
+		if errors.As(err, &domainErr) && domainErr.Code == pkgerrors.CodeAlreadyExists {
 			return nil, fmt.Sprintf("Schema with name %q already exists. Choose a different schema_name.", schemaName)
 		}
-		return nil, fmt.Sprintf("[ERROR] Failed to create schema: %v", err)
+		return nil, renderSchemaCreateErr(schemaName, err)
 	}
 	return schemaRec, ""
 }

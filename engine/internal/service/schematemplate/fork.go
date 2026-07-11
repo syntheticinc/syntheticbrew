@@ -21,6 +21,8 @@ import (
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // ErrTemplateNotFound is returned by Fork when the named template is not
@@ -55,18 +57,26 @@ type TemplateReader interface {
 	GetByName(ctx context.Context, name string) (*domain.SchemaTemplate, error)
 }
 
+// CreateGuard admits or rejects the fork's schema creation before any row is
+// written — the same plugin quota seam the REST handler and the admin tools
+// pass through. Satisfied structurally by pkg/plugin.Plugin.
+type CreateGuard interface {
+	OnSchemaCreate(ctx context.Context, tenantID string, n int) error
+}
+
 // ForkService clones a catalog template into tenant-owned runtime rows.
 // One instance is safe to reuse — state-free apart from the injected DB
 // handle.
 type ForkService struct {
 	db    *gorm.DB
 	repo  TemplateReader
+	guard CreateGuard
 }
 
-// NewForkService constructs a ForkService backed by the given DB handle and
-// template reader.
-func NewForkService(db *gorm.DB, repo TemplateReader) *ForkService {
-	return &ForkService{db: db, repo: repo}
+// NewForkService constructs a ForkService backed by the given DB handle,
+// template reader, and creation guard.
+func NewForkService(db *gorm.DB, repo TemplateReader, guard CreateGuard) *ForkService {
+	return &ForkService{db: db, repo: repo, guard: guard}
 }
 
 // Fork clones `templateName` into a new schema called `newSchemaName`,
@@ -99,6 +109,15 @@ func (s *ForkService) Fork(ctx context.Context, templateName, newSchemaName stri
 
 	if err := validateDefinition(tmpl.Definition); err != nil {
 		return nil, fmt.Errorf("template %q: %w", templateName, err)
+	}
+
+	// Quota seam, before any row is written: a fork creates exactly one
+	// schema. Checked outside the transaction — a rejection costs nothing.
+	if err := s.guard.OnSchemaCreate(ctx, tenantID, 1); err != nil {
+		if errors.Is(err, plugin.ErrSchemaQuotaExceeded) {
+			return nil, pkgerrors.UsageLimited("schema limit reached: upgrade your plan or remove a schema to free a slot")
+		}
+		return nil, fmt.Errorf("schema creation admission: %w", err)
 	}
 
 	var result ForkedSchema

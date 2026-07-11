@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // --- stubs ---
@@ -56,6 +57,25 @@ func (s *stubSchemaRepo) Update(_ context.Context, _ string, r *SchemaRecord) er
 	s.updated = r
 	return nil
 }
+
+// stubCreator adapts a stubSchemaRepo to the SchemaCreator seam so the
+// provisioning tests keep asserting through sr.created. err short-circuits
+// the creation like a guard rejection would.
+type stubCreator struct {
+	repo *stubSchemaRepo
+	err  error
+}
+
+func (c *stubCreator) CreateSchema(ctx context.Context, name, description string) (*SchemaRecord, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	rec := &SchemaRecord{Name: name, Description: description}
+	if err := c.repo.Create(ctx, rec); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
 func (s *stubSchemaRepo) Delete(context.Context, string) error { return nil }
 
 type stubMinter struct{ token string }
@@ -72,7 +92,7 @@ func (m *stubMinter) MintChatToken(context.Context, string) (string, error) {
 func TestProvisionAgent_HappyPath(t *testing.T) {
 	ar, sr := &stubAgentRepo{}, &stubSchemaRepo{}
 	reloaded := false
-	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, reloader: func(context.Context) { reloaded = true }}
+	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, schemaCreator: &stubCreator{repo: sr}, reloader: func(context.Context) { reloaded = true }}
 
 	out, err := tool.InvokableRun(context.Background(),
 		`{"name":"support","system_prompt":"You are a support agent."}`)
@@ -104,10 +124,12 @@ func TestProvisionAgent_HappyPath(t *testing.T) {
 func TestProvisionAgent_ThreadsTenantCtxToReloader(t *testing.T) {
 	const tenant = "22222222-2222-2222-2222-222222222222"
 	var gotTenant string
+	sr := &stubSchemaRepo{}
 	tool := &provisionAgentTool{
-		agentRepo:  &stubAgentRepo{},
-		schemaRepo: &stubSchemaRepo{},
-		reloader:   func(ctx context.Context) { gotTenant = domain.TenantIDFromContext(ctx) },
+		agentRepo:     &stubAgentRepo{},
+		schemaRepo:    sr,
+		schemaCreator: &stubCreator{repo: sr},
+		reloader:      func(ctx context.Context) { gotTenant = domain.TenantIDFromContext(ctx) },
 	}
 
 	ctx := domain.WithTenantID(context.Background(), tenant)
@@ -125,7 +147,7 @@ func TestProvisionAgent_ThreadsTenantCtxToReloader(t *testing.T) {
 
 func TestProvisionAgent_RejectsManagementTool(t *testing.T) {
 	ar, sr := &stubAgentRepo{}, &stubSchemaRepo{}
-	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, reloader: func(context.Context) {}}
+	tool := &provisionAgentTool{agentRepo: ar, schemaRepo: sr, schemaCreator: &stubCreator{repo: sr}, reloader: func(context.Context) {}}
 
 	out, err := tool.InvokableRun(context.Background(),
 		`{"name":"pwn","system_prompt":"x","tools":["admin_delete_agent"]}`)
@@ -141,8 +163,34 @@ func TestProvisionAgent_RejectsManagementTool(t *testing.T) {
 	}
 }
 
+// TestProvisionAgent_QuotaRejection pins the guarded creation path: when the
+// creator rejects with a usage-limited DomainError (tenant over its schema
+// cap), the tool surfaces the machine-readable quota sentinel and persists
+// nothing — the MCP provisioning path is gated exactly like REST.
+func TestProvisionAgent_QuotaRejection(t *testing.T) {
+	ar, sr := &stubAgentRepo{}, &stubSchemaRepo{}
+	tool := &provisionAgentTool{
+		agentRepo:     ar,
+		schemaRepo:    sr,
+		schemaCreator: &stubCreator{repo: sr, err: pkgerrors.UsageLimited("schema limit reached")},
+		reloader:      func(context.Context) {},
+	}
+
+	out, err := tool.InvokableRun(context.Background(),
+		`{"name":"support","system_prompt":"You are a support agent."}`)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.Contains(out, "[quota:schema_limit_reached]") {
+		t.Fatalf("expected quota sentinel in tool result, got: %s", out)
+	}
+	if sr.created != nil || ar.created != nil {
+		t.Fatalf("nothing must be persisted on quota rejection: schema=%v agent=%v", sr.created, ar.created)
+	}
+}
+
 func TestProvisionAgent_RequiresNameAndPrompt(t *testing.T) {
-	tool := &provisionAgentTool{agentRepo: &stubAgentRepo{}, schemaRepo: &stubSchemaRepo{}, reloader: func(context.Context) {}}
+	tool := &provisionAgentTool{agentRepo: &stubAgentRepo{}, schemaRepo: &stubSchemaRepo{}, schemaCreator: &stubCreator{repo: &stubSchemaRepo{}}, reloader: func(context.Context) {}}
 	for _, tc := range []struct{ args, want string }{
 		{`{"system_prompt":"x"}`, "name is required"},
 		{`{"name":"a"}`, "system_prompt is required"},

@@ -12,8 +12,12 @@ import (
 // AdminToolDependencies holds repositories and callbacks for admin tools.
 // Captured in closure at registration time via RegisterAdminTools.
 type AdminToolDependencies struct {
-	AgentRepo         AgentRepository
-	SchemaRepo        SchemaRepository
+	AgentRepo  AgentRepository
+	SchemaRepo SchemaRepository
+	// SchemaCreator is the guarded schema-creation path (validation + the
+	// plugin quota seam). Creation tools use it instead of SchemaRepo.Create
+	// so the admission decision covers the tool path exactly like REST.
+	SchemaCreator     SchemaCreator
 	MCPServerRepo     MCPServerRepository
 	ModelRepo         ModelRepository
 	AgentRelationRepo AgentRelationRepository
@@ -30,6 +34,15 @@ type AdminToolDependencies struct {
 	// tenant from ctx (per-tenant, never a process-global broadcast). Nil on
 	// the legacy no-DB boot path — lifecycle tools then skip the sync.
 	MCPSyncer MCPClientSyncer
+}
+
+// SchemaCreator creates user-facing schemas through the engine's guarded
+// creation path. Consumer-side interface; the app layer adapts the
+// schemacreate usecase. Errors surface as pkg/errors DomainErrors —
+// creation tools branch on the code (usage-limited vs already-exists) to
+// render the LLM-facing message.
+type SchemaCreator interface {
+	CreateSchema(ctx context.Context, name, description string) (*SchemaRecord, error)
 }
 
 // MCPClientSyncer synchronises the live per-tenant MCP client registry after a

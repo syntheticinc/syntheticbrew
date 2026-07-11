@@ -5,7 +5,14 @@ All notable changes to the `syntheticbrew-engine` Helm chart will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+
+## [0.12.4] — 2026-07-11
+
+### Changed
+
+- Bump `appVersion` to 1.14.0 (engine now enforces the schema-creation quota on
+  all paths — MCP tools and template fork, not only `POST /api/v1/schemas`). No
+  chart template or values change.
 
 ## [0.12.3] - 2026-07-11
 

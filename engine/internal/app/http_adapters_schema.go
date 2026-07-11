@@ -10,6 +10,7 @@ import (
 
 	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/schemacreate"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -41,9 +42,12 @@ func (a *schemaServiceHTTPAdapter) countAgentsInSchema(ctx context.Context, sche
 }
 
 // schemaServiceHTTPAdapter bridges GORMSchemaRepository to the http.SchemaService interface.
+// Creation goes through the guarded schemacreate usecase (the shared seam for
+// every facade); reads/updates/deletes stay on the repository.
 type schemaServiceHTTPAdapter struct {
-	repo *configrepo.GORMSchemaRepository
-	db   *gorm.DB
+	repo    *configrepo.GORMSchemaRepository
+	db      *gorm.DB
+	creator *schemacreate.Usecase
 }
 
 func (a *schemaServiceHTTPAdapter) ListSchemas(ctx context.Context) ([]deliveryhttp.SchemaInfo, error) {
@@ -111,25 +115,22 @@ func (a *schemaServiceHTTPAdapter) CreateSchema(ctx context.Context, req deliver
 		chatEnabled = *req.ChatEnabled
 	}
 
-	record := &configrepo.SchemaRecord{
+	out, err := a.creator.Execute(ctx, schemacreate.Input{
 		Name:         req.Name,
 		Description:  req.Description,
 		EntryAgentID: entryAgentID,
 		ChatEnabled:  chatEnabled,
-	}
-	if err := a.repo.Create(ctx, record); err != nil {
-		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") || strings.Contains(err.Error(), "UNIQUE constraint") {
-			return nil, pkgerrors.AlreadyExists(fmt.Sprintf("schema with name %q already exists", req.Name))
-		}
-		return nil, fmt.Errorf("create schema: %w", err)
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &deliveryhttp.SchemaInfo{
-		ID:          record.ID,
-		Name:        record.Name,
-		Description: record.Description,
-		ChatEnabled: record.ChatEnabled,
-		CreatedAt:   record.CreatedAt,
+		ID:          out.ID,
+		Name:        out.Name,
+		Description: out.Description,
+		ChatEnabled: out.ChatEnabled,
+		CreatedAt:   out.CreatedAt,
 	}, nil
 }
 
@@ -352,7 +353,7 @@ func isUUID(s string) bool {
 				return false
 			}
 		default:
-			if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') && !(c >= 'A' && c <= 'F') {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 				return false
 			}
 		}

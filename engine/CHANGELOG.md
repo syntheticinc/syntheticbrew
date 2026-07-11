@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.14.0] — 2026-07-11
+
+### Fixed
+
+- **Schema-creation quota is now enforced on every path.** The Cloud plan's
+  schema limit was checked only for `POST /api/v1/schemas`, so schemas created
+  through the MCP `provision_agent` / `admin_create_schema` tools or the
+  template-fork endpoint bypassed the cap entirely — a Free tenant driving a
+  coding agent over MCP could create schemas without bound. Creation is now
+  consolidated behind a single guarded usecase and a new
+  `plugin.OnSchemaCreate` extension point that every path (REST, the admin
+  tools, and fork) passes through, so the limit holds uniformly. System
+  bootstrap/seeding is intentionally exempt.
+
+### Added
+
+- **`plugin.Plugin.OnSchemaCreate(ctx, tenantID, n)` extension point** (mirrors
+  `OnAgentStep`) with `plugin.ErrSchemaQuotaExceeded`. CE's `Noop` admits
+  everything; an external plugin enforces the tenant's configured limit. The
+  engine calls it from the shared `usecase/schemacreate` seam before persisting.
+
 ## [1.13.1] — 2026-07-11
 
 ### Fixed

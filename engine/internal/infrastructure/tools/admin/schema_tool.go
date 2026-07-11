@@ -3,12 +3,15 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
 // --- admin_list_schemas ---
@@ -102,12 +105,12 @@ func (t *adminGetSchemaTool) InvokableRun(ctx context.Context, argsJSON string, 
 // --- admin_create_schema ---
 
 type adminCreateSchemaTool struct {
-	repo     SchemaRepository
+	creator  SchemaCreator
 	reloader func(context.Context)
 }
 
-func NewAdminCreateSchemaTool(repo SchemaRepository, reloader func(context.Context)) tool.InvokableTool {
-	return &adminCreateSchemaTool{repo: repo, reloader: reloader}
+func NewAdminCreateSchemaTool(creator SchemaCreator, reloader func(context.Context)) tool.InvokableTool {
+	return &adminCreateSchemaTool{creator: creator, reloader: reloader}
 }
 
 func (t *adminCreateSchemaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -135,16 +138,9 @@ func (t *adminCreateSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 		return "[ERROR] name is required", nil
 	}
 
-	record := &SchemaRecord{
-		Name:        args.Name,
-		Description: args.Description,
-	}
-
-	if err := t.repo.Create(ctx, record); err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "UNIQUE") {
-			return fmt.Sprintf("Schema with name %q already exists.", args.Name), nil
-		}
-		return fmt.Sprintf("[ERROR] Failed to create schema: %v", err), nil
+	record, err := t.creator.CreateSchema(ctx, args.Name, args.Description)
+	if err != nil {
+		return renderSchemaCreateErr(args.Name, err), nil
 	}
 
 	if t.reloader != nil {
@@ -153,6 +149,22 @@ func (t *adminCreateSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 
 	slog.InfoContext(ctx, "[AdminCreateSchema] created schema", "name", args.Name, "id", record.ID)
 	return fmt.Sprintf("Schema %q created (id=%s).", args.Name, record.ID), nil
+}
+
+// renderSchemaCreateErr turns a guarded-creation failure into the LLM-facing
+// tool result. The quota case carries a stable machine-readable sentinel so
+// programmatic MCP clients can distinguish it from a generic failure.
+func renderSchemaCreateErr(name string, err error) string {
+	var domainErr *pkgerrors.DomainError
+	if errors.As(err, &domainErr) {
+		switch domainErr.Code {
+		case pkgerrors.CodeUsageLimited:
+			return "[quota:schema_limit_reached] Your plan's schema limit is reached. Upgrade the plan or remove an existing schema, then retry."
+		case pkgerrors.CodeAlreadyExists:
+			return fmt.Sprintf("Schema with name %q already exists.", name)
+		}
+	}
+	return fmt.Sprintf("[ERROR] Failed to create schema: %v", err)
 }
 
 // --- admin_update_schema ---
