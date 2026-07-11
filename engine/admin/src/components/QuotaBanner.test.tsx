@@ -87,14 +87,37 @@ describe('QuotaBanner', () => {
     expect(screen.queryByText('Limit Reached')).not.toBeInTheDocument();
   });
 
-  it('shows the blocking modal only when strictly over limit (>100%)', async () => {
-    mockApi.getUsageStatus.mockResolvedValue(usageWith({ used: 51, limit: 50 }));
+  it('over limit (>100%) shows a NON-BLOCKING banner, never a blocking modal', async () => {
+    // Regression: an over-limit tenant used to be walled behind a full-screen
+    // "Limit Reached" modal whose Dismiss did not stick, so it could not reach
+    // the delete action to self-recover. Over-limit must be a plain banner.
+    mockApi.getUsageStatus.mockResolvedValue(usageWith({ used: 75, limit: 50 })); // 150%
+
+    const { container } = render(<QuotaBanner />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Over your Turns limit \(150%\)/)).toBeInTheDocument();
+    });
+    // No blocking modal, and nothing renders a full-screen overlay.
+    expect(screen.queryByText('Limit Reached')).not.toBeInTheDocument();
+    expect(container.querySelector('.fixed.inset-0')).toBeNull();
+  });
+
+  it('over limit on a deletable resource surfaces the delete-to-recover hint', async () => {
+    mockApi.getUsageStatus.mockResolvedValue({
+      active_users: { used: 1, limit: null },
+      schemas: { used: 3, limit: 2 }, // 150%
+      knowledge_documents: { used: 1, limit: null },
+      turns: { used: 1, limit: null },
+    });
 
     render(<QuotaBanner />);
 
     await waitFor(() => {
-      expect(screen.getByText('Limit Reached')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Remove a schema to get back under your limit/),
+      ).toBeInTheDocument();
     });
-    expect(screen.queryByRole('link', { name: 'Upgrade Plan' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Limit Reached')).not.toBeInTheDocument();
   });
 });
