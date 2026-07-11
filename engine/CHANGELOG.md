@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.13.0] — 2026-07-11
+
+### Added
+
+- **Audience- and scope-aware EdDSA verification for the MCP endpoint.** A JWT
+  presented to `/api/v1/mcp/rpc` may now carry `aud` and `scope` claims; the
+  verifier resolves them to a scope set, requiring the audience to match the
+  configured resource (new `SYNTHETICBREW_JWT_EXPECTED_AUDIENCE`) and the scope
+  to be recognised. A token without an audience keeps the previous admin-scoped
+  behaviour, so existing local/session tokens are unaffected. An `aud` claim
+  that is present but empty is rejected (fail-closed).
+- **Per-tenant policy and active-user primitives.** New `tenant_policies` and
+  `active_users` tables (migration `016`) back operator-configurable limits on
+  schemas, knowledge-base documents, and distinct active users, with counters
+  and a usage-status aggregate the plugin quota gate reads. The seeded system
+  schema is excluded from the schema count so a freshly provisioned tenant is
+  not reported at its limit out of the box.
+- **`ModelSelectorConfigurator` prompt-prefix seam.** A plugin can install a
+  per-tenant system-prompt prefix (e.g. an attribution line) without touching
+  engine internals.
+
+### Changed
+
+- **`RequireAdminSession` now requires the admin scope bit.** A narrowly-scoped
+  MCP token can no longer reach admin-only endpoints, closing a privilege
+  path where a provisioning token could mint API keys.
+- **Admin dashboard:** the API-keys page gained a "Connect a coding agent" card
+  with per-agent (Claude Code / Cursor / VS Code / Codex) commands, a usage
+  panel, and a hardened cross-origin session handoff.
+
+### Fixed
+
+- Usage aggregation counted schemas process-wide instead of per tenant; it is
+  now scoped to the requesting tenant, closing a cross-tenant count leak.
+
 ## [1.12.0] — 2026-07-08
 
 ### Added

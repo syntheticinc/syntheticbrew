@@ -7,6 +7,15 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-07-11
+
+### Changed
+
+- Bump `appVersion` to `1.13.0` to track the engine release that adds
+  audience/scope-aware MCP verification and the per-tenant policy primitives
+  (migration `016`). No template or values changes — the chart deploys the
+  new engine image and its migration job runs the new changeset.
+
 ## [0.12.1] - 2026-07-08
 
 ### Changed
