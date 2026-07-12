@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.5] — 2026-07-12
+
+### Changed
+
+- Bumped `appVersion` to `1.14.1` — engine bug fixes: `admin_update_capability`
+  no longer fails, admin MCP tools signal failures via `isError`, raw Postgres
+  errors are sanitized before reaching clients, and deleting a schema that still
+  has sessions returns a clean 409 instead of a 500. No chart template or values
+  changes.
+
 ## [0.12.4] — 2026-07-11
 
 ### Changed
