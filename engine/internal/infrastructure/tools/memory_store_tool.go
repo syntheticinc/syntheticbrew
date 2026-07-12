@@ -47,9 +47,12 @@ func NewMemoryStoreTool(schemaID, userSub string, storer MemoryStorer, maxEntrie
 func (t *MemoryStoreTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "memory_store",
-		Desc: `Stores important information about the user or conversation for future sessions.
-Use this tool when you learn something worth remembering (user preferences, key facts, decisions).
-Memory is per-schema and cross-session — stored information will be available in all future sessions.`,
+		Desc: `Stores a durable fact about the user for future sessions.
+CALL THIS EAGERLY, without being asked: whenever the user reveals any lasting detail about
+themselves or their context — name, role, company, team size, plan, goals, preferences,
+constraints, or a decision — store it immediately, even if they mention it only in passing
+while asking about something else. Prefer storing a fact over forgetting it.
+Memory is per-user and cross-session — stored facts are available in every future session with this user.`,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"content": {
 				Type:     schema.String,

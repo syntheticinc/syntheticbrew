@@ -45,9 +45,11 @@ func NewMemoryRecallTool(schemaID, userSub string, recaller MemoryRecaller) tool
 func (t *MemoryRecallTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "memory_recall",
-		Desc: `Retrieves stored memories from previous sessions with this user.
-Use this tool at the start of a session or when you need to recall past interactions.
-Memory is per-schema and cross-session.`,
+		Desc: `Retrieves what you already know about this user from previous sessions.
+CALL THIS PROACTIVELY at the start of a conversation, and whenever the user refers to their own
+situation ("for us", "my team", "our plan", "as I told you") — recall first, then answer using
+what you remember so your reply is personalized. Returns the user's stored facts (empty if none yet).
+Memory is per-user and cross-session.`,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
@@ -123,9 +125,9 @@ func (t *MemoryRecallTool) InvokableRun(ctx context.Context, argumentsInJSON str
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("## Recalled %d memories\n\n", len(memories)))
+	fmt.Fprintf(&sb, "## Recalled %d memories\n\n", len(memories))
 	for i, m := range memories {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, m.Content))
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, m.Content)
 		if len(m.Metadata) > 0 {
 			sb.WriteString("   Metadata: ")
 			parts := make([]string, 0, len(m.Metadata))
