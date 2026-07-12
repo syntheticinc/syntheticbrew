@@ -17,6 +17,7 @@ const (
 	CodeUnavailable      = "UNAVAILABLE"
 	CodePermissionDenied = "PERMISSION_DENIED"
 	CodeCancelled        = "CANCELLED"
+	CodeConflict         = "CONFLICT"
 	CodeUsageLimited     = "USAGE_LIMITED"
 
 	// LLM-provider error classes — produced at the HTTP boundary in
@@ -88,6 +89,13 @@ func NotFound(message string) *DomainError {
 // AlreadyExists creates an already exists error
 func AlreadyExists(message string) *DomainError {
 	return New(CodeAlreadyExists, message)
+}
+
+// Conflict creates a conflict error (maps to HTTP 409) — used when an
+// operation cannot proceed because the resource still has dependents
+// (e.g. deleting a schema that still has chat sessions).
+func Conflict(message string) *DomainError {
+	return New(CodeConflict, message)
 }
 
 // Unauthorized creates an unauthorized error

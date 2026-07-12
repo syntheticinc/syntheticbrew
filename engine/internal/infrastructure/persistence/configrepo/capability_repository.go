@@ -147,7 +147,11 @@ func (r *GORMCapabilityRepository) Create(ctx context.Context, record *Capabilit
 	return nil
 }
 
-// Update updates an existing capability by ID (tenant-scoped).
+// Update updates an existing capability by ID (tenant-scoped). A capability's
+// type is immutable (a memory capability is never morphed into a knowledge one
+// — callers remove+add instead), so only config and enabled are written; type
+// is left untouched. The map form is required so enabled=false persists (the
+// struct form would skip the zero-value bool).
 func (r *GORMCapabilityRepository) Update(ctx context.Context, id string, record *CapabilityRecord) error {
 	configJSON, err := json.Marshal(record.Config)
 	if err != nil {
@@ -159,7 +163,6 @@ func (r *GORMCapabilityRepository) Update(ctx context.Context, id string, record
 		Model(&models.CapabilityModel{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
-			"type":    record.Type,
 			"config":  string(configJSON),
 			"enabled": record.Enabled,
 		})

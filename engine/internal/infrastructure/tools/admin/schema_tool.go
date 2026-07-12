@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
@@ -35,7 +36,7 @@ func (t *adminListSchemasTool) Info(_ context.Context) (*schema.ToolInfo, error)
 func (t *adminListSchemasTool) InvokableRun(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
 	schemas, err := t.repo.List(ctx)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to list schemas: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to list schemas: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if len(schemas) == 0 {
@@ -90,9 +91,9 @@ func (t *adminGetSchemaTool) InvokableRun(ctx context.Context, argsJSON string, 
 	s, err := t.repo.GetByID(ctx, args.SchemaID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Schema not found: %s", args.SchemaID), nil
+			return fmt.Sprintf("[ERROR] Schema not found: %s", args.SchemaID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get schema: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get schema: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	data, err := json.MarshalIndent(s, "", "  ")
@@ -164,7 +165,7 @@ func renderSchemaCreateErr(name string, err error) string {
 			return fmt.Sprintf("Schema with name %q already exists.", name)
 		}
 	}
-	return fmt.Sprintf("[ERROR] Failed to create schema: %v", err)
+	return fmt.Sprintf("[ERROR] Failed to create schema: %s", tools.SanitizeDBError(err))
 }
 
 // --- admin_update_schema ---
@@ -236,9 +237,9 @@ func (t *adminUpdateSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 
 	if err := t.repo.Update(ctx, args.SchemaID, record); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Schema not found: %s", args.SchemaID), nil
+			return fmt.Sprintf("[ERROR] Schema not found: %s", args.SchemaID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to update schema: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update schema: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -316,9 +317,9 @@ func (t *adminDeleteSchemaTool) InvokableRun(ctx context.Context, argsJSON strin
 
 	if err := t.repo.Delete(ctx, args.SchemaID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Schema not found: %s", args.SchemaID), nil
+			return fmt.Sprintf("[ERROR] Schema not found: %s", args.SchemaID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to delete schema: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to delete schema: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {

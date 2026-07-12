@@ -9,6 +9,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // These tools expose granular MCP-attachment and builtin-tool-attachment
@@ -64,9 +66,9 @@ func (t *adminAttachMCPServerToAgentTool) InvokableRun(ctx context.Context, args
 	existing, err := t.repo.GetByName(ctx, args.AgentName)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.AgentName), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.AgentName), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	for _, s := range existing.MCPServers {
@@ -80,7 +82,7 @@ func (t *adminAttachMCPServerToAgentTool) InvokableRun(ctx context.Context, args
 	updated.MCPServers = append(updated.MCPServers, args.ServerName)
 
 	if err := t.repo.Update(ctx, args.AgentName, updated); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update agent: %s", tools.SanitizeDBError(err)), nil
 	}
 	if t.reloader != nil {
 		t.reloader(ctx)
@@ -126,9 +128,9 @@ func (t *adminDetachMCPServerFromAgentTool) InvokableRun(ctx context.Context, ar
 	existing, err := t.repo.GetByName(ctx, args.AgentName)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.AgentName), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.AgentName), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	filtered := make([]string, 0, len(existing.MCPServers))
@@ -148,7 +150,7 @@ func (t *adminDetachMCPServerFromAgentTool) InvokableRun(ctx context.Context, ar
 	updated.MCPServers = filtered
 
 	if err := t.repo.Update(ctx, args.AgentName, updated); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update agent: %s", tools.SanitizeDBError(err)), nil
 	}
 	if t.reloader != nil {
 		t.reloader(ctx)
@@ -199,9 +201,9 @@ func (t *adminAddBuiltinToolToAgentTool) InvokableRun(ctx context.Context, argsJ
 	existing, err := t.repo.GetByName(ctx, args.AgentName)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.AgentName), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.AgentName), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	for _, name := range existing.BuiltinTools {
@@ -214,7 +216,7 @@ func (t *adminAddBuiltinToolToAgentTool) InvokableRun(ctx context.Context, argsJ
 	updated.BuiltinTools = append(updated.BuiltinTools, args.ToolName)
 
 	if err := t.repo.Update(ctx, args.AgentName, updated); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update agent: %s", tools.SanitizeDBError(err)), nil
 	}
 	if t.reloader != nil {
 		t.reloader(ctx)
@@ -260,9 +262,9 @@ func (t *adminRemoveBuiltinToolFromAgentTool) InvokableRun(ctx context.Context, 
 	existing, err := t.repo.GetByName(ctx, args.AgentName)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.AgentName), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.AgentName), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	filtered := make([]string, 0, len(existing.BuiltinTools))
@@ -282,7 +284,7 @@ func (t *adminRemoveBuiltinToolFromAgentTool) InvokableRun(ctx context.Context, 
 	updated.BuiltinTools = filtered
 
 	if err := t.repo.Update(ctx, args.AgentName, updated); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update agent: %s", tools.SanitizeDBError(err)), nil
 	}
 	if t.reloader != nil {
 		t.reloader(ctx)

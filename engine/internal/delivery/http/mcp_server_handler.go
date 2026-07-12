@@ -12,6 +12,7 @@ import (
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/mcp"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // JSON-RPC 2.0 error codes (subset used by the MCP server endpoint).
@@ -217,11 +218,16 @@ func (h *MCPServerHandler) handleToolsCall(w http.ResponseWriter, ctx context.Co
 	durationMs := time.Since(start).Milliseconds()
 
 	// A tool-returned error is a tool-level failure (isError:true), NOT a
-	// protocol error — admin/provisioning tools return their errors as strings
-	// with a nil error, so err is usually nil and the isError flag comes from
-	// content inspection is unnecessary. When the tool does return a Go error
-	// we still surface it as a tool error, never a 500.
-	isError := err != nil
+	// protocol error. Admin/provisioning tools follow the engine's tool
+	// convention: application failures come back as a normal (string, nil)
+	// result carrying the [ERROR] marker (a non-nil Go error is reserved for
+	// transport/platform faults). So the isError flag comes from BOTH a non-nil
+	// Go error AND a marked result string — mirroring the inverse mapping the
+	// engine applies when it consumes an external MCP server
+	// (mcp/tool_adapter.go turns an upstream isError:true into an [ERROR]
+	// result). The quota sentinel ([quota:…]) is a deliberate success-shaped
+	// signal and does not carry the marker, so it stays isError:false.
+	isError := err != nil || tools.IsErrorResult(result)
 	text := result
 	if err != nil {
 		text = "tool execution failed: " + err.Error()
