@@ -282,7 +282,7 @@ func (a *kbStoreAdapter) resolveAgentID(ctx context.Context, agentName string) (
 	if err := a.db.WithContext(ctx).
 		Raw("SELECT id FROM agents WHERE name = ?", agentName).
 		Scan(&agentID).Error; err != nil || agentID == "" {
-		return "", fmt.Errorf("agent %q not found", agentName)
+		return "", pkgerrors.NotFound(fmt.Sprintf("agent %q not found", agentName))
 	}
 	return agentID, nil
 }
