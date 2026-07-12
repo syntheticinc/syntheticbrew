@@ -8,6 +8,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // --- admin_list_sessions ---
@@ -22,8 +24,8 @@ func NewAdminListSessionsTool(repo SessionRepository) tool.InvokableTool {
 
 func (t *adminListSessionsTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: "admin_list_sessions",
-		Desc: "Lists recent sessions. Sessions represent conversations between users and agents.",
+		Name:        "admin_list_sessions",
+		Desc:        "Lists recent sessions. Sessions represent conversations between users and agents.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }
@@ -35,7 +37,7 @@ func (t *adminListSessionsTool) InvokableRun(ctx context.Context, _ string, _ ..
 
 	sessions, err := t.repo.List(ctx)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to list sessions: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to list sessions: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if len(sessions) == 0 {
@@ -91,9 +93,9 @@ func (t *adminGetSessionTool) InvokableRun(ctx context.Context, argsJSON string,
 	session, err := t.repo.GetByID(ctx, args.SessionID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Session not found: %s", args.SessionID), nil
+			return fmt.Sprintf("[ERROR] Session not found: %s", args.SessionID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get session: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get session: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	data, err := json.MarshalIndent(session, "", "  ")

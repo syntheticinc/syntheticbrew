@@ -9,7 +9,9 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // --- admin_list_agents ---
@@ -33,7 +35,7 @@ func (t *adminListAgentsTool) Info(_ context.Context) (*schema.ToolInfo, error) 
 func (t *adminListAgentsTool) InvokableRun(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
 	agents, err := t.repo.List(ctx)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to list agents: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to list agents: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if len(agents) == 0 {
@@ -85,9 +87,9 @@ func (t *adminGetAgentTool) InvokableRun(ctx context.Context, argsJSON string, _
 	agent, err := t.repo.GetByName(ctx, args.Name)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.Name), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.Name), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	data, err := json.MarshalIndent(agent, "", "  ")
@@ -173,7 +175,7 @@ func (t *adminCreateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "already exists") {
 			return fmt.Sprintf("Agent with name %q already exists.", args.Name), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to create agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to create agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	t.reload(ctx)
@@ -240,9 +242,9 @@ func (t *adminUpdateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	existing, err := t.repo.GetByName(ctx, args.Name)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.Name), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.Name), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	record := &AgentRecord{
@@ -263,7 +265,7 @@ func (t *adminUpdateAgentTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 
 	if err := t.repo.Update(ctx, args.Name, record); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	t.reload(ctx)
@@ -318,9 +320,9 @@ func (t *adminDeleteAgentTool) InvokableRun(ctx context.Context, argsJSON string
 
 	if err := t.repo.Delete(ctx, args.Name); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.Name), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.Name), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to delete agent: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to delete agent: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {

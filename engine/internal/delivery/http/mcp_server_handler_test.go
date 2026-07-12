@@ -243,6 +243,45 @@ func TestMCPServer_UnknownTool_ToolError(t *testing.T) {
 	assert.Contains(t, result.Content[0].Text, "unknown tool")
 }
 
+// TestMCPServer_MarkedResult_SetsIsError is the BUG B guard: an admin tool that
+// signals an application failure via the [ERROR] marker (returned as a normal
+// (string, nil) result, per the engine tool convention) must surface as MCP
+// isError:true so a programmatic client can tell success from failure. A
+// genuine success and the quota sentinel stay isError:false.
+func TestMCPServer_MarkedResult_SetsIsError(t *testing.T) {
+	tests := []struct {
+		name        string
+		returnText  string
+		wantIsError bool
+	}{
+		{"validation error is marked", "[ERROR] name is required", true},
+		{"not found is marked", "[ERROR] Model not found: bogus-id", true},
+		{"db failure is marked", "[ERROR] Failed to create model: one or more fields have an invalid value", true},
+		{"happy path is not an error", "Model \"gpt\" created (id=abc).", false},
+		{"empty list is not an error", "No models configured.", false},
+		{"quota sentinel is not an error", "[quota:schema_limit_reached] Your plan's schema limit is reached.", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, recs := newTestStore("admin_create_model")
+			recs["admin_create_model"].returnText = tt.returnText
+			h := NewMCPServerHandler(store, nil, "test")
+
+			_, resp := doRPC(t, h, ctxWithScopes(ScopeProvisionMask),
+				`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"admin_create_model","arguments":{}}}`)
+
+			require.Nil(t, resp.Error)
+			var result mcp.ToolCallResult
+			require.NoError(t, json.Unmarshal(resp.Result, &result))
+			assert.Equal(t, tt.wantIsError, result.IsError, "isError for %q", tt.returnText)
+			// The human-readable message is always preserved in the content so the
+			// model still reads it — isError is additive, not a replacement.
+			require.Len(t, result.Content, 1)
+			assert.Equal(t, tt.returnText, result.Content[0].Text)
+		})
+	}
+}
+
 // TestMCPServer_MissingToolName_InvalidParams verifies an empty tool name is a
 // protocol-level invalid-params error.
 func TestMCPServer_MissingToolName_InvalidParams(t *testing.T) {

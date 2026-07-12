@@ -14,6 +14,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
@@ -188,7 +189,7 @@ func (t *provisionAgentTool) createAgent(ctx context.Context, args provisionAgen
 		if isConflictErr(err) {
 			return nil, fmt.Sprintf("Agent with name %q already exists. Schema %q was created — reuse it or pick a new name.", args.Name, schemaName)
 		}
-		return nil, fmt.Sprintf("[ERROR] Failed to create agent: %v", err)
+		return nil, fmt.Sprintf("[ERROR] Failed to create agent: %s", tools.SanitizeDBError(err))
 	}
 	return agentRec, ""
 }
@@ -217,7 +218,7 @@ func (t *provisionAgentTool) bindEntryAgent(ctx context.Context, agentName, sche
 		ChatEnabled:  &chatEnabled,
 	}
 	if err := t.schemaRepo.Update(ctx, schemaRec.ID, schemaUpdate); err != nil {
-		return "", fmt.Sprintf("[ERROR] Agent %q created but failed to enable chat on schema %q: %v", agentName, schemaName, err)
+		return "", fmt.Sprintf("[ERROR] Agent %q created but failed to enable chat on schema %q: %s", agentName, schemaName, tools.SanitizeDBError(err))
 	}
 	return agentID, ""
 }
@@ -284,10 +285,10 @@ func (t *getEmbedSnippetTool) InvokableRun(ctx context.Context, argsJSON string,
 
 	schemaRec, err := t.findSchemaByName(ctx, args.SchemaName)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to look up schema: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to look up schema: %s", tools.SanitizeDBError(err)), nil
 	}
 	if schemaRec == nil {
-		return fmt.Sprintf("Schema not found: %s", args.SchemaName), nil
+		return fmt.Sprintf("[ERROR] Schema not found: %s", args.SchemaName), nil
 	}
 
 	base := "https://YOUR-ENGINE-URL"
@@ -301,7 +302,7 @@ func (t *getEmbedSnippetTool) InvokableRun(ctx context.Context, argsJSON string,
 
 	token, err := t.minter.MintChatToken(ctx, "widget-"+args.SchemaName)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to mint widget token: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to mint widget token: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	// HTML-attribute-escape every interpolation defensively; the token is

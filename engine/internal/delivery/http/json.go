@@ -45,6 +45,8 @@ func domainErrorToHTTPStatus(err error) int {
 		return http.StatusNotFound
 	case pkgerrors.CodeAlreadyExists:
 		return http.StatusConflict
+	case pkgerrors.CodeConflict:
+		return http.StatusConflict
 	case pkgerrors.CodeInvalidInput:
 		return http.StatusBadRequest
 	case pkgerrors.CodeUnauthorized:

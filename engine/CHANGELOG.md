@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.14.1] — 2026-07-12
+
+### Fixed
+
+- **`admin_update_capability` no longer fails on every call.** The repository
+  Update wrote the capability's immutable `type` column from an empty record,
+  tripping the `chk_capabilities_type` check constraint. Update now writes only
+  `config` and `enabled`; `type` is left untouched.
+- **Admin MCP tools now signal failures via the MCP `isError` flag.** Every
+  admin tool previously returned validation, not-found, and DB failures as a
+  plain result with `isError` unset, so a coding agent driving the tools could
+  not tell success from failure. Failures now carry an `[ERROR]` marker and the
+  `/api/v1/mcp/rpc` endpoint maps a marked result to `isError: true`. The schema
+  quota sentinel (`[quota:schema_limit_reached]`) stays a success-shaped signal.
+- **Raw Postgres errors no longer leak to clients.** Admin tools echoed raw
+  GORM/pgconn errors (constraint, index, and table names, SQLSTATE codes). A new
+  sanitizer maps them to clean messages across all admin tools.
+- **`DELETE /api/v1/schemas/{name}` on a schema with chat sessions returns a
+  clean 409 Conflict** instead of a 500 that leaked the raw foreign-key string.
+  A new `CONFLICT` domain error maps to HTTP 409; the generic delete-failure
+  path no longer wraps the raw database error into the response body.
+
 ## [1.14.0] — 2026-07-11
 
 ### Fixed

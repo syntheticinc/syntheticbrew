@@ -9,6 +9,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // V2 has a single implicit DELEGATION relationship type — orchestrator
@@ -51,7 +53,7 @@ func (t *adminListAgentRelationsTool) InvokableRun(ctx context.Context, argsJSON
 
 	rels, err := t.repo.List(ctx, args.SchemaID)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to list agent relations: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to list agent relations: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if len(rels) == 0 {
@@ -124,7 +126,7 @@ func (t *adminCreateAgentRelationTool) InvokableRun(ctx context.Context, argsJSO
 	}
 
 	if err := t.repo.Create(ctx, record); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to create agent relation: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to create agent relation: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -171,9 +173,9 @@ func (t *adminDeleteAgentRelationTool) InvokableRun(ctx context.Context, argsJSO
 
 	if err := t.repo.Delete(ctx, args.RelationID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent relation not found: %s", args.RelationID), nil
+			return fmt.Sprintf("[ERROR] Agent relation not found: %s", args.RelationID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to delete agent relation: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to delete agent relation: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {

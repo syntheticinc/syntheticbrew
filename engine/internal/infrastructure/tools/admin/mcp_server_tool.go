@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 	"github.com/syntheticinc/syntheticbrew/internal/service/mcp"
 )
 
@@ -52,7 +53,7 @@ func (t *adminListMCPServersTool) Info(_ context.Context) (*schema.ToolInfo, err
 func (t *adminListMCPServersTool) InvokableRun(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
 	servers, err := t.repo.List(ctx)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to list MCP servers: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to list MCP servers: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if len(servers) == 0 {
@@ -148,7 +149,7 @@ func (t *adminCreateMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "UNIQUE") {
 			return fmt.Sprintf("MCP server with name %q already exists.", args.Name), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to create MCP server: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to create MCP server: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -228,9 +229,9 @@ func (t *adminUpdateMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 	existing, err := t.repo.GetByID(ctx, args.ServerID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("MCP server not found: %s", args.ServerID), nil
+			return fmt.Sprintf("[ERROR] MCP server not found: %s", args.ServerID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get MCP server: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get MCP server: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	record := &MCPServerRecord{
@@ -253,7 +254,7 @@ func (t *adminUpdateMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 	}
 
 	if err := t.repo.Update(ctx, args.ServerID, record); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update MCP server: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update MCP server: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -319,9 +320,9 @@ func (t *adminDeleteMCPServerTool) InvokableRun(ctx context.Context, argsJSON st
 
 	if err := t.repo.Delete(ctx, args.ServerID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("MCP server not found: %s", args.ServerID), nil
+			return fmt.Sprintf("[ERROR] MCP server not found: %s", args.ServerID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to delete MCP server: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to delete MCP server: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -384,7 +385,7 @@ func (t *adminSetMCPServerEnabledTool) InvokableRun(ctx context.Context, argsJSO
 
 	servers, err := t.repo.List(ctx)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to list MCP servers: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to list MCP servers: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	var target *MCPServerRecord
@@ -395,13 +396,13 @@ func (t *adminSetMCPServerEnabledTool) InvokableRun(ctx context.Context, argsJSO
 		}
 	}
 	if target == nil {
-		return fmt.Sprintf("MCP server not found: %s", args.ServerName), nil
+		return fmt.Sprintf("[ERROR] MCP server not found: %s", args.ServerName), nil
 	}
 
 	// Preserve every other field — the repo Update is a full-row replace.
 	target.Enabled = *args.Enabled
 	if err := t.repo.Update(ctx, target.ID, target); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update MCP server: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update MCP server: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {

@@ -9,6 +9,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // --- admin_add_capability ---
@@ -77,9 +79,9 @@ func (t *adminAddCapabilityTool) InvokableRun(ctx context.Context, argsJSON stri
 
 	if err := t.repo.Create(ctx, record); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Agent not found: %s", args.AgentName), nil
+			return fmt.Sprintf("[ERROR] Agent not found: %s", args.AgentName), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to add capability: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to add capability: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -130,9 +132,9 @@ func (t *adminRemoveCapabilityTool) InvokableRun(ctx context.Context, argsJSON s
 
 	if err := t.repo.Delete(ctx, args.CapabilityID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Capability not found: %s", args.CapabilityID), nil
+			return fmt.Sprintf("[ERROR] Capability not found: %s", args.CapabilityID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to remove capability: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to remove capability: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -204,9 +206,9 @@ func (t *adminUpdateCapabilityTool) InvokableRun(ctx context.Context, argsJSON s
 
 	if err := t.repo.Update(ctx, args.CapabilityID, record); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Capability not found: %s", args.CapabilityID), nil
+			return fmt.Sprintf("[ERROR] Capability not found: %s", args.CapabilityID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to update capability: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update capability: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {

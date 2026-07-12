@@ -9,6 +9,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
 // --- admin_list_models ---
@@ -32,7 +34,7 @@ func (t *adminListModelsTool) Info(_ context.Context) (*schema.ToolInfo, error) 
 func (t *adminListModelsTool) InvokableRun(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
 	models, err := t.repo.List(ctx)
 	if err != nil {
-		return fmt.Sprintf("[ERROR] Failed to list models: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to list models: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if len(models) == 0 {
@@ -119,7 +121,7 @@ func (t *adminCreateModelTool) InvokableRun(ctx context.Context, argsJSON string
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "UNIQUE") {
 			return fmt.Sprintf("Model with name %q already exists.", args.Name), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to create model: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to create model: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -183,9 +185,9 @@ func (t *adminUpdateModelTool) InvokableRun(ctx context.Context, argsJSON string
 	existing, err := t.repo.GetByID(ctx, args.ModelID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Model not found: %s", args.ModelID), nil
+			return fmt.Sprintf("[ERROR] Model not found: %s", args.ModelID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to get model: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to get model: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	record := &ModelRecord{
@@ -200,12 +202,12 @@ func (t *adminUpdateModelTool) InvokableRun(ctx context.Context, argsJSON string
 	}
 
 	if err := t.repo.Update(ctx, args.ModelID, record); err != nil {
-		return fmt.Sprintf("[ERROR] Failed to update model: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to update model: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if args.IsDefault && !existing.IsDefault {
 		if err := t.repo.SetDefault(ctx, args.ModelID); err != nil {
-			return fmt.Sprintf("[ERROR] Updated model fields, but promoting to default failed: %v", err), nil
+			return fmt.Sprintf("[ERROR] Updated model fields, but promoting to default failed: %s", tools.SanitizeDBError(err)), nil
 		}
 	}
 
@@ -264,7 +266,7 @@ func (t *adminSetDefaultModelTool) InvokableRun(ctx context.Context, argsJSON st
 		// Resolve name → ID via List (same pattern as admin_delete_model path).
 		models, err := t.repo.List(ctx)
 		if err != nil {
-			return fmt.Sprintf("[ERROR] Failed to list models: %v", err), nil
+			return fmt.Sprintf("[ERROR] Failed to list models: %s", tools.SanitizeDBError(err)), nil
 		}
 		for _, m := range models {
 			if m.Name == name {
@@ -273,15 +275,15 @@ func (t *adminSetDefaultModelTool) InvokableRun(ctx context.Context, argsJSON st
 			}
 		}
 		if id == "" {
-			return fmt.Sprintf("Model not found: %s", name), nil
+			return fmt.Sprintf("[ERROR] Model not found: %s", name), nil
 		}
 	}
 
 	if err := t.repo.SetDefault(ctx, id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Model not found: %s", coalesce(name, id)), nil
+			return fmt.Sprintf("[ERROR] Model not found: %s", coalesce(name, id)), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to set default model: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to set default model: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {
@@ -337,9 +339,9 @@ func (t *adminDeleteModelTool) InvokableRun(ctx context.Context, argsJSON string
 
 	if err := t.repo.Delete(ctx, args.ModelID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return fmt.Sprintf("Model not found: %s", args.ModelID), nil
+			return fmt.Sprintf("[ERROR] Model not found: %s", args.ModelID), nil
 		}
-		return fmt.Sprintf("[ERROR] Failed to delete model: %v", err), nil
+		return fmt.Sprintf("[ERROR] Failed to delete model: %s", tools.SanitizeDBError(err)), nil
 	}
 
 	if t.reloader != nil {

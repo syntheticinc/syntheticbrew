@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -198,9 +199,24 @@ func (a *schemaServiceHTTPAdapter) DeleteSchema(ctx context.Context, id string) 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return pkgerrors.NotFound(fmt.Sprintf("schema not found: %s", id))
 		}
-		return fmt.Errorf("delete schema: %w", err)
+		// A schema that still has chat sessions (or other child rows) trips a
+		// foreign-key constraint. That is a foreseeable conflict, not a server
+		// fault: return a clean 409 without leaking the raw constraint/SQLSTATE.
+		if isForeignKeyViolation(err) {
+			return pkgerrors.Conflict("cannot delete schema: it still has chat sessions or other dependents — remove them first")
+		}
+		slog.ErrorContext(ctx, "delete schema failed", "schema_id", id, "error", err)
+		return pkgerrors.New(pkgerrors.CodeInternal, "failed to delete schema")
 	}
 	return nil
+}
+
+// isForeignKeyViolation reports whether err is a Postgres foreign-key violation
+// (SQLSTATE 23503) — a child row still references the record being deleted.
+// Kept constraint-name-agnostic: any FK block on delete means "has dependents".
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 // resolveEntryAgentRef returns the agent UUID for a name or UUID reference.
