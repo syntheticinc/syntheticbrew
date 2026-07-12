@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.14.2] — 2026-07-12
+
+### Fixed
+
+- **Linking a knowledge base to a missing agent now returns 404, not 500.**
+  `resolveAgentID` returned an untyped "agent not found" error, which the HTTP
+  layer mapped to 500; the missing-knowledge-base path already returned 404.
+  The not-found case is now a typed `NotFound`, so bad input surfaces as a 4xx.
+
+### Changed
+
+- **Memory is captured and recalled more proactively.** The `memory_store` and
+  `memory_recall` tool descriptions were passive, so models under-called them —
+  a fact mentioned in passing was often not stored, and stored facts were not
+  recalled unless asked for directly. Both descriptions are now imperative, so a
+  memory-enabled agent reliably remembers user context across sessions.
+
 ## [1.14.1] — 2026-07-12
 
 ### Fixed
