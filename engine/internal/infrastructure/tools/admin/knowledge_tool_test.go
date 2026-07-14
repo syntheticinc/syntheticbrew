@@ -150,24 +150,25 @@ func TestAddDocument_FileTypeAllowlist(t *testing.T) {
 				t.Fatalf("unexpected Go error: %v", err)
 			}
 
-			if tt.wantAccepted {
-				if strings.Contains(out, "[ERROR]") {
-					t.Fatalf("file_type %q must be accepted, got: %s", tt.fileType, out)
+			gotErr := strings.Contains(out, "[ERROR]")
+			if !tt.wantAccepted {
+				rejected := gotErr && strings.Contains(out, "Unsupported file_type")
+				if !rejected {
+					t.Fatalf("file_type %q must be rejected with an [ERROR], got: %s", tt.fileType, out)
 				}
-				if !uploader.called {
-					t.Fatalf("uploader must run for accepted file_type %q", tt.fileType)
-				}
-				if !strings.EqualFold(uploader.gotFileType, tt.fileType) {
-					t.Fatalf("uploader received file_type %q, want normalized %q", uploader.gotFileType, tt.fileType)
+				if uploader.called {
+					t.Fatalf("a rejected file_type %q must never reach the binary-capable uploader", tt.fileType)
 				}
 				return
 			}
-
-			if !strings.Contains(out, "[ERROR]") || !strings.Contains(out, "Unsupported file_type") {
-				t.Fatalf("file_type %q must be rejected with an [ERROR], got: %s", tt.fileType, out)
+			if gotErr {
+				t.Fatalf("file_type %q must be accepted, got: %s", tt.fileType, out)
 			}
-			if uploader.called {
-				t.Fatalf("a rejected file_type %q must never reach the binary-capable uploader", tt.fileType)
+			if !uploader.called {
+				t.Fatalf("uploader must run for accepted file_type %q", tt.fileType)
+			}
+			if !strings.EqualFold(uploader.gotFileType, tt.fileType) {
+				t.Fatalf("uploader received file_type %q, want normalized %q", uploader.gotFileType, tt.fileType)
 			}
 		})
 	}
@@ -501,7 +502,7 @@ func TestKnowledgeTools_Info(t *testing.T) {
 			if strings.TrimSpace(info.Desc) == "" {
 				t.Fatal("description must be non-empty")
 			}
-			js, err := info.ParamsOneOf.ToJSONSchema()
+			js, err := info.ToJSONSchema()
 			if err != nil {
 				t.Fatalf("ToJSONSchema: %v", err)
 			}
