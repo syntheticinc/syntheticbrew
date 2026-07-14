@@ -255,6 +255,10 @@ func registerHTTPRoutes(deps routesDeps) {
 			uploadSvc := svcknowledge.NewUploadService(knowledgeRepo)
 			uploadSvc.SetEmbeddingResolver(&embeddingModelResolver{db: pgDB})
 			uploadSvc.SetKBEmbeddingResolver(&kbEmbeddingResolver{db: pgDB})
+			// Document admission gate — same seam the knowledge tools use, so the
+			// document quota is enforced identically on REST and MCP ingest paths.
+			uploadSvc.SetDocumentGuard(plugin)
+			uploadSvc.SetEmbedderFactory(&embedderFactoryAdapter{plugin: plugin})
 			knowledgeHandler.SetFileUploader(&knowledgeUploadHTTPAdapter{svc: uploadSvc})
 			knowledgeHandler.SetFileLister(&knowledgeFileListerHTTPAdapter{svc: uploadSvc, kbRepo: kbRepo})
 
