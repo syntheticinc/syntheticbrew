@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 )
 
@@ -40,7 +42,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	for _, ddl := range []string{
 		`CREATE TABLE models (
 			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
 			type VARCHAR(30) NOT NULL,
 			kind VARCHAR(20) NOT NULL DEFAULT 'chat',
 			is_default BOOLEAN NOT NULL DEFAULT 0,
@@ -57,7 +59,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		// gone (catalog lives in `mcp_catalog`, install is a copy with no FK).
 		`CREATE TABLE mcp_servers (
 			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
 			type VARCHAR(20) NOT NULL,
 			command VARCHAR(500),
 			args TEXT,
@@ -76,7 +78,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE agents (
 			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
 			model_id TEXT REFERENCES models(id),
 			system_prompt TEXT NOT NULL,
 			lifecycle VARCHAR(20) NOT NULL DEFAULT 'persistent',
@@ -93,7 +95,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			UNIQUE(tenant_id, name)
 		)`,
 		`CREATE TABLE agent_tools (
 			id TEXT PRIMARY KEY,
@@ -104,6 +107,19 @@ func setupTestDB(t *testing.T) *gorm.DB {
 			sort_order INTEGER NOT NULL DEFAULT 0,
 			tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
 			UNIQUE(agent_id, tool_type, tool_name)
+		)`,
+		`CREATE TABLE schemas (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			entry_agent_id TEXT,
+			chat_enabled BOOLEAN NOT NULL DEFAULT 0,
+			chat_last_fired_at DATETIME,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
+			tenant_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(tenant_id, name)
 		)`,
 		`CREATE TABLE agent_relations (
 			id TEXT PRIMARY KEY,
@@ -157,11 +173,11 @@ func seedTestData(t *testing.T, db *gorm.DB) {
 	// Agent
 	confirmBefore := `["delete_order","refund"]`
 	agent := models.AgentModel{
-		Name:           "sales",
-		ModelID:        &model.ID,
-		SystemPrompt:   "You are a sales assistant.",
-		Lifecycle:      "persistent",
-		ToolExecution:  "sequential",
+		Name:            "sales",
+		ModelID:         &model.ID,
+		SystemPrompt:    "You are a sales assistant.",
+		Lifecycle:       "persistent",
+		ToolExecution:   "sequential",
 		MaxSteps:        30,
 		MaxContextSize:  16000,
 		MaxStepDuration: 45,
@@ -193,9 +209,12 @@ func seedTestData(t *testing.T, db *gorm.DB) {
 	}
 	require.NoError(t, db.Create(&researcher).Error)
 
-	// Agent relation (V2 replaces agent_spawn_targets)
+	// Agent relation (V2 replaces agent_spawn_targets) — relations are
+	// schema-scoped, so seed the owning schema too.
+	schema := models.SchemaModel{Name: "sales-flow", ChatEnabled: true, EntryAgentID: &agent.ID}
+	require.NoError(t, db.Create(&schema).Error)
 	require.NoError(t, db.Create(&models.AgentRelationModel{
-		SchemaID:      "00000000-0000-0000-0000-000000000001",
+		SchemaID:      schema.ID,
 		SourceAgentID: agent.ID, TargetAgentID: researcher.ID,
 	}).Error)
 }
@@ -226,9 +245,16 @@ func TestExportYAML(t *testing.T) {
 	assert.Equal(t, "persistent", sales.Lifecycle)
 	assert.Equal(t, 30, sales.MaxSteps)
 	assert.Equal(t, []string{"web_search", "show_structured_output"}, sales.Tools)
-	assert.Equal(t, []string{"researcher"}, sales.CanSpawn)
+	assert.Empty(t, sales.CanSpawn, "per-agent can_spawn is no longer exported — delegation lives in the schemas section")
 	assert.Equal(t, []string{"shop-api"}, sales.MCPServers)
 	assert.Equal(t, []string{"delete_order", "refund"}, sales.ConfirmBefore)
+
+	// Schemas — the delegation graph round-trips here
+	require.Len(t, cfg.Schemas, 1)
+	assert.Equal(t, "sales-flow", cfg.Schemas[0].Name)
+	assert.Equal(t, "sales", cfg.Schemas[0].EntryAgent)
+	require.Len(t, cfg.Schemas[0].Relations, 1)
+	assert.Equal(t, relationYAML{From: "sales", To: "researcher"}, cfg.Schemas[0].Relations[0])
 
 	// Models — API key must NOT be present
 	require.Len(t, cfg.Models.Items, 1)
@@ -531,4 +557,221 @@ func findAgentYAML(agents []agentYAML, name string) *agentYAML {
 		}
 	}
 	return nil
+}
+
+// TestConfigImportExport_TenantIsolation pins the cloud-first fix: config
+// export must only contain the calling tenant's rows, and a name-based import
+// upsert must never reach across tenants — the pool of names is per-tenant.
+func TestConfigImportExport_TenantIsolation(t *testing.T) {
+	db := setupTestDB(t)
+	adapter := &configImportExportHTTPAdapter{db: db}
+
+	// Tenant B owns an agent and a model with names tenant A will also use.
+	require.NoError(t, db.Create(&models.AgentModel{
+		Name: "shared-agent", SystemPrompt: "tenant B secret prompt",
+		Lifecycle: "persistent", ToolExecution: "sequential", TenantID: "tenant-b",
+	}).Error)
+	require.NoError(t, db.Create(&models.LLMProviderModel{
+		Name: "shared-model", Type: "openai_compatible", ModelName: "b-model", TenantID: "tenant-b",
+	}).Error)
+
+	ctxA := domain.WithTenantID(context.Background(), "tenant-a")
+
+	// Export as tenant A: none of tenant B's config may appear.
+	data, err := adapter.ExportYAML(ctxA)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "tenant B secret prompt",
+		"export must not leak another tenant's system prompt")
+	assert.NotContains(t, string(data), "shared-agent",
+		"export must not leak another tenant's agent names")
+	assert.NotContains(t, string(data), "shared-model",
+		"export must not leak another tenant's model names")
+
+	// Import as tenant A with tenant B's names: B stays untouched, A gets its own rows.
+	yamlDoc := `
+agents:
+  - name: shared-agent
+    system_prompt: tenant A prompt
+models:
+  - name: shared-model
+    type: openai_compatible
+    model_name: a-model
+`
+	require.NoError(t, adapter.ImportYAML(ctxA, []byte(yamlDoc)))
+
+	var bAgent models.AgentModel
+	require.NoError(t, db.Where("tenant_id = ? AND name = ?", "tenant-b", "shared-agent").First(&bAgent).Error)
+	assert.Equal(t, "tenant B secret prompt", bAgent.SystemPrompt,
+		"import as tenant A must NOT modify tenant B's same-named agent")
+
+	var aAgent models.AgentModel
+	require.NoError(t, db.Where("tenant_id = ? AND name = ?", "tenant-a", "shared-agent").First(&aAgent).Error,
+		"import must create the agent under the calling tenant")
+	assert.Equal(t, "tenant A prompt", aAgent.SystemPrompt)
+
+	var bModel models.LLMProviderModel
+	require.NoError(t, db.Where("tenant_id = ? AND name = ?", "tenant-b", "shared-model").First(&bModel).Error)
+	assert.Equal(t, "b-model", bModel.ModelName,
+		"import as tenant A must NOT modify tenant B's same-named model")
+}
+
+// TestConfigImportExport_SchemaRelationsRoundTrip pins the schemas section:
+// the delegation graph (agent_relations) + entry agent must survive
+// export → import into an empty instance. Before this section existed,
+// export wrote a derived per-agent can_spawn that import silently ignored —
+// a restored workspace lost every delegation arrow.
+func TestConfigImportExport_SchemaRelationsRoundTrip(t *testing.T) {
+	srcDB := setupTestDB(t)
+	src := &configImportExportHTTPAdapter{db: srcDB}
+
+	// Source: coordinator → two children inside one schema.
+	mkAgent := func(db *gorm.DB, name string) models.AgentModel {
+		ag := models.AgentModel{Name: name, SystemPrompt: "p-" + name,
+			Lifecycle: "persistent", ToolExecution: "sequential"}
+		require.NoError(t, db.Create(&ag).Error)
+		return ag
+	}
+	coord := mkAgent(srcDB, "coordinator")
+	childA := mkAgent(srcDB, "child-a")
+	childB := mkAgent(srcDB, "child-b")
+
+	schema := models.SchemaModel{Name: "support", Description: "support flow",
+		ChatEnabled: true, EntryAgentID: &coord.ID}
+	require.NoError(t, srcDB.Create(&schema).Error)
+	for _, target := range []models.AgentModel{childA, childB} {
+		require.NoError(t, srcDB.Create(&models.AgentRelationModel{
+			SchemaID: schema.ID, SourceAgentID: coord.ID, TargetAgentID: target.ID,
+		}).Error)
+	}
+	// System schema must NOT round-trip.
+	require.NoError(t, srcDB.Create(&models.SchemaModel{Name: "builder-schema", IsSystem: true}).Error)
+
+	data, err := src.ExportYAML(context.Background())
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "schemas:")
+	assert.Contains(t, string(data), "entry_agent: coordinator")
+	assert.NotContains(t, string(data), "builder-schema", "system schemas must not be exported")
+	assert.NotContains(t, string(data), "can_spawn", "per-agent can_spawn must no longer be exported")
+
+	// Fresh instance: import restores agents, schema, entry agent and arrows.
+	dstDB := setupTestDB(t)
+	dst := &configImportExportHTTPAdapter{db: dstDB}
+	require.NoError(t, dst.ImportYAML(context.Background(), data))
+
+	var restored models.SchemaModel
+	require.NoError(t, dstDB.Where("name = ?", "support").First(&restored).Error)
+	assert.True(t, restored.ChatEnabled)
+	require.NotNil(t, restored.EntryAgentID, "entry agent must be restored")
+
+	var entry models.AgentModel
+	require.NoError(t, dstDB.Where("id = ?", *restored.EntryAgentID).First(&entry).Error)
+	assert.Equal(t, "coordinator", entry.Name)
+
+	var rels []models.AgentRelationModel
+	require.NoError(t, dstDB.Where("schema_id = ?", restored.ID).
+		Preload("SourceAgent").Preload("TargetAgent").Find(&rels).Error)
+	require.Len(t, rels, 2, "both delegation arrows must be restored")
+	targets := map[string]bool{}
+	for _, r := range rels {
+		assert.Equal(t, "coordinator", r.SourceAgent.Name)
+		// jsonb column: Postgres rejects the empty string, so the import must
+		// write a valid JSON document (sqlite would silently accept "").
+		assert.Equal(t, "{}", r.Config, "relation Config must be valid JSON for the jsonb column")
+		targets[r.TargetAgent.Name] = true
+	}
+	assert.True(t, targets["child-a"] && targets["child-b"], "arrows must point at both children")
+}
+
+// TestConfigImport_UnknownRelationAgentFails pins fail-loud: an arrow whose
+// endpoint does not resolve must abort the import instead of silently
+// dropping the arrow.
+func TestConfigImport_UnknownRelationAgentFails(t *testing.T) {
+	db := setupTestDB(t)
+	adapter := &configImportExportHTTPAdapter{db: db}
+
+	yamlDoc := `
+agents:
+  - name: coordinator
+    system_prompt: p
+schemas:
+  - name: support
+    relations:
+      - from: coordinator
+        to: ghost-agent
+`
+	err := adapter.ImportYAML(context.Background(), []byte(yamlDoc))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ghost-agent")
+}
+
+// fakeSchemaGuard records OnSchemaCreate calls and can reject to simulate a
+// tier limit, standing in for the plugin quota seam.
+type fakeSchemaGuard struct {
+	calls    []int // n per call
+	rejectAt int   // reject when cumulative new-schema count exceeds this (0 = never)
+	total    int
+}
+
+func (g *fakeSchemaGuard) OnSchemaCreate(_ context.Context, _ string, n int) error {
+	g.calls = append(g.calls, n)
+	g.total += n
+	if g.rejectAt > 0 && g.total > g.rejectAt {
+		return fmt.Errorf("schema quota exceeded")
+	}
+	return nil
+}
+
+// TestConfigImport_SchemaQuotaGuard pins the ee#12 invariant on the import
+// path: creating schemas via /config/import must consult the quota seam for
+// the number of NEW schemas, and a rejection aborts the whole import.
+func TestConfigImport_SchemaQuotaGuard(t *testing.T) {
+	t.Run("gates new schemas and blocks over-limit", func(t *testing.T) {
+		db := setupTestDB(t)
+		guard := &fakeSchemaGuard{rejectAt: 2} // Free tier: 2 schemas
+		adapter := &configImportExportHTTPAdapter{db: db, schemaGuard: guard}
+
+		yamlDoc := `
+agents:
+  - name: a1
+    system_prompt: p
+schemas:
+  - name: s1
+  - name: s2
+  - name: s3
+`
+		err := adapter.ImportYAML(context.Background(), []byte(yamlDoc))
+		require.Error(t, err, "importing 3 schemas on a 2-schema tier must be rejected")
+		assert.Contains(t, err.Error(), "quota")
+
+		// Rollback: no schema rows created.
+		var count int64
+		require.NoError(t, db.Model(&models.SchemaModel{}).Count(&count).Error)
+		assert.Zero(t, count, "a rejected quota must roll back all schema inserts")
+		require.Len(t, guard.calls, 1, "guard consulted once for the create batch")
+		assert.Equal(t, 3, guard.calls[0], "guard must be asked to admit all 3 new schemas")
+	})
+
+	t.Run("re-import of existing schemas does not re-charge quota", func(t *testing.T) {
+		db := setupTestDB(t)
+		guard := &fakeSchemaGuard{rejectAt: 2}
+		adapter := &configImportExportHTTPAdapter{db: db, schemaGuard: guard}
+
+		// Seed one existing schema; agent for FK-free import.
+		require.NoError(t, db.Create(&models.AgentModel{Name: "a1", SystemPrompt: "p",
+			Lifecycle: "persistent", ToolExecution: "sequential"}).Error)
+		require.NoError(t, db.Create(&models.SchemaModel{Name: "s1"}).Error)
+
+		yamlDoc := `
+agents:
+  - name: a1
+    system_prompt: p
+schemas:
+  - name: s1
+  - name: s2
+`
+		// 1 existing (s1) + 1 new (s2) = 1 create → under the limit.
+		require.NoError(t, adapter.ImportYAML(context.Background(), []byte(yamlDoc)))
+		require.Len(t, guard.calls, 1)
+		assert.Equal(t, 1, guard.calls[0], "only the new schema (s2) counts against quota")
+	})
 }

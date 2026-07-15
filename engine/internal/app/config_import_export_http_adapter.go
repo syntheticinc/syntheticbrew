@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -23,14 +24,25 @@ import (
 // Knowledge Graphs sections (engine 1.3.0+) round-trip via:
 //   - kgApply (apply usecase)         — for import: atomic schema + entity persistence
 //   - kgBundleRepo / kgSchemaRepo / kgEntityRepo — for export: direct DB reads
+//
 // Tenant scope is taken from ctx (or CETenantID fallback) so single-tenant CE
 // continues to work unchanged.
 type configImportExportHTTPAdapter struct {
 	db           *gorm.DB
+	schemaGuard  schemaCreateGuard // quota seam for schema creation; nil ⇒ CE no-op
 	kgApply      *kgapply.Usecase
 	kgBundleRepo *configrepo.GORMKGBundleRepository
 	kgSchemaRepo *configrepo.GORMKGSchemaRepository
 	kgEntityRepo *configrepo.GORMKGEntityRepository
+}
+
+// schemaCreateGuard is the consumer-side view of the plugin quota seam: the
+// import path must gate schema creation exactly like every other creation
+// entry point (schemacreate.Usecase, template fork) so the tier limit cannot
+// be bypassed by POSTing a large schemas: list to /config/import. Satisfied by
+// pkg/plugin.Plugin; nil in CE tests behaves as no-op.
+type schemaCreateGuard interface {
+	OnSchemaCreate(ctx context.Context, tenantID string, n int) error
 }
 
 // SetKnowledgeGraphs wires KG dependencies into the adapter after the
@@ -86,6 +98,12 @@ func (a *configImportExportHTTPAdapter) buildExportConfig(ctx context.Context) (
 		return nil, fmt.Errorf("export mcp servers: %w", err)
 	}
 	cfg.MCPServers.Items = mcpYAML
+
+	schemasYAML, err := a.exportSchemas(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("export schemas: %w", err)
+	}
+	cfg.Schemas = schemasYAML
 
 	kgYAML, err := a.exportKnowledgeGraphs(ctx)
 	if err != nil {
@@ -167,9 +185,13 @@ func (a *configImportExportHTTPAdapter) exportKnowledgeGraphs(ctx context.Contex
 	return out, nil
 }
 
-func (a *configImportExportHTTPAdapter) exportAgents(_ context.Context) ([]agentYAML, error) {
+func (a *configImportExportHTTPAdapter) exportAgents(ctx context.Context) ([]agentYAML, error) {
+	// Tenant-scoped: export must only ever contain the calling tenant's
+	// config — in Cloud this endpoint is reachable by every tenant.
+	tenantID := requestTenant(ctx)
+
 	var agents []models.AgentModel
-	if err := a.db.Preload("Model").Preload("Tools", func(db *gorm.DB) *gorm.DB {
+	if err := a.db.Where("tenant_id = ?", tenantID).Preload("Model").Preload("Tools", func(db *gorm.DB) *gorm.DB {
 		return db.Order("sort_order ASC")
 	}).Find(&agents).Error; err != nil {
 		return nil, fmt.Errorf("query agents: %w", err)
@@ -177,7 +199,7 @@ func (a *configImportExportHTTPAdapter) exportAgents(_ context.Context) ([]agent
 
 	// Load MCP server associations separately (comment in model explains why).
 	var agentMCPs []models.AgentMCPServer
-	if err := a.db.Preload("MCPServer").Find(&agentMCPs).Error; err != nil {
+	if err := a.db.Where("tenant_id = ?", tenantID).Preload("MCPServer").Find(&agentMCPs).Error; err != nil {
 		return nil, fmt.Errorf("query agent mcp servers: %w", err)
 	}
 	mcpByAgent := make(map[string][]string)
@@ -185,15 +207,8 @@ func (a *configImportExportHTTPAdapter) exportAgents(_ context.Context) ([]agent
 		mcpByAgent[am.AgentID] = append(mcpByAgent[am.AgentID], am.MCPServer.Name)
 	}
 
-	// Load CanSpawn from agent_relations (V2 replaces agent_spawn_targets).
-	var rels []models.AgentRelationModel
-	if err := a.db.Preload("SourceAgent").Preload("TargetAgent").Find(&rels).Error; err != nil {
-		return nil, fmt.Errorf("query agent relations: %w", err)
-	}
-	spawnByAgent := make(map[string][]string)
-	for _, rel := range rels {
-		spawnByAgent[rel.SourceAgent.Name] = append(spawnByAgent[rel.SourceAgent.Name], rel.TargetAgent.Name)
-	}
+	// Delegation targets (can_spawn) are NOT exported per-agent: relations are
+	// schema-scoped and round-trip via the schemas section (exportSchemas).
 
 	result := make([]agentYAML, 0, len(agents))
 	for _, ag := range agents {
@@ -227,16 +242,14 @@ func (a *configImportExportHTTPAdapter) exportAgents(_ context.Context) ([]agent
 			ay.Tools = append(ay.Tools, t.ToolName)
 		}
 
-		ay.CanSpawn = spawnByAgent[ag.Name]
-
 		result = append(result, ay)
 	}
 	return result, nil
 }
 
-func (a *configImportExportHTTPAdapter) exportModels(_ context.Context) ([]modelYAML, error) {
+func (a *configImportExportHTTPAdapter) exportModels(ctx context.Context) ([]modelYAML, error) {
 	var llms []models.LLMProviderModel
-	if err := a.db.Find(&llms).Error; err != nil {
+	if err := a.db.Where("tenant_id = ?", requestTenant(ctx)).Find(&llms).Error; err != nil {
 		return nil, fmt.Errorf("query models: %w", err)
 	}
 
@@ -254,9 +267,9 @@ func (a *configImportExportHTTPAdapter) exportModels(_ context.Context) ([]model
 	return result, nil
 }
 
-func (a *configImportExportHTTPAdapter) exportMCPServers(_ context.Context) ([]mcpServerYAML, error) {
+func (a *configImportExportHTTPAdapter) exportMCPServers(ctx context.Context) ([]mcpServerYAML, error) {
 	var servers []models.MCPServerModel
-	if err := a.db.Find(&servers).Error; err != nil {
+	if err := a.db.Where("tenant_id = ?", requestTenant(ctx)).Find(&servers).Error; err != nil {
 		return nil, fmt.Errorf("query mcp servers: %w", err)
 	}
 
@@ -303,17 +316,38 @@ func (a *configImportExportHTTPAdapter) ImportYAML(ctx context.Context, yamlData
 		return fmt.Errorf("parse yaml: %w", err)
 	}
 
+	// Legacy exports carried a per-agent can_spawn list that import never
+	// honored (delegation lives in schema-scoped agent_relations). Warn so
+	// the omission is visible; current exports carry a schemas section that
+	// round-trips the delegation graph faithfully.
+	for _, ag := range cfg.Agents.Items {
+		if len(ag.CanSpawn) > 0 {
+			slog.WarnContext(ctx, "config import: per-agent can_spawn is ignored — declare delegation in the schemas section (relations)",
+				"agent", ag.Name, "can_spawn", ag.CanSpawn)
+		}
+	}
+
+	// Tenant-scoped: import must only ever touch the calling tenant's rows —
+	// name-based upserts without the tenant key would let one tenant overwrite
+	// another tenant's same-named agent/model/server in Cloud.
+	tenantID := requestTenant(ctx)
+
 	if err := a.db.Transaction(func(tx *gorm.DB) error {
-		if err := a.importModels(tx, cfg.Models.Items); err != nil {
+		if err := a.importModels(tx, tenantID, cfg.Models.Items); err != nil {
 			return fmt.Errorf("import models: %w", err)
 		}
 
-		if err := a.importMCPServers(tx, cfg.MCPServers.Items); err != nil {
+		if err := a.importMCPServers(tx, tenantID, cfg.MCPServers.Items); err != nil {
 			return fmt.Errorf("import mcp servers: %w", err)
 		}
 
-		if err := a.importAgents(tx, cfg.Agents.Items); err != nil {
+		if err := a.importAgents(tx, tenantID, cfg.Agents.Items); err != nil {
 			return fmt.Errorf("import agents: %w", err)
+		}
+
+		// Schemas last: entry_agent / relations reference agents by name.
+		if err := a.importSchemas(ctx, tx, tenantID, cfg.Schemas); err != nil {
+			return fmt.Errorf("import schemas: %w", err)
 		}
 
 		slog.InfoContext(ctx, "config imported",
@@ -385,10 +419,10 @@ func (a *configImportExportHTTPAdapter) importKnowledgeGraphs(ctx context.Contex
 	return nil
 }
 
-func (a *configImportExportHTTPAdapter) importModels(tx *gorm.DB, items []modelYAML) error {
+func (a *configImportExportHTTPAdapter) importModels(tx *gorm.DB, tenantID string, items []modelYAML) error {
 	for _, m := range items {
 		var existing models.LLMProviderModel
-		err := tx.Where("name = ?", m.Name).First(&existing).Error
+		err := tx.Where("name = ? AND tenant_id = ?", m.Name, tenantID).First(&existing).Error
 		if err == nil {
 			// Update existing (preserve API key). Carry ExtraBody through
 			// alongside the rest of the fields so YAML stays the source of
@@ -406,6 +440,7 @@ func (a *configImportExportHTTPAdapter) importModels(tx *gorm.DB, items []modelY
 		}
 
 		newModel := models.LLMProviderModel{
+			TenantID:  tenantID,
 			Name:      m.Name,
 			Type:      m.resolvedType(),
 			BaseURL:   m.BaseURL,
@@ -421,10 +456,10 @@ func (a *configImportExportHTTPAdapter) importModels(tx *gorm.DB, items []modelY
 	return nil
 }
 
-func (a *configImportExportHTTPAdapter) importMCPServers(tx *gorm.DB, items []mcpServerYAML) error {
+func (a *configImportExportHTTPAdapter) importMCPServers(tx *gorm.DB, tenantID string, items []mcpServerYAML) error {
 	for _, s := range items {
 		var existing models.MCPServerModel
-		err := tx.Where("name = ?", s.Name).First(&existing).Error
+		err := tx.Where("name = ? AND tenant_id = ?", s.Name, tenantID).First(&existing).Error
 
 		var argsJSON *string
 		if len(s.Args) > 0 {
@@ -476,6 +511,7 @@ func (a *configImportExportHTTPAdapter) importMCPServers(tx *gorm.DB, items []mc
 		}
 
 		newServer := models.MCPServerModel{
+			TenantID:       tenantID,
 			Name:           s.Name,
 			Type:           s.Type,
 			Command:        s.Command,
@@ -509,7 +545,7 @@ func applyAgentImportDefaults(ag *agentYAML) {
 	}
 }
 
-func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentYAML) error {
+func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, tenantID string, items []agentYAML) error {
 	// Pass 1: create/update all agent records (without spawn targets that reference other agents).
 	agentIDs := make(map[string]string, len(items))
 	for _, ag := range items {
@@ -526,14 +562,14 @@ func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentY
 		var modelID *string
 		if ag.ModelName != "" {
 			var llm models.LLMProviderModel
-			if err := tx.Where("name = ?", ag.ModelName).First(&llm).Error; err != nil {
+			if err := tx.Where("name = ? AND tenant_id = ?", ag.ModelName, tenantID).First(&llm).Error; err != nil {
 				return fmt.Errorf("model %q referenced by agent %q not found: %w", ag.ModelName, ag.Name, err)
 			}
 			modelID = &llm.ID
 		}
 
 		var existing models.AgentModel
-		err := tx.Where("name = ?", ag.Name).First(&existing).Error
+		err := tx.Where("name = ? AND tenant_id = ?", ag.Name, tenantID).First(&existing).Error
 		if err == nil {
 			existing.SystemPrompt = ag.SystemPrompt
 			existing.ModelID = modelID
@@ -570,6 +606,7 @@ func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentY
 		}
 
 		newAgent := models.AgentModel{
+			TenantID:        tenantID,
 			Name:            ag.Name,
 			SystemPrompt:    ag.SystemPrompt,
 			ModelID:         modelID,
@@ -608,7 +645,7 @@ func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentY
 	// Pass 2: sync relations (tools, spawn targets, MCP servers).
 	for _, ag := range items {
 		agentID := agentIDs[ag.Name]
-		if err := a.syncAgentRelations(tx, agentID, ag); err != nil {
+		if err := a.syncAgentRelations(tx, tenantID, agentID, ag); err != nil {
 			return fmt.Errorf("sync relations for agent %q: %w", ag.Name, err)
 		}
 	}
@@ -616,13 +653,14 @@ func (a *configImportExportHTTPAdapter) importAgents(tx *gorm.DB, items []agentY
 	return nil
 }
 
-func (a *configImportExportHTTPAdapter) syncAgentRelations(tx *gorm.DB, agentID string, ag agentYAML) error {
+func (a *configImportExportHTTPAdapter) syncAgentRelations(tx *gorm.DB, tenantID, agentID string, ag agentYAML) error {
 	// Tools: delete old, insert new.
-	if err := tx.Where("agent_id = ?", agentID).Delete(&models.AgentToolModel{}).Error; err != nil {
+	if err := tx.Where("agent_id = ? AND tenant_id = ?", agentID, tenantID).Delete(&models.AgentToolModel{}).Error; err != nil {
 		return fmt.Errorf("delete old tools: %w", err)
 	}
 	for i, toolName := range ag.Tools {
 		tool := models.AgentToolModel{
+			TenantID:  tenantID,
 			AgentID:   agentID,
 			ToolType:  models.ToolTypeBuiltin,
 			ToolName:  toolName,
@@ -637,15 +675,16 @@ func (a *configImportExportHTTPAdapter) syncAgentRelations(tx *gorm.DB, agentID 
 	// create agent_relations — those are managed via the schema/canvas UI.
 
 	// MCP servers: delete old, insert new.
-	if err := tx.Where("agent_id = ?", agentID).Delete(&models.AgentMCPServer{}).Error; err != nil {
+	if err := tx.Where("agent_id = ? AND tenant_id = ?", agentID, tenantID).Delete(&models.AgentMCPServer{}).Error; err != nil {
 		return fmt.Errorf("delete old mcp server links: %w", err)
 	}
 	for _, mcpName := range ag.MCPServers {
 		var mcp models.MCPServerModel
-		if err := tx.Where("name = ?", mcpName).First(&mcp).Error; err != nil {
+		if err := tx.Where("name = ? AND tenant_id = ?", mcpName, tenantID).First(&mcp).Error; err != nil {
 			return fmt.Errorf("mcp server %q not found: %w", mcpName, err)
 		}
 		link := models.AgentMCPServer{
+			TenantID:    tenantID,
 			AgentID:     agentID,
 			MCPServerID: mcp.ID,
 		}
@@ -678,3 +717,199 @@ func isEnvPlaceholder(v string) bool {
 	return strings.HasPrefix(v, "${") && strings.HasSuffix(v, "}")
 }
 
+// exportSchemas serializes the calling tenant's non-system schemas together
+// with their delegation graph (agent_relations). System schemas (the seeded
+// builder-schema) are engine-managed and never round-trip through config.
+func (a *configImportExportHTTPAdapter) exportSchemas(ctx context.Context) ([]schemaYAML, error) {
+	tenantID := requestTenant(ctx)
+
+	var schemas []models.SchemaModel
+	if err := a.db.Where("tenant_id = ? AND is_system = ?", tenantID, false).
+		Order("name ASC").Find(&schemas).Error; err != nil {
+		return nil, fmt.Errorf("query schemas: %w", err)
+	}
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+
+	// Agent id → name map for entry_agent resolution (tenant-scoped).
+	var agents []models.AgentModel
+	if err := a.db.Select("id", "name").Where("tenant_id = ?", tenantID).Find(&agents).Error; err != nil {
+		return nil, fmt.Errorf("query agents for schema export: %w", err)
+	}
+	nameByID := make(map[string]string, len(agents))
+	for _, ag := range agents {
+		nameByID[ag.ID] = ag.Name
+	}
+
+	var rels []models.AgentRelationModel
+	if err := a.db.Where("tenant_id = ?", tenantID).
+		Preload("SourceAgent").Preload("TargetAgent").Find(&rels).Error; err != nil {
+		return nil, fmt.Errorf("query agent relations: %w", err)
+	}
+	relsBySchema := make(map[string][]relationYAML)
+	for _, rel := range rels {
+		relsBySchema[rel.SchemaID] = append(relsBySchema[rel.SchemaID], relationYAML{
+			From: rel.SourceAgent.Name,
+			To:   rel.TargetAgent.Name,
+		})
+	}
+
+	out := make([]schemaYAML, 0, len(schemas))
+	for _, s := range schemas {
+		sy := schemaYAML{
+			Name:        s.Name,
+			Description: s.Description,
+			ChatEnabled: s.ChatEnabled,
+			Relations:   relsBySchema[s.ID],
+		}
+		if s.EntryAgentID != nil {
+			sy.EntryAgent = nameByID[*s.EntryAgentID]
+		}
+		out = append(out, sy)
+	}
+	return out, nil
+}
+
+// importSchemas upserts schemas by (tenant, name) and replaces each schema's
+// delegation graph with the relations from YAML. Runs after importAgents so
+// agent names referenced by entry_agent / relations resolve. Unknown agent
+// names fail the import (the whole transaction rolls back) — a silently
+// dropped arrow would reproduce the exact bug this section exists to fix.
+func (a *configImportExportHTTPAdapter) importSchemas(ctx context.Context, tx *gorm.DB, tenantID string, items []schemaYAML) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// Quota seam: creating schemas via import must be gated exactly like the
+	// admin/tool paths (schemacreate.Usecase), otherwise a large schemas: list
+	// bypasses the tier limit. Only NEW schemas count — re-importing existing
+	// ones (GitOps round-trip) is an update, not a create.
+	if err := a.gateSchemaCreates(ctx, tx, tenantID, items); err != nil {
+		return err
+	}
+
+	var agents []models.AgentModel
+	if err := tx.Select("id", "name").Where("tenant_id = ?", tenantID).Find(&agents).Error; err != nil {
+		return fmt.Errorf("query agents for schema import: %w", err)
+	}
+	idByName := make(map[string]string, len(agents))
+	for _, ag := range agents {
+		idByName[ag.Name] = ag.ID
+	}
+
+	for _, sy := range items {
+		schemaID, err := a.upsertSchemaFromYAML(tx, tenantID, sy, idByName)
+		if err != nil {
+			return err
+		}
+		if err := a.replaceSchemaRelations(tx, tenantID, schemaID, sy, idByName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// gateSchemaCreates counts how many of the imported schemas do not yet exist
+// for the tenant and asks the quota guard to admit exactly that many. Runs
+// before any write so a rejected quota rolls back the whole import.
+func (a *configImportExportHTTPAdapter) gateSchemaCreates(ctx context.Context, tx *gorm.DB, tenantID string, items []schemaYAML) error {
+	if a.schemaGuard == nil {
+		return nil // CE / tests: no quota seam wired.
+	}
+
+	names := make([]string, 0, len(items))
+	for _, sy := range items {
+		if sy.Name != "" {
+			names = append(names, sy.Name)
+		}
+	}
+
+	var existing int64
+	if err := tx.Model(&models.SchemaModel{}).
+		Where("tenant_id = ? AND name IN ?", tenantID, names).
+		Count(&existing).Error; err != nil {
+		return fmt.Errorf("count existing schemas: %w", err)
+	}
+
+	newCount := len(names) - int(existing)
+	if newCount <= 0 {
+		return nil
+	}
+	if err := a.schemaGuard.OnSchemaCreate(ctx, tenantID, newCount); err != nil {
+		return fmt.Errorf("schema quota: %w", err)
+	}
+	return nil
+}
+
+// upsertSchemaFromYAML creates or updates one schema row (tenant-scoped by
+// name) and returns its ID. System schemas are refused.
+func (a *configImportExportHTTPAdapter) upsertSchemaFromYAML(tx *gorm.DB, tenantID string, sy schemaYAML, idByName map[string]string) (string, error) {
+	if sy.Name == "" {
+		return "", fmt.Errorf("schema with empty name in import")
+	}
+
+	var schema models.SchemaModel
+	err := tx.Where("name = ? AND tenant_id = ?", sy.Name, tenantID).First(&schema).Error
+	switch {
+	case err == nil:
+		if schema.IsSystem {
+			return "", fmt.Errorf("schema %q is system-managed and cannot be imported", sy.Name)
+		}
+		schema.Description = sy.Description
+		schema.ChatEnabled = sy.ChatEnabled
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		schema = models.SchemaModel{
+			TenantID:    tenantID,
+			Name:        sy.Name,
+			Description: sy.Description,
+			ChatEnabled: sy.ChatEnabled,
+		}
+	default:
+		return "", fmt.Errorf("find schema %q: %w", sy.Name, err)
+	}
+
+	schema.EntryAgentID = nil
+	if sy.EntryAgent != "" {
+		entryID, ok := idByName[sy.EntryAgent]
+		if !ok {
+			return "", fmt.Errorf("schema %q: entry_agent %q not found", sy.Name, sy.EntryAgent)
+		}
+		schema.EntryAgentID = &entryID
+	}
+
+	if err := tx.Save(&schema).Error; err != nil {
+		return "", fmt.Errorf("save schema %q: %w", sy.Name, err)
+	}
+	return schema.ID, nil
+}
+
+// replaceSchemaRelations swaps the schema's delegation graph for the one in
+// YAML — the file is the source of truth. Unknown endpoints fail loud.
+func (a *configImportExportHTTPAdapter) replaceSchemaRelations(tx *gorm.DB, tenantID, schemaID string, sy schemaYAML, idByName map[string]string) error {
+	if err := tx.Where("schema_id = ? AND tenant_id = ?", schemaID, tenantID).
+		Delete(&models.AgentRelationModel{}).Error; err != nil {
+		return fmt.Errorf("clear relations for schema %q: %w", sy.Name, err)
+	}
+	for _, rel := range sy.Relations {
+		fromID, ok := idByName[rel.From]
+		if !ok {
+			return fmt.Errorf("schema %q: relation source agent %q not found", sy.Name, rel.From)
+		}
+		toID, ok := idByName[rel.To]
+		if !ok {
+			return fmt.Errorf("schema %q: relation target agent %q not found", sy.Name, rel.To)
+		}
+		if err := tx.Create(&models.AgentRelationModel{
+			TenantID:      tenantID,
+			SchemaID:      schemaID,
+			SourceAgentID: fromID,
+			TargetAgentID: toID,
+			// Config is a jsonb column: Postgres rejects the empty string.
+			Config: "{}",
+		}).Error; err != nil {
+			return fmt.Errorf("create relation %s->%s in schema %q: %w", rel.From, rel.To, sy.Name, err)
+		}
+	}
+	return nil
+}

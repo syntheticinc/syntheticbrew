@@ -34,6 +34,84 @@ type AdminToolDependencies struct {
 	// tenant from ctx (per-tenant, never a process-global broadcast). Nil on
 	// the legacy no-DB boot path — lifecycle tools then skip the sync.
 	MCPSyncer MCPClientSyncer
+
+	// Knowledge-base tool dependencies. All are wired together by the app
+	// layer over the KB store, upload service, and repositories. When
+	// KnowledgeBase is nil the five knowledge tools are not registered — the
+	// legacy no-DB boot path has no knowledge surface.
+	KnowledgeBase KnowledgeToolDeps
+}
+
+// KnowledgeToolDeps bundles the consumer-side seams the five knowledge tools
+// need. The app layer implements every method on a single adapter over the KB
+// store, the upload service, and the model repository; the tools depend only on
+// the narrow interfaces below (ISP). Nil disables knowledge-tool registration.
+type KnowledgeToolDeps interface {
+	KBCreator
+	KBRefResolver
+	KBAgentLinker
+	DocumentUploader
+	DocumentDeleter
+	DocumentLister
+	SingleEmbeddingResolver
+}
+
+// KBCreator creates a knowledge base. embeddingModelRef is a model name or
+// UUID (tenant-scoped); "" leaves the KB without an embedding model.
+type KBCreator interface {
+	CreateKB(ctx context.Context, name, description, embeddingModelRef string) (*KnowledgeBaseInfo, error)
+}
+
+// KBRefResolver resolves a KB name to its UUID (tenant-scoped) and loads a KB
+// by UUID. Name resolution is the sole cross-tenant guard for the doc tools —
+// a name from tenant A never resolves into tenant B's KB.
+type KBRefResolver interface {
+	GetKBIDByName(ctx context.Context, name string) (string, error)
+	GetKBByID(ctx context.Context, id string) (*KnowledgeBaseInfo, error)
+}
+
+// KBAgentLinker links a knowledge base to an agent, both tenant-scoped.
+type KBAgentLinker interface {
+	LinkAgent(ctx context.Context, kbID, agentName string) error
+}
+
+// DocumentUploader ingests a single text document into a knowledge base.
+type DocumentUploader interface {
+	UploadDocument(ctx context.Context, kbID, embeddingModelID, fileName, fileType string, fileSize int64, fileHash string, content []byte) (*DocumentInfo, error)
+}
+
+// DocumentDeleter removes a document from a knowledge base (tenant-scoped).
+type DocumentDeleter interface {
+	DeleteDocument(ctx context.Context, kbID, fileID string) error
+}
+
+// DocumentLister lists the documents of a knowledge base with indexing status.
+type DocumentLister interface {
+	ListDocuments(ctx context.Context, kbID string) ([]DocumentInfo, error)
+}
+
+// SingleEmbeddingResolver returns the tenant's only embedding model UUID when
+// exactly one is configured. Zero or more than one is an error the tool
+// surfaces as "specify the embedding model explicitly".
+type SingleEmbeddingResolver interface {
+	ResolveSingleEmbeddingModel(ctx context.Context) (string, error)
+}
+
+// KnowledgeBaseInfo is the tool-boundary view of a knowledge base.
+type KnowledgeBaseInfo struct {
+	ID               string
+	Name             string
+	Description      string
+	EmbeddingModelID string
+}
+
+// DocumentInfo is the tool-boundary view of a knowledge document.
+type DocumentInfo struct {
+	ID         string
+	FileName   string
+	FileType   string
+	Status     string
+	ChunkCount int
 }
 
 // SchemaCreator creates user-facing schemas through the engine's guarded

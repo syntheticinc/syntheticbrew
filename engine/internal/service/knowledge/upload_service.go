@@ -56,9 +56,31 @@ type EmbeddingModelResolver interface {
 	ResolveEmbeddingModel(ctx context.Context, agentName string) (*EmbeddingModelInfo, error)
 }
 
+// DocumentCreateGuard admits or rejects a knowledge-document creation for a
+// tenant before the row is persisted. Consumer-side interface satisfied
+// structurally by pkg/plugin.Plugin — the CE Noop always admits; an external
+// plugin enforces the tenant's configured document limit. Wiring the guard here
+// (inside the shared upload service) gates every ingest path — REST upload and
+// the knowledge tools — at one point.
+type DocumentCreateGuard interface {
+	OnDocumentCreate(ctx context.Context, tenantID string, n int) error
+}
+
 // KBEmbeddingResolver resolves the embedding model from a KB's embedding_model_id.
 type KBEmbeddingResolver interface {
 	ResolveByModelID(ctx context.Context, modelID string) (*EmbeddingModelInfo, error)
+}
+
+// EmbedderFactory optionally builds an embedder for a resolved model instead of
+// the default OpenAI-compatible client. Consumer-side interface satisfied
+// structurally by an app-layer adapter over pkg/plugin.Plugin — the CE default
+// (nil factory, or a factory that returns ok=false) falls back to the built-in
+// client. A plugin uses it to route a specific model (identified by its
+// base URL) over its own channel, e.g. a platform-funded rail with no API key
+// stored in the tenant DB row. Wiring it here — inside the shared upload
+// service — routes every ingest embedding through one seam.
+type EmbedderFactory interface {
+	EmbedderFor(ctx context.Context, info *EmbeddingModelInfo) (EmbeddingProvider, bool)
 }
 
 // FileResponse is the API response for a knowledge file.
@@ -82,6 +104,8 @@ type UploadService struct {
 	repo              DocumentRepository
 	embeddingResolver EmbeddingModelResolver // legacy: resolves from agent capability config
 	kbEmbedResolver   KBEmbeddingResolver    // resolves from KB's embedding_model_id
+	docGuard          DocumentCreateGuard    // admission gate for document creation (nil = admit all)
+	embedderFactory   EmbedderFactory        // optional custom embedder builder (nil = built-in client)
 }
 
 // NewUploadService creates a new knowledge upload service.
@@ -99,6 +123,32 @@ func (s *UploadService) SetEmbeddingResolver(resolver EmbeddingModelResolver) {
 // SetKBEmbeddingResolver sets the resolver for KB-based embedding models.
 func (s *UploadService) SetKBEmbeddingResolver(resolver KBEmbeddingResolver) {
 	s.kbEmbedResolver = resolver
+}
+
+// SetDocumentGuard installs the admission gate consulted before a document is
+// persisted. Nil (the default) admits every upload — CE enforces no limit.
+func (s *UploadService) SetDocumentGuard(guard DocumentCreateGuard) {
+	s.docGuard = guard
+}
+
+// SetEmbedderFactory installs the optional custom embedder builder consulted
+// before falling back to the built-in OpenAI-compatible client. Nil (the
+// default) always uses the built-in client — CE routes every embedding there.
+func (s *UploadService) SetEmbedderFactory(factory EmbedderFactory) {
+	s.embedderFactory = factory
+}
+
+// buildEmbedder returns the embedder for a resolved model. It consults the
+// custom factory first (a plugin may route a specific model over its own
+// channel); when no factory is set or it declines the model, it falls back to
+// the built-in OpenAI-compatible client keyed off the model's DB fields.
+func (s *UploadService) buildEmbedder(ctx context.Context, info *EmbeddingModelInfo) EmbeddingProvider {
+	if s.embedderFactory != nil {
+		if emb, ok := s.embedderFactory.EmbedderFor(ctx, info); ok {
+			return emb
+		}
+	}
+	return indexing.NewOpenAIEmbeddingsClient(info.BaseURL, info.APIKey, info.ModelName, info.EmbeddingDim)
 }
 
 // UploadFileToKB stores a file on disk, creates a DB record, and triggers async indexing.
@@ -127,6 +177,15 @@ func (s *UploadService) UploadFileToKB(ctx context.Context, tenantID, kbID, embe
 	}
 	_ = embedder // validated; will re-resolve in async
 
+	// Admission gate — consulted on every ingest path (REST upload + knowledge
+	// tools) so the document limit cannot be bypassed by a non-REST caller. CE
+	// admits everything (nil guard); an external plugin enforces the cap.
+	if s.docGuard != nil {
+		if err := s.docGuard.OnDocumentCreate(ctx, tenantID, 1); err != nil {
+			return nil, fmt.Errorf("document admission: %w", err)
+		}
+	}
+
 	docID := uuid.New().String()
 
 	// Stateless: no raw file is written (FilePath stays empty). The file name is
@@ -149,7 +208,7 @@ func (s *UploadService) UploadFileToKB(ctx context.Context, tenantID, kbID, embe
 		return nil, fmt.Errorf("save document record: %w", err)
 	}
 
-	go s.indexFileAsyncKB(docID, tenantID, kbID, embeddingModelID, fileName, string(content))
+	go s.indexFileAsyncKB(docID, tenantID, kbID, embeddingModelID, fileName, fileType, string(content))
 
 	return &FileResponse{
 		ID:              docID,
@@ -207,7 +266,7 @@ func (s *UploadService) resolveKBEmbeddingProvider(ctx context.Context, embeddin
 		if err == nil && info != nil {
 			slog.InfoContext(ctx, "[KnowledgeUpload] using KB embedding model",
 				"model_id", embeddingModelID, "model", info.ModelName, "dim", info.EmbeddingDim)
-			return indexing.NewOpenAIEmbeddingsClient(info.BaseURL, info.APIKey, info.ModelName, info.EmbeddingDim), nil
+			return s.buildEmbedder(ctx, info), nil
 		}
 		if err != nil {
 			return nil, err
@@ -223,18 +282,21 @@ func (s *UploadService) resolveEmbeddingProvider(ctx context.Context, agentName 
 		if err == nil && info != nil {
 			slog.InfoContext(ctx, "[KnowledgeUpload] using configured embedding model",
 				"agent", agentName, "model", info.ModelName, "dim", info.EmbeddingDim)
-			return indexing.NewOpenAIEmbeddingsClient(info.BaseURL, info.APIKey, info.ModelName, info.EmbeddingDim), nil
+			return s.buildEmbedder(ctx, info), nil
 		}
 	}
 	return nil, fmt.Errorf("no embedding model configured for agent %q: add an embedding model in Settings > Models and select it in the Knowledge capability config", agentName)
 }
 
 // indexFileAsyncKB chunks, embeds, and stores vector data for KB-scoped file.
-func (s *UploadService) indexFileAsyncKB(docID, tenantID, kbID, embeddingModelID, fileName, content string) {
+// fileType is the caller-validated content type — extraction and chunking key
+// off it, NOT off fileName, so a mismatched extension (e.g. name "x.pdf" with
+// type "txt") can never route attacker bytes to a different parser than the one
+// the upload path admitted.
+func (s *UploadService) indexFileAsyncKB(docID, tenantID, kbID, embeddingModelID, fileName, fileType, content string) {
 	// Tenant must be on ctx — repo applies tenantScope, status updates would silently no-op otherwise.
 	ctx := domain.WithTenantID(context.Background(), tenantID)
 
-	fileType := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileName)), ".")
 	text, extractErr := infknowledge.ExtractText([]byte(content), fileType)
 	if extractErr != nil {
 		slog.ErrorContext(ctx, "[KnowledgeUpload] text extraction failed",
@@ -243,7 +305,7 @@ func (s *UploadService) indexFileAsyncKB(docID, tenantID, kbID, embeddingModelID
 		return
 	}
 
-	chunker := infknowledge.ChunkerForFile(fileName)
+	chunker := infknowledge.ChunkerForFile("doc." + fileType)
 	chunks := chunker.Chunk(text)
 
 	if len(chunks) == 0 {

@@ -21,6 +21,12 @@ import (
 // surface it as a payment-required condition instead of a generic failure.
 var ErrSchemaQuotaExceeded = errors.New("schema quota exceeded")
 
+// ErrDocumentQuotaExceeded is returned by Plugin.OnDocumentCreate when adding
+// the requested knowledge documents would exceed the tenant's configured limit.
+// Callers surface it as a payment-required / rejected condition instead of a
+// generic failure.
+var ErrDocumentQuotaExceeded = errors.New("knowledge document quota exceeded")
+
 // ModelSelectorConfigurator is a minimal interface for registering models.
 // Implemented by *llm.ModelSelector (internal CE type).
 type ModelSelectorConfigurator interface {
@@ -96,6 +102,16 @@ type Plugin interface {
 	// (CE/self-hosted); implementations should no-op and return nil.
 	OnSchemaCreate(ctx context.Context, tenantID string, n int) error
 
+	// OnDocumentCreate is invoked before the engine persists new knowledge
+	// documents — single uploads pass n=1. It is called inside the shared
+	// upload service so every ingest path (REST upload and the knowledge tools)
+	// is gated at one point. Returning ErrDocumentQuotaExceeded (or any error)
+	// aborts the ingest. System bootstrap paths (seeding) do not call it.
+	//
+	// An empty tenantID means the call is outside any tenant scope
+	// (CE/self-hosted); implementations should no-op and return nil.
+	OnDocumentCreate(ctx context.Context, tenantID string, n int) error
+
 	// SetTenantSeeder installs a callback the plugin can invoke when it
 	// accepts a tenant-provisioning request. The engine wires a seeder backed
 	// by its schema/agent repositories so that a plugin's provisioning can
@@ -119,6 +135,15 @@ type Plugin interface {
 	// plugin can set the cap without importing engine internals or the tenant
 	// context key. CE's Noop ignores it because it has no provisioning endpoint.
 	SetUsageLimitWriter(writer UsageLimitWriter)
+
+	// SetEmbeddingModelWriter installs a callback a provisioning plugin can
+	// invoke to install a default embedding model on a freshly-created tenant.
+	// The engine wires a writer backed by its tenant-scoped model repository so
+	// the plugin can provision the model without importing engine internals or
+	// the tenant context key — the same "use the engine's real code path"
+	// contract as SetUsageLimitWriter. CE's Noop ignores it because it has no
+	// provisioning endpoint.
+	SetEmbeddingModelWriter(writer EmbeddingModelWriter)
 
 	// SetTenantPolicyWriter installs a callback a plugin can invoke to write
 	// protected per-tenant policy entries. The engine wires a writer backed by
@@ -170,9 +195,34 @@ type Plugin interface {
 	// directly from the database without extra enrichment.
 	KGCounter() KGCounter
 
+	// EmbedderFor optionally returns a custom Embedder for a knowledge model
+	// resolved from the DB (base URL, API key, model name, dimension). It lets a
+	// plugin route embedding generation for a specific model over its own
+	// channel instead of the engine's built-in OpenAI-compatible client — keyed
+	// off an opaque base-URL marker the engine passes through verbatim and never
+	// interprets.
+	//
+	// Returning (nil, false) — the CE Noop default — tells the engine to fall
+	// back to its built-in client. The engine passes the DB-resolved fields
+	// verbatim and never interprets baseURL itself, so the marker convention is
+	// entirely the plugin's concern.
+	EmbedderFor(ctx context.Context, baseURL, apiKey, model string, dim int) (Embedder, bool)
+
 	// Stop releases any background resources held by the plugin
 	// (watchers, tickers, etc.).
 	Stop()
+}
+
+// Embedder generates vector embeddings for text. It mirrors the engine's
+// built-in embedding client signature (both single and batch) so a
+// plugin-provided embedder is structurally interchangeable at both the
+// knowledge upload service's ingest interface (EmbedBatch) and the
+// knowledge_search tool's query interface (Embed). Primitive types only — no
+// engine-internal imports — so pkg/plugin stays free of a dependency cycle on
+// the knowledge service.
+type Embedder interface {
+	Embed(ctx context.Context, text string) ([]float32, error)
+	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
 }
 
 // SchemaCounter returns the number of schemas belonging to tenantID. The
@@ -304,6 +354,27 @@ type UsageLimitWriter interface {
 	// Returns whether a row was written. A non-nil error means the write failed;
 	// the caller decides whether that should fail provisioning.
 	EnsureLimit(ctx context.Context, tenantID, scope, unit string, limitValue, intervalSeconds int64) (bool, error)
+}
+
+// EmbeddingModelWriter installs a default embedding model on a tenant. The
+// engine wires a concrete writer over its model repository; a provisioning
+// plugin calls it inside the request handler so the write runs in the new
+// tenant's context.
+//
+// tenantID is passed explicitly rather than read from ctx so the plugin does
+// not need to know CE's internal tenant context key — the engine-side writer
+// applies its own tenant scoping. baseURL carries the plugin's routing marker
+// (the engine stores it verbatim and never interprets it); the row is written
+// with no API key.
+type EmbeddingModelWriter interface {
+	// EnsureEmbeddingModel writes an embedding model for tenantID ONLY when the
+	// tenant has no embedding-kind model yet — it never overwrites or duplicates,
+	// so re-provisioning a tenant (or one that has since configured its own
+	// embedding model) is safe. Returns whether a row was written. A non-nil
+	// error means the write failed; the caller decides whether that should fail
+	// provisioning. name is the plugin-supplied row display name — the engine
+	// does not choose it, so no use-case vocabulary lives in the generic writer.
+	EnsureEmbeddingModel(ctx context.Context, tenantID, name, modelName, baseURL string, dim int) (bool, error)
 }
 
 // TenantSeeder populates a freshly-created tenant with default data.

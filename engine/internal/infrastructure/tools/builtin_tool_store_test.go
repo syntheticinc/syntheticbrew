@@ -225,3 +225,89 @@ func TestAgentToolResolver_ResolveForAgent_PassesDeps(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "session-42", capturedSessionID)
 }
+
+// resolvedNames extracts the tool names from a resolved tool slice.
+func resolvedNames(t *testing.T, tools []tool.InvokableTool) []string {
+	t.Helper()
+	names := make([]string, 0, len(tools))
+	for _, tl := range tools {
+		info, err := tl.Info(context.Background())
+		require.NoError(t, err)
+		names = append(names, info.Name)
+	}
+	return names
+}
+
+// TestAgentToolResolver_Resolve_SpawnAgentGatedOnCanSpawn proves that the generic
+// spawn_agent delegation tool (legacy Resolve path) is only offered to agents that
+// declare spawn targets. A leaf agent (empty CanSpawn) has nothing to delegate to,
+// so offering spawn_agent only tempts the model into inventing phantom agents
+// instead of using its own tools — the exact break on a grounded support agent.
+func TestAgentToolResolver_Resolve_SpawnAgentGatedOnCanSpawn(t *testing.T) {
+	newResolver := func() *AgentToolResolver {
+		r := NewAgentToolResolver(NewBuiltinToolStore())
+		r.SetSpawner(&mockGenericSpawner{}, &mockGenericInspector{})
+		return r
+	}
+
+	// Leaf agent: spawner wired but no spawn targets → no spawn_agent.
+	leaf, err := newResolver().Resolve(context.Background(), nil, ToolDependencies{
+		AgentName: "acme-support",
+		SessionID: "s1",
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, resolvedNames(t, leaf), "spawn_agent",
+		"leaf agent with empty CanSpawn must NOT be offered the generic spawn_agent tool")
+
+	// Delegator agent: declares a spawn target → gets spawn_agent + spawn_<target>.
+	delegator, err := newResolver().Resolve(context.Background(), nil, ToolDependencies{
+		AgentName: "orchestrator",
+		SessionID: "s2",
+		CanSpawn:  []string{"coder"},
+	})
+	require.NoError(t, err)
+	names := resolvedNames(t, delegator)
+	assert.Contains(t, names, "spawn_agent",
+		"agent with CanSpawn targets must keep the generic spawn_agent tool")
+	assert.Contains(t, names, "spawn_coder",
+		"agent with CanSpawn targets must keep per-target spawn tools")
+}
+
+// TestAgentToolResolver_ResolveForAgent_SpawnAgentGatedOnCanSpawn mirrors the gate
+// on the modern ResolveForAgent path: spawn_agent listed in the agent's builtin
+// tools is still withheld unless the agent declares CanSpawn targets.
+func TestAgentToolResolver_ResolveForAgent_SpawnAgentGatedOnCanSpawn(t *testing.T) {
+	resolver := NewAgentToolResolver(NewBuiltinToolStore())
+	spawner := &mockGenericSpawner{}
+	inspector := &mockGenericInspector{}
+
+	// Leaf agent: spawn_agent in DerivedTools but empty CanSpawn → withheld.
+	leaf := &agentregistry.RegisteredAgent{
+		Record:       configrepo.AgentRecord{Name: "acme-support"},
+		DerivedTools: []string{"spawn_agent"},
+	}
+	leafTools, err := resolver.ResolveForAgent(context.Background(), ResolveContext{
+		Agent:     leaf,
+		Deps:      ToolDependencies{SessionID: "s1"},
+		Spawner:   spawner,
+		Inspector: inspector,
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, resolvedNames(t, leafTools), "spawn_agent",
+		"leaf agent with empty CanSpawn must NOT resolve spawn_agent even if in DerivedTools")
+
+	// Delegator agent: CanSpawn declared → spawn_agent resolves.
+	delegator := &agentregistry.RegisteredAgent{
+		Record:       configrepo.AgentRecord{Name: "orchestrator", CanSpawn: []string{"coder"}},
+		DerivedTools: []string{"spawn_agent"},
+	}
+	delegatorTools, err := resolver.ResolveForAgent(context.Background(), ResolveContext{
+		Agent:     delegator,
+		Deps:      ToolDependencies{SessionID: "s2"},
+		Spawner:   spawner,
+		Inspector: inspector,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, resolvedNames(t, delegatorTools), "spawn_agent",
+		"agent with CanSpawn targets must resolve the generic spawn_agent tool")
+}

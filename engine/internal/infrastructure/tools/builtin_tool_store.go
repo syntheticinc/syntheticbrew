@@ -297,7 +297,10 @@ func (r *AgentToolResolver) ResolveForAgent(ctx context.Context, rc ResolveConte
 	}
 
 	// Generic spawn_agent tool: accepts agent_name + input, spawns any reachable agent.
-	if derivedSet["spawn_agent"] && rc.Spawner != nil {
+	// Only offered to agents that declare spawn targets (CanSpawn): a leaf agent with
+	// no children has nothing to delegate to, so the delegation tool would only tempt
+	// the model into inventing phantom agents instead of using its own tools.
+	if derivedSet["spawn_agent"] && rc.Spawner != nil && len(rc.Agent.Record.CanSpawn) > 0 {
 		tools = append(tools, NewGenericSpawnTool(rc.Deps.SessionID, rc.Spawner, rc.Inspector, rc.Deps.EngineTaskManager))
 	}
 
@@ -505,9 +508,13 @@ func (r *AgentToolResolver) Resolve(ctx context.Context, toolNames []string, dep
 			"capability_injected", hasKnowledgeCapLegacy)
 	}
 
-	// Spawn tools via legacy Resolve path.
-	// Generic spawn_agent is Tier-1: always available when spawner exists.
-	if r.spawner != nil {
+	// Spawn tools via legacy Resolve path. The generic spawn_agent and the
+	// per-target spawn_<name> tools are only offered to agents that declare spawn
+	// targets (CanSpawn): a leaf agent with no children has nothing to delegate to,
+	// so the delegation tool would only tempt the model into inventing phantom
+	// agents instead of using its own tools (e.g. knowledge_search on a grounded
+	// support agent).
+	if r.spawner != nil && len(deps.CanSpawn) > 0 {
 		resolved = append(resolved, NewGenericSpawnTool(deps.SessionID, r.spawner, r.inspector, deps.EngineTaskManager))
 		for _, targetName := range deps.CanSpawn {
 			spawnTool := NewSpawnTool(targetName, deps.SessionID, r.spawner, r.inspector)

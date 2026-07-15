@@ -17,6 +17,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 	svcknowledge "github.com/syntheticinc/syntheticbrew/internal/service/knowledge"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
+	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 	"gorm.io/gorm"
 )
 
@@ -278,9 +279,13 @@ func (a *kbStoreAdapter) UnlinkAgent(ctx context.Context, kbID, agentName string
 }
 
 func (a *kbStoreAdapter) resolveAgentID(ctx context.Context, agentName string) (string, error) {
+	tenantID := domain.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = domain.CETenantID
+	}
 	var agentID string
 	if err := a.db.WithContext(ctx).
-		Raw("SELECT id FROM agents WHERE name = ?", agentName).
+		Raw("SELECT id FROM agents WHERE name = ? AND tenant_id = ?", agentName, tenantID).
 		Scan(&agentID).Error; err != nil || agentID == "" {
 		return "", pkgerrors.NotFound(fmt.Sprintf("agent %q not found", agentName))
 	}
@@ -448,12 +453,22 @@ func resolveEmbeddingModelByID(db *gorm.DB, ctx context.Context, modelID string)
 // knowledgeEmbedderResolverAdapter bridges embeddingModelResolver to tools.KnowledgeEmbedderResolver.
 type knowledgeEmbedderResolverAdapter struct {
 	resolver *embeddingModelResolver
+	plugin   pluginpkg.Plugin
 }
 
 func (a *knowledgeEmbedderResolverAdapter) ResolveEmbedder(ctx context.Context, agentName string) (tools.KnowledgeEmbedder, error) {
 	info, err := a.resolver.ResolveEmbeddingModel(ctx, agentName)
 	if err != nil || info == nil {
 		return nil, err
+	}
+	// Route the query-time embedder through the plugin for models it recognizes
+	// (by an opaque base-URL marker the engine never interprets) so search
+	// embeds against the same channel the KB was indexed with; otherwise fall
+	// back to the built-in client. Mirrors the ingest-path seam.
+	if a.plugin != nil {
+		if emb, ok := a.plugin.EmbedderFor(ctx, info.BaseURL, info.APIKey, info.ModelName, info.EmbeddingDim); ok {
+			return emb, nil
+		}
 	}
 	return indexing.NewOpenAIEmbeddingsClient(info.BaseURL, info.APIKey, info.ModelName, info.EmbeddingDim), nil
 }

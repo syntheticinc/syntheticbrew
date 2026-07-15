@@ -8,15 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudwego/eino/components/model"
+	einotool "github.com/cloudwego/eino/components/tool"
+	"github.com/google/uuid"
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents/react"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 	"github.com/syntheticinc/syntheticbrew/internal/service/engine"
 	"github.com/syntheticinc/syntheticbrew/internal/service/orchestrator"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
-	"github.com/cloudwego/eino/components/model"
-	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/google/uuid"
 )
 
 // WaitResult describes the result of waiting for session agents
@@ -41,35 +41,35 @@ type AgentCompletionInfo struct {
 // AgentSnapshot is a safe, immutable copy of agent state.
 // Returned by GetStatus/GetAllAgents — safe to read without holding the pool mutex.
 type AgentSnapshot struct {
-	ID           string
-	SubtaskID    string
-	SubtaskTitle string
-	SessionID    string
-	ProjectKey   string
-	Status       string // "running" | "completed" | "failed" | "stopped"
-	Result       string
-	Error        string
-	StartedAt    time.Time
+	ID            string
+	SubtaskID     string
+	SubtaskTitle  string
+	SessionID     string
+	ProjectKey    string
+	Status        string // "running" | "completed" | "failed" | "stopped"
+	Result        string
+	Error         string
+	StartedAt     time.Time
 	BlockingSpawn bool
 }
 
 // RunningAgent represents a Code Agent goroutine (internal, mutable — never expose outside pool)
 type RunningAgent struct {
-	ID           string
-	SubtaskID    string
-	SubtaskTitle string // title of the subtask (for UI events)
-	SessionID    string
-	ProjectKey   string
-	Status       string // "running" | "completed" | "failed" | "stopped"
-	Result       string
-	Error        string
-	StartedAt    time.Time
-	Cancel       context.CancelFunc
-	completionCh chan struct{} // closed when agent reaches terminal state
-	closeOnce    sync.Once
-	blockingSpawn bool              // true = supervisor blocks on this agent
-	agentType   string // agent type name (for restart without subtask)
-	description string // task description for researcher/reviewer agents
+	ID            string
+	SubtaskID     string
+	SubtaskTitle  string // title of the subtask (for UI events)
+	SessionID     string
+	ProjectKey    string
+	Status        string // "running" | "completed" | "failed" | "stopped"
+	Result        string
+	Error         string
+	StartedAt     time.Time
+	Cancel        context.CancelFunc
+	completionCh  chan struct{} // closed when agent reaches terminal state
+	closeOnce     sync.Once
+	blockingSpawn bool   // true = supervisor blocks on this agent
+	agentType     string // agent type name (for restart without subtask)
+	description   string // task description for researcher/reviewer agents
 }
 
 // snapshot returns an immutable copy of the agent state.
@@ -173,14 +173,14 @@ type AgentModelCacheProvider interface {
 
 // AgentPoolConfig holds configuration for creating an AgentPool
 type AgentPoolConfig struct {
-	ModelSelector    AgentModelSelector
-	ModelIDResolver  AgentModelIDResolver  // optional: per-agent model resolution from DB
-	ModelCache       AgentModelCacheProvider // optional: paired with ModelIDResolver
-	SubtaskManager   SubtaskManager
-	AgentRunStorage  AgentRunStorage // optional: nil for backward compatibility
-	AgentConfig      *config.AgentConfig
-	SessionDirName   string // shared session dir from Supervisor for log co-location
-	MaxConcurrent    int    // 0 = no limit (backward compatibility)
+	ModelSelector   AgentModelSelector
+	ModelIDResolver AgentModelIDResolver    // optional: per-agent model resolution from DB
+	ModelCache      AgentModelCacheProvider // optional: paired with ModelIDResolver
+	SubtaskManager  SubtaskManager
+	AgentRunStorage AgentRunStorage // optional: nil for backward compatibility
+	AgentConfig     *config.AgentConfig
+	SessionDirName  string // shared session dir from Supervisor for log co-location
+	MaxConcurrent   int    // 0 = no limit (backward compatibility)
 }
 
 // AgentPool manages Code Agent goroutines
@@ -199,10 +199,10 @@ type AgentPool struct {
 	sessionDirName        string                        // shared session dir from Supervisor for log co-location
 	contextReminders      []react.ContextReminderProvider
 	// Engine support (required for code agent execution)
-	engine             AgentEngine          // Engine for executing code agents
-	flowProvider       FlowProvider         // for getting coder flow
-	toolResolver       ToolResolver         // for resolving tool names
-	toolDeps ToolDepsProvider // for creating tool dependencies
+	engine       AgentEngine      // Engine for executing code agents
+	flowProvider FlowProvider     // for getting coder flow
+	toolResolver ToolResolver     // for resolving tool names
+	toolDeps     ToolDepsProvider // for creating tool dependencies
 	// Max concurrent agents (0 = no limit)
 	maxConcurrent int
 	// Interrupt mechanism for blocking spawns (delegated to InterruptManager)
@@ -454,36 +454,46 @@ func (p *AgentPool) registerAgent(ctx context.Context, sessionID, agentID string
 	return nil
 }
 
-// GetStatus returns an immutable snapshot of agent state (safe to read without lock).
-func (p *AgentPool) GetStatus(agentID string) (AgentSnapshot, bool) {
+// GetStatus returns an immutable snapshot of agent state (safe to read without
+// lock). sessionID scopes the lookup: an agent spawned in another session (and
+// therefore, in Cloud, potentially another tenant) is reported as not-found so a
+// caller can never inspect agents outside its own session.
+func (p *AgentPool) GetStatus(sessionID, agentID string) (AgentSnapshot, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	agent, ok := p.agents[agentID]
-	if !ok {
+	if !ok || agent.SessionID != sessionID {
 		return AgentSnapshot{}, false
 	}
 	return agent.snapshot(), true
 }
 
-
-
-// GetAllAgents returns immutable snapshots of all agents (safe to read without lock).
-func (p *AgentPool) GetAllAgents() []AgentSnapshot {
+// GetSessionAgents returns immutable snapshots of the agents spawned in the given
+// session only. The pool is process-global across tenants, so listing must be
+// session-scoped — otherwise a delegating agent could enumerate other tenants'
+// running agents (cloud-first isolation).
+func (p *AgentPool) GetSessionAgents(sessionID string) []AgentSnapshot {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	result := make([]AgentSnapshot, 0, len(p.agents))
 	for _, agent := range p.agents {
+		if agent.SessionID != sessionID {
+			continue
+		}
 		result = append(result, agent.snapshot())
 	}
 	return result
 }
 
-// StopAgent stops a running agent by cancelling its context
-func (p *AgentPool) StopAgent(agentID string) error {
+// StopAgent stops a running agent by cancelling its context. sessionID scopes the
+// operation: an agent belonging to another session (potentially another tenant in
+// Cloud) is reported as not-found and left untouched, so a delegating agent can
+// only stop the agents it spawned in its own session.
+func (p *AgentPool) StopAgent(sessionID, agentID string) error {
 	p.mu.Lock()
 	agent, ok := p.agents[agentID]
-	if !ok {
+	if !ok || agent.SessionID != sessionID {
 		p.mu.Unlock()
 		return fmt.Errorf("agent not found: %s", agentID)
 	}
@@ -593,8 +603,8 @@ func (p *AgentPool) SpawnWithDescription(ctx context.Context, sessionID, project
 		Cancel:        cancel,
 		completionCh:  make(chan struct{}),
 		blockingSpawn: blocking,
-		agentType:   agentType,
-		description: description,
+		agentType:     agentType,
+		description:   description,
 	}
 
 	if err := p.registerAgent(ctx, sessionID, agentID, running); err != nil {

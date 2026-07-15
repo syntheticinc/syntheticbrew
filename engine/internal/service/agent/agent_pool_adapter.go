@@ -58,8 +58,8 @@ func (a *AgentPoolAdapter) NotifyUserMessage(sessionID, message string) {
 	a.pool.NotifyUserMessage(sessionID, message)
 }
 
-func (a *AgentPoolAdapter) GetStatusInfo(agentID string) (*tools.AgentInfo, bool) {
-	snap, ok := a.pool.GetStatus(agentID)
+func (a *AgentPoolAdapter) GetStatusInfo(sessionID, agentID string) (*tools.AgentInfo, bool) {
+	snap, ok := a.pool.GetStatus(sessionID, agentID)
 	if !ok {
 		return nil, false
 	}
@@ -72,8 +72,8 @@ func (a *AgentPoolAdapter) GetStatusInfo(agentID string) (*tools.AgentInfo, bool
 	}, true
 }
 
-func (a *AgentPoolAdapter) GetAllAgentInfos() []tools.AgentInfo {
-	snapshots := a.pool.GetAllAgents()
+func (a *AgentPoolAdapter) GetAllAgentInfos(sessionID string) []tools.AgentInfo {
+	snapshots := a.pool.GetSessionAgents(sessionID)
 	result := make([]tools.AgentInfo, 0, len(snapshots))
 	for _, snap := range snapshots {
 		result = append(result, tools.AgentInfo{
@@ -87,8 +87,8 @@ func (a *AgentPoolAdapter) GetAllAgentInfos() []tools.AgentInfo {
 	return result
 }
 
-func (a *AgentPoolAdapter) StopAgent(agentID string) error {
-	return a.pool.StopAgent(agentID)
+func (a *AgentPoolAdapter) StopAgent(sessionID, agentID string) error {
+	return a.pool.StopAgent(sessionID, agentID)
 }
 
 // SpawnAgent implements tools.GenericAgentSpawner by delegating to AgentPool.SpawnWithDescription.

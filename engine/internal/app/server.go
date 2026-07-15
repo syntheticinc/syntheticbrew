@@ -39,6 +39,7 @@ import (
 
 	"github.com/syntheticinc/syntheticbrew/internal/service/capability"
 	"github.com/syntheticinc/syntheticbrew/internal/service/eventstore"
+	svcknowledge "github.com/syntheticinc/syntheticbrew/internal/service/knowledge"
 	"github.com/syntheticinc/syntheticbrew/internal/service/lifecycle"
 	memorysvc "github.com/syntheticinc/syntheticbrew/internal/service/memory"
 
@@ -298,6 +299,13 @@ func Run(sc ServerConfig) error {
 		// ignores it — safe to wire unconditionally.
 		sc.Plugin.SetUsageLimitWriter(newEngineUsageLimitWriter(configrepo.NewGORMUsageLimitRepository(pgDB)))
 
+		// Wire the embedding-model writer so a provisioning plugin can install a
+		// default embedding model on a freshly-created tenant through the
+		// engine's own tenant-scoped model repository (idempotent — never
+		// duplicating or clobbering a tenant's own embedding model). CE's Noop
+		// plugin ignores it — safe to wire unconditionally.
+		sc.Plugin.SetEmbeddingModelWriter(newEngineEmbeddingModelWriter(configrepo.NewGORMLLMProviderRepository(pgDB)))
+
 		// Wire the tenant-policy seam so a plugin can write and read protected
 		// per-tenant policy entries through the engine's own tenant-scoped
 		// repository. No HTTP route exposes this table — the seam is the only
@@ -445,6 +453,24 @@ func Run(sc ServerConfig) error {
 			if mcpManager != nil {
 				mcpSyncer = newMCPClientSyncAdapter(mcpManager)
 			}
+
+			// Knowledge-base tool deps: the same guarded upload service the REST
+			// path uses (document quota seam wired), plus the KB store/repo. Lets
+			// an MCP client build a grounded agent end to end. The doc guard is
+			// the plugin itself — CE Noop admits everything.
+			kbRepoForTools := configrepo.NewGORMKnowledgeBaseRepository(pgDB)
+			uploadForTools := svcknowledge.NewUploadService(configrepo.NewGORMKnowledgeRepository(pgDB))
+			uploadForTools.SetEmbeddingResolver(&embeddingModelResolver{db: pgDB})
+			uploadForTools.SetKBEmbeddingResolver(&kbEmbeddingResolver{db: pgDB})
+			uploadForTools.SetDocumentGuard(sc.Plugin)
+			uploadForTools.SetEmbedderFactory(&embedderFactoryAdapter{plugin: sc.Plugin})
+			knowledgeToolDeps := newKnowledgeToolAdapter(
+				&kbStoreAdapter{repo: kbRepoForTools, db: pgDB},
+				kbRepoForTools,
+				uploadForTools,
+				pgDB,
+			)
+
 			admintools.RegisterAdminTools(components.AgentToolResolver.BuiltinStore(), admintools.AdminToolDependencies{
 				AgentRepo:  newAdminAgentRepoAdapter(configrepo.NewGORMAgentRepository(pgDB)),
 				SchemaRepo: newAdminSchemaRepoAdapter(configrepo.NewGORMSchemaRepository(pgDB)),
@@ -473,6 +499,7 @@ func Run(sc ServerConfig) error {
 				TransportPolicy:   sc.Plugin.TransportPolicy(),
 				WidgetTokenMinter: &widgetTokenMinterAdapter{repo: apiTokenRepo},
 				MCPSyncer:         mcpSyncer,
+				KnowledgeBase:     knowledgeToolDeps,
 			})
 			slog.InfoContext(ctx, "admin tools registered into builtin store")
 		}
@@ -489,7 +516,7 @@ func Run(sc ServerConfig) error {
 		components.AgentToolResolver.SetKnowledge(knowledgeRepo, embeddingsClient)
 		if pgDB != nil {
 			components.AgentToolResolver.SetKnowledgeEmbedderResolver(
-				&knowledgeEmbedderResolverAdapter{resolver: &embeddingModelResolver{db: pgDB}})
+				&knowledgeEmbedderResolverAdapter{resolver: &embeddingModelResolver{db: pgDB}, plugin: sc.Plugin})
 			components.AgentToolResolver.SetKnowledgeKBResolver(
 				configrepo.NewGORMKnowledgeBaseRepository(pgDB))
 		}

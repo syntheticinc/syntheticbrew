@@ -93,6 +93,15 @@ func mcpToolScopeTable() map[string]int {
 		// Provisioning helpers
 		"provision_agent":   provision,
 		"get_embed_snippet": provision,
+
+		// Knowledge base (create / add / link / list are provision-scoped;
+		// delete_document is symmetric with add — same KB lifecycle, low blast
+		// radius — so it is provision-scoped too, NOT the broad manage scope).
+		"admin_create_knowledge_base": provision,
+		"admin_add_document":          provision,
+		"admin_delete_document":       provision,
+		"admin_link_knowledge_base":   provision,
+		"admin_list_documents":        provision,
 	}
 }
 

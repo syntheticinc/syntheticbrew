@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/syntheticinc/syntheticbrew/internal/domain"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
@@ -31,7 +35,28 @@ type CompositeAgentSpawner struct {
 	pool    tools.GenericAgentSpawner
 	manager *lifecycle.Manager
 	agents  AgentLifecycleReader
+
+	// completed holds results of chat agents that ran synchronously through
+	// lifecycle.Manager, keyed by session then synthetic spawn ID. The spawn
+	// tools use an async contract (SpawnAgent → id, WaitForAgent(id) → result);
+	// the manager path is synchronous, so its output is stashed here for
+	// WaitForAgent to return instead of being handed back as if it were an
+	// agent ID. Session-scoped (a session belongs to one tenant) and entries
+	// are deleted on read; stale entries (spawn without a matching wait, e.g.
+	// ctx cancellation between the two) are swept lazily on the next stash.
+	mu        sync.Mutex
+	completed map[string]map[string]stashedCompletion
 }
+
+// stashedCompletion is a completed sync-spawn result awaiting WaitForAgent.
+type stashedCompletion struct {
+	info    tools.AgentCompletionInfo
+	stashed time.Time
+}
+
+// stashedCompletionTTL bounds how long an unclaimed sync-spawn result may
+// live before the lazy sweep drops it.
+const stashedCompletionTTL = 10 * time.Minute
 
 // NewCompositeAgentSpawner creates a new CompositeAgentSpawner.
 func NewCompositeAgentSpawner(
@@ -40,9 +65,10 @@ func NewCompositeAgentSpawner(
 	agents AgentLifecycleReader,
 ) *CompositeAgentSpawner {
 	return &CompositeAgentSpawner{
-		pool:    pool,
-		manager: manager,
-		agents:  agents,
+		pool:      pool,
+		manager:   manager,
+		agents:    agents,
+		completed: make(map[string]map[string]stashedCompletion),
 	}
 }
 
@@ -98,11 +124,81 @@ func (c *CompositeAgentSpawner) SpawnAgent(ctx context.Context, params tools.Spa
 		return "", fmt.Errorf("lifecycle execute task: %w", err)
 	}
 
-	return result, nil
+	// The manager ran the chat agent synchronously and already holds its output.
+	// Honor the async spawn contract the tools rely on: return a retrieval ID and
+	// stash the result for WaitForAgent, rather than returning the answer text as
+	// if it were an agent ID (which WaitForAgent could never resolve, so the
+	// delegator would report "completed (no output)").
+	agentID := "chat-" + uuid.New().String()
+	bucketKey := stashBucketKey(ctx, params.SessionID)
+	c.mu.Lock()
+	c.sweepStaleLocked()
+	if c.completed[bucketKey] == nil {
+		c.completed[bucketKey] = make(map[string]stashedCompletion)
+	}
+	c.completed[bucketKey][agentID] = stashedCompletion{
+		info: tools.AgentCompletionInfo{
+			AgentID: agentID,
+			Status:  "completed",
+			Result:  result,
+		},
+		stashed: time.Now(),
+	}
+	c.mu.Unlock()
+
+	return agentID, nil
 }
 
-// WaitForAgent delegates to the underlying pool.
+// stashBucketKey scopes stash buckets by tenant so a client-supplied session id
+// can never address another tenant's bucket. Self-hosted runs carry the
+// sentinel tenant, so the key stays stable there.
+func stashBucketKey(ctx context.Context, sessionID string) string {
+	return domain.TenantIDFromContext(ctx) + "/" + sessionID
+}
+
+// sweepStaleLocked drops unclaimed results older than stashedCompletionTTL.
+// Caller must hold c.mu.
+func (c *CompositeAgentSpawner) sweepStaleLocked() {
+	cutoff := time.Now().Add(-stashedCompletionTTL)
+	for key, bucket := range c.completed {
+		for id, entry := range bucket {
+			if entry.stashed.Before(cutoff) {
+				delete(bucket, id)
+			}
+		}
+		if len(bucket) == 0 {
+			delete(c.completed, key)
+		}
+	}
+}
+
+// takeStashed removes and returns the stashed synchronous result for agentID in
+// the session's bucket, reporting whether one was present. It manages its own
+// lock; a flat early-return shape keeps WaitForAgent free of nested lookups.
+func (c *CompositeAgentSpawner) takeStashed(bucketKey, agentID string) (tools.AgentCompletionInfo, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	bucket, ok := c.completed[bucketKey]
+	if !ok {
+		return tools.AgentCompletionInfo{}, false
+	}
+	entry, ok := bucket[agentID]
+	if !ok {
+		return tools.AgentCompletionInfo{}, false
+	}
+	delete(bucket, agentID)
+	if len(bucket) == 0 {
+		delete(c.completed, bucketKey)
+	}
+	return entry.info, true
+}
+
+// WaitForAgent returns a synchronously-run chat agent's stashed result, or falls
+// back to the pool for asynchronously-spawned code agents.
 func (c *CompositeAgentSpawner) WaitForAgent(ctx context.Context, sessionID, agentID string) (tools.AgentCompletionInfo, error) {
+	if info, ok := c.takeStashed(stashBucketKey(ctx, sessionID), agentID); ok {
+		return info, nil
+	}
 	return c.pool.WaitForAgent(ctx, sessionID, agentID)
 }
 
@@ -121,9 +217,11 @@ func (c *CompositeAgentSpawner) NotifyUserMessage(sessionID, message string) {
 	c.pool.NotifyUserMessage(sessionID, message)
 }
 
-// StopAgent delegates to the underlying pool.
-func (c *CompositeAgentSpawner) StopAgent(agentID string) error {
-	return c.pool.StopAgent(agentID)
+// StopAgent delegates to the underlying pool, scoped to the caller's session so
+// an agent can only stop the agents it spawned in its own session (cloud-first
+// isolation — the pool is process-global across tenants).
+func (c *CompositeAgentSpawner) StopAgent(sessionID, agentID string) error {
+	return c.pool.StopAgent(sessionID, agentID)
 }
 
 // agentSpawnerWaiter is the minimal interface poolBasedRunner needs:

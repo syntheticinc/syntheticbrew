@@ -232,8 +232,9 @@ func registerHTTPRoutes(deps routesDeps) {
 			})
 		}
 
-		// Config
-		configImportExport := &configImportExportHTTPAdapter{db: pgDB}
+		// Config. schemaGuard = the plugin quota seam so /config/import gates
+		// schema creation like every other create path (CE Noop = no limit).
+		configImportExport := &configImportExportHTTPAdapter{db: pgDB, schemaGuard: plugin}
 		configHandler := deliveryhttp.NewConfigHandler(
 			&configReloaderHTTPAdapter{registry: agentRegistry, registryMgr: registryMgr, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
 			configImportExport,
@@ -255,6 +256,10 @@ func registerHTTPRoutes(deps routesDeps) {
 			uploadSvc := svcknowledge.NewUploadService(knowledgeRepo)
 			uploadSvc.SetEmbeddingResolver(&embeddingModelResolver{db: pgDB})
 			uploadSvc.SetKBEmbeddingResolver(&kbEmbeddingResolver{db: pgDB})
+			// Document admission gate — same seam the knowledge tools use, so the
+			// document quota is enforced identically on REST and MCP ingest paths.
+			uploadSvc.SetDocumentGuard(plugin)
+			uploadSvc.SetEmbedderFactory(&embedderFactoryAdapter{plugin: plugin})
 			knowledgeHandler.SetFileUploader(&knowledgeUploadHTTPAdapter{svc: uploadSvc})
 			knowledgeHandler.SetFileLister(&knowledgeFileListerHTTPAdapter{svc: uploadSvc, kbRepo: kbRepo})
 

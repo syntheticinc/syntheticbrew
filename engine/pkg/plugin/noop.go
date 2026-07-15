@@ -37,6 +37,9 @@ func (Noop) OnAgentStep(context.Context, string, int) error { return nil }
 // OnSchemaCreate is a no-op — CE enforces no schema limit.
 func (Noop) OnSchemaCreate(context.Context, string, int) error { return nil }
 
+// OnDocumentCreate is a no-op — CE enforces no knowledge-document limit.
+func (Noop) OnDocumentCreate(context.Context, string, int) error { return nil }
+
 // SetTenantSeeder is a no-op. CE has no provisioning endpoint, so there is
 // nothing to wire the seeder into.
 func (Noop) SetTenantSeeder(TenantSeeder) {}
@@ -48,6 +51,10 @@ func (Noop) SetSchemaCounter(SchemaCounter) {}
 // SetUsageLimitWriter is a no-op. CE has no provisioning endpoint, so there is
 // no writer to wire.
 func (Noop) SetUsageLimitWriter(UsageLimitWriter) {}
+
+// SetEmbeddingModelWriter is a no-op. CE has no provisioning endpoint, so there
+// is no writer to wire.
+func (Noop) SetEmbeddingModelWriter(EmbeddingModelWriter) {}
 
 // SetTenantPolicyWriter is a no-op. Nothing writes tenant policies in CE.
 func (Noop) SetTenantPolicyWriter(TenantPolicyWriter) {}
@@ -78,6 +85,13 @@ func (Noop) KGEnforcer() KGEnforcer { return nil }
 
 // KGCounter returns nil — CE reads counts directly from the database.
 func (Noop) KGCounter() KGCounter { return nil }
+
+// EmbedderFor returns (nil, false) — CE routes every embedding through the
+// engine's built-in OpenAI-compatible client. A plugin overrides this to serve
+// a model over its own channel.
+func (Noop) EmbedderFor(context.Context, string, string, string, int) (Embedder, bool) {
+	return nil, false
+}
 
 // Stop is a no-op.
 func (Noop) Stop() {}

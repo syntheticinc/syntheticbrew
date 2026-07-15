@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -124,4 +125,54 @@ func TestAgentHandler_Get_NotFound(t *testing.T) {
 	err := json.NewDecoder(rec.Body).Decode(&result)
 	require.NoError(t, err)
 	assert.Contains(t, result["error"], "nonexistent")
+}
+
+// TestAgentHandler_CanSpawnRejected pins the honest-API contract: the agent
+// upsert endpoints never persisted can_spawn (delegation targets live in
+// agent_relations), so a non-empty can_spawn is rejected with a pointer to
+// the relations API instead of being silently dropped.
+func TestAgentHandler_CanSpawnRejected(t *testing.T) {
+	reached := false
+	mgr := &mockAgentManager{
+		createFunc: func(_ context.Context, req CreateAgentRequest) (*AgentDetail, error) {
+			reached = true
+			return &AgentDetail{AgentInfo: AgentInfo{Name: req.Name}}, nil
+		},
+		updateFunc: func(_ context.Context, name string, _ CreateAgentRequest) (*AgentDetail, error) {
+			reached = true
+			return &AgentDetail{AgentInfo: AgentInfo{Name: name}}, nil
+		},
+		patchFunc: func(_ context.Context, name string, _ UpdateAgentRequest) (*AgentDetail, error) {
+			reached = true
+			return &AgentDetail{AgentInfo: AgentInfo{Name: name}}, nil
+		},
+	}
+	router := newAgentManagerRouter(mgr)
+
+	tests := []struct {
+		method, url, body string
+	}{
+		{http.MethodPost, "/api/v1/agents", `{"name":"a1","system_prompt":"p","can_spawn":["child"]}`},
+		{http.MethodPut, "/api/v1/agents/a1", `{"system_prompt":"p","can_spawn":["child"]}`},
+		{http.MethodPatch, "/api/v1/agents/a1", `{"can_spawn":["child"]}`},
+	}
+	for _, tc := range tests {
+		req := httptest.NewRequest(tc.method, tc.url, strings.NewReader(tc.body))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equalf(t, http.StatusBadRequest, rec.Code,
+			"%s %s with non-empty can_spawn must be 400, got %d: %s", tc.method, tc.url, rec.Code, rec.Body.String())
+		assert.Contains(t, rec.Body.String(), "agent-relations",
+			"rejection must point the caller to the relations API")
+	}
+	require.False(t, reached, "manager must not be reached when can_spawn is rejected")
+
+	// Empty can_spawn stays a no-op (the admin SPA sends can_spawn: [] on
+	// every save until its editor ships read-only) — the write goes through.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents",
+		strings.NewReader(`{"name":"a1","system_prompt":"p","can_spawn":[]}`))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.True(t, reached, "empty can_spawn must pass through to the manager")
 }

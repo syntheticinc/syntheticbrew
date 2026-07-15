@@ -455,9 +455,8 @@ func (a *agentManagerHTTPAdapter) PatchAgent(ctx context.Context, name string, r
 	if req.Tools != nil {
 		existing.BuiltinTools = *req.Tools
 	}
-	if req.CanSpawn != nil {
-		existing.CanSpawn = *req.CanSpawn
-	}
+	// CanSpawn is intentionally NOT mapped: delegation targets live in
+	// agent_relations; the handler rejects non-empty can_spawn writes.
 	if req.MCPServers != nil {
 		existing.MCPServers = *req.MCPServers
 	}
@@ -548,8 +547,9 @@ func (a *agentManagerHTTPAdapter) toAgentRecord(req deliveryhttp.CreateAgentRequ
 		StopSequences:   req.StopSequences,
 		ConfirmBefore:   req.ConfirmBefore,
 		BuiltinTools:    req.Tools,
-		CanSpawn:        req.CanSpawn,
-		MCPServers:      req.MCPServers,
+		// CanSpawn is intentionally NOT mapped: delegation targets live in
+		// agent_relations; the handler rejects non-empty can_spawn writes.
+		MCPServers: req.MCPServers,
 	}
 
 	// Resolve model: by ID or by name.

@@ -67,9 +67,9 @@ type AgentPoolForTool interface {
 	WaitForAllSessionAgents(ctx context.Context, sessionID string) (WaitResult, error)
 	HasBlockingWait(sessionID string) bool
 	NotifyUserMessage(sessionID, message string)
-	GetStatusInfo(agentID string) (*AgentInfo, bool)
-	GetAllAgentInfos() []AgentInfo
-	StopAgent(agentID string) error
+	GetStatusInfo(sessionID, agentID string) (*AgentInfo, bool)
+	GetAllAgentInfos(sessionID string) []AgentInfo
+	StopAgent(sessionID, agentID string) error
 	RestartAgent(ctx context.Context, agentID string, blocking bool) (string, error)
 }
 
@@ -236,7 +236,7 @@ Example: {"action": "spawn", "subtask_id": "abc123"}`, nil
 		if args.AgentID == "" {
 			return "[ERROR] agent_id is required for status", nil
 		}
-		info, ok := t.pool.GetStatusInfo(args.AgentID)
+		info, ok := t.pool.GetStatusInfo(t.sessionID, args.AgentID)
 		if !ok {
 			return fmt.Sprintf("[STALE] Agent %s no longer exists (server was restarted). "+
 				"If the subtask is still in_progress, fail it and create a new subtask with spawn action.", args.AgentID), nil
@@ -251,7 +251,7 @@ Example: {"action": "spawn", "subtask_id": "abc123"}`, nil
 		return result, nil
 
 	case "list":
-		agents := t.pool.GetAllAgentInfos()
+		agents := t.pool.GetAllAgentInfos(t.sessionID)
 		if len(agents) == 0 {
 			return "No agents running.", nil
 		}
@@ -265,7 +265,7 @@ Example: {"action": "spawn", "subtask_id": "abc123"}`, nil
 		if args.AgentID == "" {
 			return "[ERROR] agent_id is required for stop", nil
 		}
-		if err := t.pool.StopAgent(args.AgentID); err != nil {
+		if err := t.pool.StopAgent(t.sessionID, args.AgentID); err != nil {
 			return fmt.Sprintf("[ERROR] %v", err), nil
 		}
 		return fmt.Sprintf("Agent %s stopped.", args.AgentID), nil

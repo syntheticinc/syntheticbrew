@@ -141,4 +141,30 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 			return NewGetEmbedSnippetTool(deps.SchemaRepo, deps.WidgetTokenMinter)
 		})
 	}
+
+	// Knowledge-base tools — let an MCP client build a grounded agent end to
+	// end (create KB → add docs → poll status → link). Skipped on the legacy
+	// no-DB boot path where the knowledge surface is absent.
+	if deps.KnowledgeBase != nil {
+		kb := deps.KnowledgeBase
+		store.Register("admin_create_knowledge_base", func(_ tools.ToolDependencies) tool.InvokableTool {
+			return NewCreateKnowledgeBaseTool(kb, kb)
+		})
+		store.Register("admin_add_document", func(_ tools.ToolDependencies) tool.InvokableTool {
+			return NewAddDocumentTool(kb, kb)
+		})
+		store.Register("admin_delete_document", func(_ tools.ToolDependencies) tool.InvokableTool {
+			return NewDeleteDocumentTool(kb, kb)
+		})
+		store.Register("admin_link_knowledge_base", func(_ tools.ToolDependencies) tool.InvokableTool {
+			var capEnsurer KnowledgeCapabilityEnsurer
+			if deps.CapabilityRepo != nil {
+				capEnsurer = NewCapabilityEnsurer(deps.CapabilityRepo, reloader)
+			}
+			return NewLinkKnowledgeBaseTool(kb, kb, capEnsurer)
+		})
+		store.Register("admin_list_documents", func(_ tools.ToolDependencies) tool.InvokableTool {
+			return NewListDocumentsTool(kb, kb)
+		})
+	}
 }
