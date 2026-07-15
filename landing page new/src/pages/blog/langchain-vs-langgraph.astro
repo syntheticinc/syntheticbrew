@@ -1,0 +1,73 @@
+---
+import BlogPost from '@/components/BlogPost.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import { BLOG_MAP } from '@/data/blog';
+
+const post = BLOG_MAP['langchain-vs-langgraph'];
+const faqs = [
+  { q: 'Is LangGraph replacing LangChain?', a: 'For agent orchestration, effectively yes — LangChain’s own guidance steers stateful, multi-step agents toward LangGraph, while LangChain remains the integration and component layer. Existing LangChain chains keep working, and the two are designed to be used together.' },
+  { q: 'Should I learn LangChain or LangGraph first?', a: 'If you are building agents, start with LangGraph and pull in LangChain components (models, retrievers, tools) as needed. If you only need simple LLM pipelines — prompt, model, parser — plain LangChain (or no framework at all) is enough.' },
+  { q: 'Do I need either one to ship AI agents?', a: 'No. Frameworks are one way to build the agent logic, but the logic is the smaller half of shipping. If you want orchestration, sessions, memory, tool security, and audit as a deployable product instead of code you maintain, an agent runtime like SyntheticBrew replaces the framework layer entirely — your product just calls a REST + SSE API.' },
+  { q: 'What is the difference between LangGraph and an agent runtime?', a: 'LangGraph gives you programmatic control of an agent graph inside your Python or JS process — you still build the service around it: API, auth, persistence, admin, observability. A runtime like SyntheticBrew ships all of that as one self-hosted binary you configure rather than code.' },
+];
+const faqSchema = [{
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+}];
+---
+<BlogPost post={post} extraSchema={faqSchema}>
+  <p>LangChain and LangGraph come from the same team, share an ecosystem, and are constantly compared — usually by someone deciding what to build an agent on this quarter. The confusion is understandable: one grew out of the other, the documentation cross-links heavily, and both can technically build an “agent”.</p>
+  <p>Here is the practical difference, when each fits, and the part most comparisons skip: the work that remains <em>after</em> you pick one.</p>
+
+  <h2>LangChain vs LangGraph: the short answer</h2>
+  <p><strong>LangChain</strong> is a component library: hundreds of integrations for models, vector stores, retrievers, and tools, plus composable chains for sequential LLM pipelines (prompt → model → parser → next step). It is at its best when data flows one way.</p>
+  <p><strong>LangGraph</strong> is an orchestration framework for <em>stateful</em> agents: you define nodes and edges in a graph, and the framework manages state, branching, loops, persistence via checkpointers, and human-in-the-loop interrupts. It exists because real agents do not flow one way — they loop, branch, retry, and wait for people.</p>
+  <p>Rule of thumb: <strong>pipelines → LangChain; agents → LangGraph.</strong> They compose — LangGraph nodes routinely call LangChain components.</p>
+
+  <h2>What each is best at</h2>
+  <table class="comparison-table">
+    <thead><tr><th>Dimension</th><th>LangChain</th><th>LangGraph</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Mental model</strong></td><td>Chains — directed pipelines</td><td>Graphs — nodes, edges, cycles, state</td></tr>
+      <tr><td><strong>State</strong></td><td>Mostly stateless between steps</td><td>First-class state object, checkpointed</td></tr>
+      <tr><td><strong>Loops &amp; branching</strong></td><td>Awkward — chains want to move forward</td><td>Native — cycles and conditional edges</td></tr>
+      <tr><td><strong>Human-in-the-loop</strong></td><td>DIY</td><td>Interrupts and resumable runs built in</td></tr>
+      <tr><td><strong>Multi-agent</strong></td><td>Possible, manual</td><td>Supervisor and swarm patterns supported</td></tr>
+      <tr><td><strong>Best for</strong></td><td>RAG pipelines, extraction, simple assistants</td><td>Agents that decide, retry, and coordinate</td></tr>
+      <tr><td><strong>Learning curve</strong></td><td>Gentler start, abstractions run deep</td><td>Steeper start, more explicit control</td></tr>
+    </tbody>
+  </table>
+
+  <h2>When to use LangChain</h2>
+  <p>Choose plain LangChain when the shape of your problem is a pipeline: retrieval-augmented answering, document extraction, summarization, classification. You get the integration catalog — genuinely the broadest in the ecosystem — without graph machinery you do not need. Be aware of the trade-off teams cite most: deep abstraction layers and a brisk pace of breaking changes that your codebase inherits.</p>
+
+  <h2>When to use LangGraph</h2>
+  <p>Choose LangGraph the moment your system needs to make decisions about its own flow: tool-using agents that loop until done, workflows that pause for human approval, supervisors delegating to specialists. Explicit graphs are easier to reason about than prompt-buried control flow, and checkpointed state gives you resumability. The cost: you are now maintaining orchestration code, and everything around it is still yours to build.</p>
+
+  <h2>What neither gives you: the runtime</h2>
+  <p>Pick either framework and the following list is still on your roadmap, because a framework runs <em>inside your process</em> — it is not a service:</p>
+  <ul>
+    <li>An API server with streaming (SSE) your product can consume</li>
+    <li>Authentication, token scopes, and tenant isolation</li>
+    <li>Session persistence and cross-session memory</li>
+    <li>Tool security: per-agent scoping, forwarded end-user identity, confirmation gates</li>
+    <li>An admin surface non-engineers can operate</li>
+    <li>Audit logs, health checks, metrics, recovery behavior</li>
+  </ul>
+  <p>That is months of platform engineering — the part that actually gates shipping. It is also exactly the layer <strong>SyntheticBrew</strong> ships as a product: a self-hosted Go runtime where agents are configuration, delegation and spawning have policies, tools carry your users’ real identity, and every step is streamed and audited. Your product integrates over REST + SSE in any language, and no framework abstractions enter your codebase.</p>
+  <p>If you are weighing the frameworks because an agent feature needs to ship, read our <a href="/compare/langchain/">LangChain alternatives comparison</a> — it covers when a framework is the right call and when a runtime gets you to production faster.</p>
+
+  <h2>LangChain vs LangGraph FAQ</h2>
+  <div class="faq">
+    {faqs.map((item) => (
+      <details>
+        <summary>{item.q}</summary>
+        <p>{item.a}</p>
+      </details>
+    ))}
+  </div>
+
+  <div style="margin-top:44px">
+    <CtaGroup centered />
+  </div>
+</BlogPost>

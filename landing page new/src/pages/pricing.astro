@@ -1,0 +1,158 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import { SITE } from '@/data/site';
+
+const ceFeatures = [
+  'Unlimited agents and sub-agent spawn',
+  'Multi-agent orchestration',
+  'MCP servers and declarative tools',
+  'Background task system',
+  'Knowledge base and agentic RAG',
+  'Typed knowledge graphs',
+  'Model Registry with recommendations',
+  'REST API and structured SSE streaming',
+  'Admin Dashboard with full CRUD',
+  'BYOK — bring your own model keys',
+  'API tokens with scopes',
+  'Docker, Kubernetes, or bare-metal binary',
+];
+
+const eeAvailable = [
+  'Configurable rate limiting',
+  'Prometheus metrics',
+];
+
+const eeInDevelopment = [
+  'Session Explorer and replay',
+  'Cost analytics per agent',
+  'Quality metrics and dashboards',
+  'Prompt A/B testing',
+  'PII redaction',
+  'Configurable data retention',
+];
+
+const faqs = [
+  {
+    q: 'How does SyntheticBrew Cloud pricing work?',
+    a: 'Cloud plans are priced by monthly active users (MAU), plus schema and knowledge-base document limits per tier. You are never billed per message or per token: with your own LLM key, messages are unlimited on every plan; the free demo key includes 50 messages per month.',
+  },
+  {
+    q: 'What counts as a monthly active user?',
+    a: 'A monthly active user is a unique person who chats with your agent at least once in a billing period — roughly, it counts conversations, not messages. One user can send hundreds of messages and still counts once. Anonymous widget visitors are counted once using a persistent visitor id.',
+  },
+  {
+    q: 'Can I use my own LLM keys?',
+    a: 'Yes. BYOK — bring your own key — is included everywhere, in both Community Edition and Cloud, with zero token markup: inference runs at your provider’s list price. Configure any provider key in the Admin Dashboard or pass it per request.',
+  },
+  {
+    q: 'What is the difference between the Free and paid Cloud plans?',
+    a: 'Limits, attribution, and support. Free covers up to 100 monthly active users, 2 schemas, and 25 knowledge-base documents, with a “Powered by SyntheticBrew” badge on the widget. Paid plans raise MAU, schema, and document limits, remove the attribution badge, and add email support on Pro or priority support on Business.',
+  },
+  {
+    q: 'What happens when I reach a plan limit?',
+    a: 'On the Free plan, new users are blocked once you hit the MAU limit while existing sessions continue working. On paid plans, limits are soft: you see an upgrade prompt and nothing shuts off mid-conversation. With your own LLM key, messages are never capped on any plan.',
+  },
+  {
+    q: 'What happens if I stop paying for a Cloud subscription?',
+    a: 'Your account downgrades to the Free plan. Your agents, schemas, and data remain — you only lose capacity above the Free plan limits.',
+  },
+  {
+    q: 'Is SyntheticBrew Community Edition really free forever?',
+    a: 'Yes. The self-hosted Community Edition contains the full agent runtime and is free with no time limit under BSL 1.1, automatically converting to Apache 2.0 after four years. Community Edition features will not move behind a paywall.',
+  },
+  {
+    q: 'Can I self-host SyntheticBrew?',
+    a: 'Yes. Community Edition self-hosts with Docker Compose, Kubernetes using the Helm chart, or a standalone binary alongside PostgreSQL. There is no cloud dependency and no phone-home requirement.',
+  },
+  {
+    q: 'Which LLM providers does SyntheticBrew support?',
+    a: 'OpenAI, Anthropic, Google Gemini, Azure OpenAI, Ollama, OpenRouter, and any OpenAI-compatible provider such as DeepSeek or Mistral. The Model Registry ships with 14+ models and tier recommendations, and you can add custom model configurations.',
+  },
+  {
+    q: 'How does the Enterprise Edition license work?',
+    a: 'Enterprise Edition activates on top of a self-hosted install: you download a license.jwt from your dashboard, place it at ~/.syntheticbrew/license.jwt, and restart the Engine. Without a license the Engine keeps running as Community Edition — nothing breaks.',
+  },
+];
+
+const schema = {
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((item) => ({
+    '@type': 'Question',
+    name: item.q,
+    acceptedAnswer: { '@type': 'Answer', text: item.a },
+  })),
+};
+---
+<SiteLayout
+  title="SyntheticBrew Pricing | Free Self-Hosted & Cloud"
+  description="SyntheticBrew pricing: self-host free forever, Cloud from $0 with unlimited messages — priced by monthly active users. Bring your own LLM key, zero markup."
+  keywords={['SyntheticBrew pricing', 'AI agent platform pricing', 'free self-hosted AI', 'open source AI agent pricing', 'MAU pricing AI chatbot']}
+  schema={schema}
+>
+  <section class="content-hero"><div class="container"><p class="eyebrow">Never billed per token</p><h1>SyntheticBrew pricing: pay per active user, not per token</h1><p>Bring your own LLM key and messages are unlimited on every plan — inference runs at provider cost with zero token markup. Cloud plans are priced by monthly active users (MAU), not tokens — and self-hosting stays free.</p></div></section>
+
+  <section class="section-compact"><div class="container">
+    <div class="billing-toggle" role="group" aria-label="Billing period">
+      <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+      <button type="button" data-period="yearly" aria-pressed="false">Yearly <span class="toggle-badge">2 months free</span></button>
+    </div>
+    <!-- Plan prices and limits are mirrored in the WebMCP agentToolData in src/layouts/SiteLayout.astro — update both together. -->
+    <div class="pricing-grid">
+      <article class="price-card"><small class="eyebrow">Sandbox</small><h2>Free</h2><p>Put a real agent in front of real users on managed Cloud.</p><div class="price">$0</div><p class="price-note">No credit card required.</p><ul><li>Up to 100 monthly active users</li><li>2 schemas</li><li>25 knowledge-base documents</li><li>50 included messages/mo — unlimited with your own key</li><li>Demo LLM key for onboarding</li><li>“Powered by SyntheticBrew” attribution</li></ul><a class="button button-secondary" href="/register" data-analytics="cloud_signup_start">Start free</a></article>
+      <article class="price-card featured"><small class="eyebrow">Most popular</small><h2>Pro</h2><p>For products with a growing user base.</p><div class="price"><span class="price-monthly">$49/mo</span><span class="price-yearly" hidden>$490/yr</span></div><ul><li>2,000 monthly active users</li><li>3 schemas</li><li>100 knowledge-base documents</li><li>50 included messages/mo — unlimited with your own key</li><li>No attribution badge</li><li>Email support</li></ul><a class="button" href="/register" data-analytics="cloud_signup_pro">Start with Pro</a></article>
+      <article class="price-card"><small class="eyebrow">Scale</small><h2>Business</h2><p>Higher limits for teams shipping at volume.</p><div class="price"><span class="price-monthly">$199/mo</span><span class="price-yearly" hidden>$1,990/yr</span></div><ul><li>20,000 monthly active users</li><li>25 schemas</li><li>500 knowledge-base documents</li><li>50 included messages/mo — unlimited with your own key</li><li>No attribution badge</li><li>Priority support</li></ul><a class="button button-secondary" href="/register" data-analytics="cloud_signup_business">Start with Business</a></article>
+      <article class="price-card"><small class="eyebrow">Custom</small><h2>Enterprise &amp; services</h2><p>Security requirements, custom capacity, or a delivered production agent.</p><div class="price">Contact us</div><p class="price-note">Or <a href={SITE.calendly} target="_blank" rel="noopener noreferrer" data-analytics="contact_sales_call">book a call ↗</a></p><ul><li>Custom monthly active users</li><li>Custom schemas and documents</li><li>Identity and access requirements scoped per engagement</li><li>Scoped API tokens per team and integration</li><li>Dedicated onboarding</li><li>Dedicated support with custom SLA</li><li>Migration assistance</li><li>Custom implementation</li><li>Invoiced billing</li></ul><a class="button button-secondary" href={`mailto:${SITE.email}`} data-analytics="contact_sales_start">Contact us</a></article>
+    </div>
+  </div></section>
+
+  <section class="section-compact section-tint"><div class="container ce-band">
+    <div class="ce-band-intro">
+      <small class="eyebrow">Free forever</small>
+      <h2>Community Edition</h2>
+      <p>The complete self-hosted agent runtime. No limits from us.</p>
+      <div class="price">Free</div>
+      <a class="button" href="/download/" data-analytics="self_host_download">Download</a>
+    </div>
+    <ul class="check-list ce-band-features">{ceFeatures.map((feature) => <li>{feature}</li>)}</ul>
+  </div></section>
+
+  <section class="section-compact"><div class="container narrow">
+    <p class="eyebrow">MAU, explained</p>
+    <h2 class="section-title">What counts as an active user?</h2>
+    <p class="section-lede">A monthly active user is a unique person who chats with your agent at least once in a billing period. In practice, MAU roughly tracks conversations — not messages.</p>
+    <ul class="check-list">
+      <li>One user can send hundreds of messages in a month and still counts once.</li>
+      <li>Anonymous widget visitors are counted once each, using a persistent visitor id.</li>
+      <li>Messages are never metered, so your bill stays predictable as conversations get longer.</li>
+      <li>Heavy inference is covered by your own LLM key at your provider's list price — no markup.</li>
+    </ul>
+  </div></section>
+
+  <section class="section"><div class="container narrow">
+    <p class="eyebrow">For self-hosted teams at scale</p>
+    <h2 class="section-title">Enterprise Edition roadmap: observability, cost, and compliance</h2>
+    <p class="section-lede">Community Edition already includes the audit log. Enterprise Edition layers paid operations features on top of a self-hosted install — activated with a <code>license.jwt</code>, no reinstall. Two features are available with an EE license today; the rest are in development; release timing will be announced.</p>
+    <ul class="check-list">
+      {eeAvailable.map((item) => <li>{item} — available with an EE license</li>)}
+      {eeInDevelopment.map((item) => <li>{item} — in development</li>)}
+    </ul>
+    <p style="margin-top:26px">Want to know when the full Enterprise Edition ships? <a href={`mailto:${SITE.email}`} data-analytics="ee_waitlist">Join the waitlist</a>.</p>
+  </div></section>
+
+  <section class="section section-tint"><div class="container narrow"><p class="eyebrow">Pricing questions</p><h2 class="section-title">SyntheticBrew pricing FAQ</h2><div class="faq">{faqs.map((item) => <details><summary>{item.q}</summary><p>{item.a}</p></details>)}</div></div></section>
+
+  <section class="section-compact"><div class="container bottom-cta"><h2>Evaluate the exact runtime before you spend anything.</h2><p>The engine is open source — inspect it, self-host it free, and pay only when Cloud capacity or enterprise requirements actually matter to you.</p><CtaGroup centered /></div></section>
+
+  <script>
+    const periodButtons = document.querySelectorAll<HTMLButtonElement>('.billing-toggle button');
+    periodButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const yearly = btn.dataset.period === 'yearly';
+        periodButtons.forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+        document.querySelectorAll<HTMLElement>('.price-monthly').forEach((el) => { el.hidden = yearly; });
+        document.querySelectorAll<HTMLElement>('.price-yearly').forEach((el) => { el.hidden = !yearly; });
+      });
+    });
+  </script>
+</SiteLayout>

@@ -1,0 +1,86 @@
+---
+import BlogPost from '@/components/BlogPost.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import Terminal from '@/components/Terminal.astro';
+import { BLOG_MAP } from '@/data/blog';
+
+const post = BLOG_MAP['how-to-build-an-ai-agent'];
+const faqs = [
+  { q: 'How do I build an AI agent without coding?', a: 'Use a runtime with a no-code builder: describe the job in plain English, and SyntheticBrew’s AI builder generates the supervisor, specialist agents, tool bindings, and memory configuration — which you then inspect and refine on a visual canvas. You only write code if you need custom tools, and those can be in any language via MCP or HTTP.' },
+  { q: 'How long does it take to build an AI agent?', a: 'A working prototype: an afternoon. A production agent — with grounding, scoped tools, confirmation gates, sessions, and audit — takes 3–6 months if you build the runtime yourself, or days if you deploy an existing runtime and only configure your domain: agents, knowledge, and tools.' },
+  { q: 'What is the best framework to build AI agents?', a: 'If you want to write code, LangGraph and CrewAI are the common Python choices. If you want the runtime as a product — API, admin, sessions, security included — deploy SyntheticBrew and configure agents instead of coding them. Our LangChain comparison covers the trade-off in detail.' },
+  { q: 'How much does it cost to build an AI agent?', a: 'The model calls are usually the cheap part (your LLM provider’s per-token rates, at cost if you bring your own keys). The expensive part is engineering time on the runtime — which is why starting from a free, self-hosted runtime changes the math: you pay your provider, and the infrastructure is one Docker command.' },
+];
+const faqSchema = [
+  {
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+  {
+    '@type': 'HowTo',
+    name: 'How to build an AI agent',
+    step: [
+      { '@type': 'HowToStep', name: 'Define the job and its boundaries' },
+      { '@type': 'HowToStep', name: 'Design the agent team' },
+      { '@type': 'HowToStep', name: 'Ground it in your data' },
+      { '@type': 'HowToStep', name: 'Give it tools — with scopes and confirmation' },
+      { '@type': 'HowToStep', name: 'Ship it behind an API and observe every step' },
+    ],
+  },
+];
+---
+<BlogPost post={post} extraSchema={faqSchema}>
+  <p>Every guide on how to build an AI agent shows you the same thing: wire a model to a tool, watch it answer a question, done. That demo takes an afternoon. Then you try to put it in front of real users, and you discover the demo was maybe 20% of the job.</p>
+  <p>This guide covers the whole job — the five steps that separate a weekend prototype from an agent your customers can rely on. We will show each step two ways: the <strong>no-code path</strong> (using SyntheticBrew’s builder, since that is what we make) and the <strong>code path</strong> (what you would assemble with a framework), so you can judge the trade-off for yourself.</p>
+
+  <h2>Before you build: what an AI agent actually is</h2>
+  <p>An AI agent is not a chatbot with a system prompt. The defining loop is <strong>reason → act → observe → repeat</strong>: the model decides what to do, calls a tool (a search, an API, a database query), reads the result, and keeps going until the task is done or a boundary stops it. If your users need answers <em>plus actions</em> — look up this order, draft this rule, update that record — you are building an agent. If they only need answers from documents, simpler RAG may be enough. (New to the concept? Start with <a href="/blog/what-are-ai-agents/">what AI agents are and how they work</a>.)</p>
+
+  <h2>Step 1: Define the job and its boundaries</h2>
+  <p>Write one sentence: “The agent helps <em>[who]</em> accomplish <em>[what]</em> using <em>[which systems]</em>, and must never <em>[what]</em> without approval.” That last clause is not paranoia — it is the design input that determines your tool scopes and confirmation gates later. An agent for customer support might read orders freely but never issue a refund unapproved; an operations agent might draft alarm rules but never delete devices on its own.</p>
+  <p>Decide the boundaries now, while they are cheap. Retrofitting guardrails onto a live agent is how the horror stories happen.</p>
+
+  <h2>Step 2: Design the agent team — supervisor and specialists</h2>
+  <p>One agent with twenty tools and a two-page prompt becomes unreliable fast: too much context, too many options, no clear responsibility. Production systems converge on the same shape — a <strong>supervisor</strong> that talks to the user and delegates, plus <strong>specialists</strong> that each own a narrow job with only the tools that job needs.</p>
+  <p><strong>No-code path:</strong> describe the outcome in plain English (“a support agent that answers from our docs, looks up orders, and escalates refunds”) and the AI builder proposes the supervisor, specialists, tool bindings, and memory — editable on a visual canvas before anything ships. <strong>Code path:</strong> the same shape is buildable in LangGraph or CrewAI; you will define the graph or crew, then also build everything the graph runs on (state, persistence, streaming, recovery).</p>
+
+  <h2>Step 3: Ground the agent in your data</h2>
+  <p>An ungrounded agent answers from the model’s imagination — fine for brainstorming, fatal for products. Grounding comes in two kinds, and most real agents need both:</p>
+  <ul>
+    <li><strong>Vector RAG</strong> for unstructured text: upload PDFs, docs, and policies; the agent retrieves relevant passages while reasoning. Use it for “what is our return policy?”</li>
+    <li><strong>Typed knowledge graphs</strong> for structured facts: declare your entities (products, plans, devices) as a schema, and the engine generates deterministic retrieval tools — exact records, real IDs, full-recall counts. Use it for “what does the Pro plan include?” — anywhere a wrong or invented value is unacceptable. (Deep dive: <a href="/knowledge-graphs/">knowledge graphs for LLMs</a>.)</li>
+  </ul>
+
+  <h2>Step 4: Give it tools — with scopes and confirmation</h2>
+  <p>Tools are where agents become useful and where they become dangerous, so treat every tool call as a privileged operation:</p>
+  <ul>
+    <li><strong>Scope per agent.</strong> The billing specialist gets billing tools; the docs specialist gets none of them. A boundary the runtime enforces beats a sentence in a prompt.</li>
+    <li><strong>Forward the user’s identity.</strong> When the agent calls your API on behalf of a customer, the call should carry that customer’s auth context so your existing permissions keep working. In SyntheticBrew this is configuration (headers forwarded into every MCP/HTTP tool call); in a framework, it is code you write and maintain.</li>
+    <li><strong>Confirm consequential actions.</strong> Mark destructive tools confirm-before, so “cancel the subscription” pauses for an explicit yes. Guardrail here, not in the prompt.</li>
+  </ul>
+  <p>Tools themselves can be MCP servers (any language, growing public catalog) or your plain HTTP endpoints.</p>
+
+  <h2>Step 5: Ship it behind an API — and watch every step</h2>
+  <p>A production agent is a service: your product sends a message, the runtime reasons, delegates, calls tools, persists the session, and streams typed events back — <em>thinking</em>, <em>tool_call</em>, <em>tool_result</em>, <em>confirmation</em>, <em>done</em> — so your UI can show real progress instead of a spinner. Keep sessions server-side, log every action to an audit trail, and monitor the runtime like any other service.</p>
+  <p>This step is the entire reason runtimes exist. The reasoning loop was Step 2; the API server, streaming protocol, session store, audit log, admin surface, and recovery behavior are months of work that have nothing to do with your product’s actual value.</p>
+
+  <h2>The fast path: deploy the runtime, configure your agent</h2>
+  <p>Everything above ships in the open-source SyntheticBrew runtime — one Go binary plus PostgreSQL:</p>
+  <Terminal label="Self-host in 30 seconds" command={'curl -fsSL https://syntheticbrew.ai/releases/docker-compose.yml -o docker-compose.yml && docker compose up -d'} />
+  <p>Open <code>localhost:8443</code>, add a model key (OpenAI, Anthropic, Gemini, Ollama, or any OpenAI-compatible provider), describe your first agent to the builder, and test it in chat with every tool step visible. Prefer not to operate anything? <a href="/register">Cloud</a> runs the same engine. Want the whole thing delivered? <a href="/build/">We build production agents</a> to a measured acceptance bar.</p>
+  <div class="callout">Prefer code? If your team wants full code-level control and is ready to own the platform layer, a framework is a legitimate choice — read <a href="/compare/langchain/">SyntheticBrew vs LangChain</a> and <a href="/blog/langchain-vs-langgraph/">LangChain vs LangGraph</a> before deciding.</div>
+
+  <h2>How to build an AI agent: FAQ</h2>
+  <div class="faq">
+    {faqs.map((item) => (
+      <details>
+        <summary>{item.q}</summary>
+        <p>{item.a}</p>
+      </details>
+    ))}
+  </div>
+
+  <div style="margin-top:44px">
+    <CtaGroup centered />
+  </div>
+</BlogPost>

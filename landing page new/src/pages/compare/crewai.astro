@@ -1,0 +1,61 @@
+---
+import ComparePage from '@/components/ComparePage.astro';
+const rows = [
+  { dim: 'What it is', sb: 'Deployable multi-agent runtime with API, admin, and audit', other: 'Python framework for composing role-based agent “crews” in code' },
+  { dim: 'Core stack', sb: 'Go — one compiled binary + PostgreSQL', other: 'Python library inside your application process' },
+  { dim: 'Multi-agent model', sb: 'Supervisor/specialist delegation with runtime spawn, concurrency limits, and cycle detection', other: 'Crews and flows defined in code: roles, tasks, and processes composed by developers' },
+  { dim: 'Creating and changing agents', sb: 'Config or dashboard — live, no redeploy; plain-English AI builder', other: 'Edit Python, redeploy your service' },
+  { dim: 'Ops layer', sb: 'REST + SSE API, sessions, memory, audit log, admin dashboard included', other: 'You build hosting, APIs, persistence, and observability around the crew' },
+  { dim: 'Tool security', sb: 'Per-agent tool scoping, forwarded end-user identity, per-tool confirmation gates', other: 'Tools are Python functions with whatever guards you write' },
+  { dim: 'Grounding', sb: 'Vector RAG + typed knowledge graphs with generated retrieval tools', other: 'Memory and RAG utilities you wire to your own stores' },
+  { dim: 'Who can operate it', sb: 'Engineers and non-engineers through the dashboard', other: 'Python developers' },
+];
+const differs = [
+  {
+    title: 'From crew script to production service',
+    what: 'CrewAI makes it delightful to sketch a multi-agent idea in Python. SyntheticBrew is what that idea needs to become a service: an API your product calls, sessions that persist, an audit trail, and an admin surface.',
+    why: 'The gap between “the crew ran in my notebook” and “customers use this every day” is exactly the runtime: auth, tenancy, streaming, recovery, observability. That gap is months of engineering — or one deployment.',
+  },
+  {
+    title: 'Delegation with boundaries',
+    what: 'SyntheticBrew’s supervisor spawns sub-agents at runtime under explicit policy: which flows may spawn which, how many run concurrently, cycle detection, and per-agent tool scopes.',
+    why: 'Multi-agent systems fail operationally, not conceptually — runaway loops, unbounded fan-out, an agent touching a tool it never should. Policy at the runtime level is what makes delegation safe enough for production write access.',
+  },
+  {
+    title: 'The whole team iterates, not just Python hands',
+    what: 'Prompts, roles, models, and tool assignments live in configuration — editable in the dashboard, versioned in git through brewctl bundles.',
+    why: 'Agent quality improves through hundreds of small prompt and scope adjustments. If each one is a Python PR plus a deploy, iteration dies. Config keeps the loop fast and reviewable.',
+  },
+];
+const enterprise = [
+  'A runtime your security team can review: open-source Go code, Ed25519-signed JWTs, scoped tokens, immutable audit log.',
+  'Forwarded end-user identity means your existing authorization keeps working inside agent tool calls.',
+  'Self-hosted in your perimeter with your model keys; no framework code inside your product to maintain.',
+  'Per-tool confirmation gates before consequential actions — a control code-first frameworks leave to each developer.',
+];
+const faqs = [
+  { q: 'What are the best CrewAI alternatives?', a: 'For code-first multi-agent work, LangGraph is the usual framework comparison. If what you actually need is the production layer — a deployable runtime with API, sessions, audit, and admin already built — SyntheticBrew is the alternative that removes the framework from your codebase entirely.' },
+  { q: 'CrewAI vs LangChain — and where does SyntheticBrew fit?', a: 'CrewAI and LangChain/LangGraph are both Python frameworks; they differ in how you express agents in code (role-based crews vs graphs). SyntheticBrew sits a layer above: a runtime you deploy rather than a library you import. You configure agents instead of coding them, and your product integrates over REST + SSE in any language.' },
+  { q: 'Can I migrate a CrewAI prototype to SyntheticBrew?', a: 'Usually cleanly: crew roles map to specialist agents, tasks map to the supervisor’s delegation, and Python tools become MCP or HTTP tools in any language. The prompts you refined carry over — what changes is that sessions, streaming, audit, and admin stop being your code.' },
+  { q: 'When is CrewAI the better fit?', a: 'Research, experimentation, and internal scripts where a Python process is the natural home and no one needs tenancy, audit trails, or a customer-facing API. It is a productive way to explore multi-agent patterns before you commit to running them in production.' },
+];
+const related = [
+  { label: 'SyntheticBrew vs LangChain', href: '/compare/langchain/' },
+  { label: 'LangChain vs LangGraph — full explainer', href: '/blog/langchain-vs-langgraph/' },
+  { label: 'SyntheticBrew vs Dify', href: '/compare/dify/' },
+];
+---
+<ComparePage
+  competitor="CrewAI"
+  title="CrewAI Alternatives: SyntheticBrew vs CrewAI"
+  description="CrewAI alternatives: the Python crew framework vs SyntheticBrew’s deployable Go runtime — delegation policies, tool security, audit."
+  h1="CrewAI alternatives: multi-agent crews in code vs a production runtime"
+  lede="CrewAI is a pleasant Python framework for sketching multi-agent systems. SyntheticBrew is the production infrastructure those systems graduate to: a self-hosted Go runtime where delegation has policies, tools have scopes and confirmation gates, and your product integrates over REST and SSE."
+  rows={rows}
+  differs={differs}
+  enterprise={enterprise}
+  fitTitle="Prototype in a framework. Ship on a runtime."
+  fitText="If you are exploring what a crew of agents could do, CrewAI is a fine sandbox. When the answer needs to face customers — with identity, boundaries, and an audit trail — deploy SyntheticBrew and keep your product code framework-free."
+  faqs={faqs}
+  related={related}
+/>

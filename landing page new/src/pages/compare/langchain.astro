@@ -1,0 +1,63 @@
+---
+import ComparePage from '@/components/ComparePage.astro';
+const rows = [
+  { dim: 'What it is', sb: 'A deployable product: standalone agent runtime you configure', other: 'A code framework: Python/JS libraries you import and build around' },
+  { dim: 'Creating an agent', sb: 'Declarative config, Admin Dashboard, or plain-English AI builder — live without redeploy', other: 'Write code, then build, test, and redeploy your service for every change' },
+  { dim: 'Who can build', sb: 'Engineers and non-engineers through the dashboard', other: 'Engineers only' },
+  { dim: 'Runtime', sb: 'One self-contained Go binary + PostgreSQL', other: 'Lives inside your Python/JS process — hosting, scaling, and hardening are on you' },
+  { dim: 'Ops layer (auth, admin, sessions, audit)', sb: 'Included: Ed25519 JWT auth, admin dashboard, session persistence, audit log', other: 'Assembled by your team; LangSmith adds paid observability, not an agent-authoring or auth layer' },
+  { dim: 'Framework coupling', sb: 'None in your code — your product speaks plain REST + SSE', other: 'Your codebase inherits the framework’s abstractions and breaking changes' },
+  { dim: 'Structured grounding', sb: 'Typed knowledge graphs: JSON Schema in, deterministic retrieval tools out', other: 'DIY from graph stores, extractors, and custom retrievers' },
+  { dim: 'GitOps', sb: 'brewctl applies versioned config bundles atomically, with diff and drift detection', other: 'Your code is the config; agent changes ship like application releases' },
+  { dim: 'Customization ceiling', sb: 'High via config, MCP tools, and plugins — less infinite than raw code', other: 'Practically unlimited — it is code' },
+];
+const differs = [
+  {
+    title: 'A runtime you deploy, not a framework you marry',
+    what: 'LangChain is imported into your application; its abstractions become your architecture. SyntheticBrew runs beside your stack and your code only ever sees REST and SSE.',
+    why: 'The most common LangChain complaint is churn: deep abstraction layers and breaking changes that ripple through your codebase. When the runtime is a separate product, your product code stays yours — upgrading the engine is a container tag, not a refactor.',
+  },
+  {
+    title: 'Months of platform work, already built',
+    what: 'Authentication, admin dashboard, session persistence, audit logging, health checks, metrics, and a background task system ship in the binary. With a framework, each of those is a project on your roadmap.',
+    why: 'The agent logic is a small share of shipping an agent feature. The rest — the platform around it — is undifferentiated infrastructure your team rebuilds while your product waits. That is the 3–6 months SyntheticBrew removes.',
+  },
+  {
+    title: 'Agents editable by the whole team',
+    what: 'Prompts, models, tool scopes, and delegation rules live in configuration — editable in the dashboard, reviewable in git via brewctl bundles.',
+    why: 'When every prompt tweak needs a code deploy, iteration slows to your release cadence and only engineers can improve the agent. Config-as-code keeps the speed and the review process.',
+  },
+];
+const enterprise = [
+  'No framework lock-in inside your codebase — the integration surface is a documented REST + SSE contract.',
+  'Self-host the whole runtime in your perimeter with your PostgreSQL and model keys.',
+  'Audit log, scoped tokens, per-agent tool boundaries, and confirmation gates ship enabled, not as backlog items.',
+  'Open-source engine: security review reads real code, not a vendor questionnaire.',
+];
+const faqs = [
+  { q: 'What are the best LangChain alternatives?', a: 'It depends on what you are replacing. If you want less framework and more product — a runtime with API, admin, sessions, and observability included — SyntheticBrew is that alternative. If you want a different code framework, LangGraph (LangChain’s own successor for stateful agents) and CrewAI are the usual candidates. If you want visual building, look at Flowise or Langflow.' },
+  { q: 'Is SyntheticBrew a LangChain alternative if my team likes writing code?', a: 'Yes — you still write code, just not agent-plumbing code. Your engineers integrate a REST + SSE API and write MCP tools in any language, while orchestration, sessions, memory, and audit stay in the engine. Teams that enjoy owning every abstraction may still prefer a framework; teams that want to ship a product usually do not.' },
+  { q: 'Can SyntheticBrew do what LangGraph does?', a: 'For most production patterns, yes: supervisor/specialist delegation, dynamic sub-agent spawning, bounded reasoning loops, human-in-the-loop interrupts, and persistent state. LangGraph gives you finer-grained programmatic control of arbitrary graphs; SyntheticBrew trades that ceiling for a configured, operable runtime.' },
+  { q: 'What about LangSmith?', a: 'LangSmith is a strong paid observability and evaluation platform for LangChain apps. SyntheticBrew builds tracing into the runtime itself — every reasoning step, tool call, and delegation is a typed event you can stream, store, and audit — without a separate subscription. For full evaluation and testing workflows, LangSmith remains the more complete tool.' },
+];
+const related = [
+  { label: 'LangChain vs LangGraph — full explainer', href: '/blog/langchain-vs-langgraph/' },
+  { label: 'SyntheticBrew vs CrewAI', href: '/compare/crewai/' },
+  { label: 'SyntheticBrew vs Dify', href: '/compare/dify/' },
+  { label: 'SyntheticBrew vs n8n', href: '/compare/n8n/' },
+];
+---
+<ComparePage
+  competitor="LangChain"
+  title="LangChain Alternatives: SyntheticBrew vs LangChain"
+  description="LangChain alternatives compared: framework code vs SyntheticBrew’s deployable Go runtime — config-driven agents, built-in ops, no lock-in."
+  h1="LangChain alternatives: framework code vs a production runtime"
+  lede="LangChain is a framework — you write Python or JavaScript and assemble everything around it. SyntheticBrew is the alternative for teams who want the agent runtime as a finished product: deploy one Go binary, configure agents declaratively, integrate over REST and SSE, and keep your codebase framework-free."
+  rows={rows}
+  differs={differs}
+  enterprise={enterprise}
+  fitTitle="Choose code when code is the point"
+  fitText="If your team wants to own every abstraction and build a bespoke platform, LangChain and LangGraph are capable foundations. If the goal is AI agents in your product this quarter — with auth, admin, audit, and orchestration already solved — deploy the runtime instead of building one."
+  faqs={faqs}
+  related={related}
+/>

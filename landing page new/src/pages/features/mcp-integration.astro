@@ -1,0 +1,193 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP } from '@/data/site';
+
+const feature = FEATURE_MAP['mcp-integration'];
+
+const faq = [
+  {
+    q: 'What is MCP (Model Context Protocol)?',
+    a: 'MCP is an open protocol that standardizes how AI agents call external tools. A tool server exposes typed operations — look up an order, query a database, create a ticket — and any MCP-capable runtime can use them. In SyntheticBrew you register a server once and assign its tools to exactly the agents that need them.',
+  },
+  {
+    q: 'Which MCP transports does SyntheticBrew support?',
+    a: 'Four: HTTP, SSE, streamable-HTTP, and stdio. That covers hosted remote servers on either MCP streaming generation, plus local servers launched as processes — including Docker-launched MCP servers, which run over stdio.',
+  },
+  {
+    q: 'How do MCP tools respect my existing permissions?',
+    a: 'Through header forwarding. SyntheticBrew forwards the Authorization header plus organization, user, and custom headers from the incoming request into every tool call, so your tool server sees the real end user and your existing RBAC keeps enforcing itself. The runtime never becomes a super-user.',
+  },
+  {
+    q: 'What happens when an MCP server hangs or goes down?',
+    a: 'Every tool call has a 30-second default timeout, and a circuit breaker opens after 3 failures within a 60-second window, then retries after a 120-second reset — so one failing integration degrades gracefully instead of stalling every conversation.',
+  },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'Article',
+    headline: feature.h1,
+    description: feature.description,
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+
+const transports = [
+  { t: 'HTTP', what: 'Plain request/response tool calls.', when: 'Stateless tool servers and simple internal APIs.' },
+  { t: 'SSE', what: 'Server-sent events transport from the earlier MCP spec.', when: 'Existing remote MCP servers built on the SSE generation.' },
+  { t: 'streamable-HTTP', what: 'The current MCP streaming transport over standard HTTP.', when: 'The default for new remote MCP servers.' },
+  { t: 'stdio', what: 'The server runs as a local process and speaks over stdin/stdout.', when: 'Packaged and community servers you run beside the engine — Docker-launched MCP servers run over stdio.' },
+];
+
+const headerConfig = `mcp_servers:
+  orders-api:
+    transport: streamable-http
+    url: https://internal.example.com/mcp
+    forward_headers:            # per-request, into every tool call
+      - Authorization
+      - X-Org-Id
+      - X-User-Id
+
+agents:
+  support-agent:
+    tools: [lookup_order, delete_devices, issue_refund]
+    confirm_before:             # pause for explicit approval
+      - delete_devices
+      - issue_refund`;
+
+const related = ['ai-agent-security', 'multi-agent-orchestration', 'product-integrations'].map((slug) => FEATURE_MAP[slug]);
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">{feature.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow center">
+      <p class="eyebrow">One protocol, every system</p>
+      <h2 class="section-title">MCP integration: connect AI agents to any external service</h2>
+      <p class="section-lede centered">The Model Context Protocol gives your agents a standard way to act on the outside world — CRMs, databases, ticketing systems, internal APIs. Register a server from the curated catalog or point at your own, assign its tools to the right agents, and the runtime executes every call server-side. Your frontend never becomes an orchestrator.</p>
+      <p class="section-lede centered">An agent that can only talk is a demo. An agent that can look up the order, update the record, and open the ticket — under your permissions — is a product.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Pick the right pipe</p>
+      <h2 class="section-title">MCP server transports: HTTP, SSE, streamable-HTTP, and stdio</h2>
+      <p class="section-lede">SyntheticBrew speaks all four MCP transports, so it connects to remote hosted servers and locally launched processes alike.</p>
+      <table class="comparison-table">
+        <thead><tr><th>Transport</th><th>What it is</th><th>When to use it</th></tr></thead>
+        <tbody>
+          {transports.map((row) => <tr><td><strong>{row.t}</strong></td><td>{row.what}</td><td>{row.when}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Identity travels with the call</p>
+        <h2 class="section-title">MCP tools that keep your auth context attached</h2>
+        <p class="section-lede">Most agent stacks execute tools as an anonymous service account — which means someone rebuilds authorization inside the agent layer, badly. SyntheticBrew forwards the caller's Authorization, organization, user, and custom headers into every tool call, so your existing RBAC keeps enforcing itself and your tool server always knows who is really asking.</p>
+        <ul class="check-list">
+          <li><strong>Per-request forwarding</strong> — headers travel from the incoming request into the tool call, per user, per call.</li>
+          <li><strong>Confirmation gates</strong> — mark consequential tools <code>confirm_before</code> and execution pauses until the user explicitly approves.</li>
+          <li><strong>Per-agent scoping</strong> — each agent sees only the tools assigned to it through flow config, never the whole catalog.</li>
+        </ul>
+        <p style="margin-top:20px">Tool boundaries are the core of agent security — the full model is on the <a href="/features/ai-agent-security/">AI agent security</a> page.</p>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>Header forwarding + gates</span><span>YAML</span></div>
+        <pre>{headerConfig}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">Bring your own tools</p>
+        <h2 class="section-title">Build an MCP server in any language</h2>
+        <p class="section-lede">Your most valuable tools are the ones only you can write — the ones that wrap your domain API. Because MCP is an open protocol, you can build a tool server in any language with an MCP SDK, run it over any of the four transports, and register it like any catalog server. Prefer to skip the protocol entirely? Plain HTTP tools are supported too: describe the endpoint and the agent can call it.</p>
+        <p style="margin-top:20px">This is how ecommerce teams wire agents to order, inventory, and refund APIs — see <a href="/solutions/ecommerce/">SyntheticBrew for ecommerce</a>, or compare integration approaches in <a href="/compare/dify/">SyntheticBrew vs Dify</a>.</p>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin/mcp-servers.png" alt="SyntheticBrew admin dashboard listing registered MCP servers and transports" caption="Register a server once; assign its tools per agent." />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Built for bad days</p>
+      <h2 class="section-title">Model Context Protocol in production: timeouts and circuit breakers</h2>
+      <p class="section-lede">External services fail, and an agent platform has to assume they will. Every tool call gets a 30-second default timeout so a hung server cannot stall a conversation. A circuit breaker opens after 3 failures in a 60-second window and resets after 120 seconds, isolating the failing integration while everything else keeps working. Tool calls are tracked in the audit log — plus Prometheus metrics with an Enterprise Edition license — so you see the failure before your users report it.</p>
+      <div class="callout" style="margin-top:28px">{feature.callout}</div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">Related capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">MCP integration: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Connect the tools. Keep the permissions.</h2>
+      <p>Register your first MCP server in Cloud or self-hosted and let agents act on your systems — with your RBAC still in charge.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

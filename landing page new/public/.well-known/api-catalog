@@ -1,0 +1,34 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://api.syntheticbrew.ai/api/v1",
+      "service-doc": [
+        { "href": "https://syntheticbrew.ai/docs", "title": "SyntheticBrew documentation" }
+      ],
+      "status": [
+        { "href": "https://api.syntheticbrew.ai/health", "title": "Cloud API health" }
+      ],
+      "describedby": [
+        { "href": "https://syntheticbrew.ai/llms.txt", "type": "text/markdown", "title": "LLM-readable overview" }
+      ]
+    },
+    {
+      "anchor": "https://app.syntheticbrew.ai/api/v1",
+      "service-doc": [
+        { "href": "https://syntheticbrew.ai/docs/getting-started/api-reference", "title": "Engine REST + SSE API reference" }
+      ],
+      "status": [
+        { "href": "https://app.syntheticbrew.ai/api/v1/health", "title": "Engine API health" }
+      ]
+    },
+    {
+      "anchor": "https://mcp.syntheticbrew.ai",
+      "service-desc": [
+        { "href": "https://syntheticbrew.ai/.well-known/mcp/server-card.json", "type": "application/json", "title": "MCP server card" }
+      ],
+      "service-doc": [
+        { "href": "https://syntheticbrew.ai/docs", "title": "SyntheticBrew documentation" }
+      ]
+    }
+  ]
+}

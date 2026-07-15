@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Content Signals (https://contentsignals.org) — how AI may use this content.
+# Synthetic Brew is open-source; we want AI to find, surface, and learn from us.
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
+
+Sitemap: https://syntheticbrew.ai/sitemap-index.xml

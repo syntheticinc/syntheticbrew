@@ -1,0 +1,166 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP } from '@/data/site';
+
+const feature = FEATURE_MAP['product-integrations'];
+const related = [FEATURE_MAP['ai-agent-builder'], FEATURE_MAP['mcp-integration'], FEATURE_MAP['ai-agent-observability']];
+
+const faq = [
+  { q: 'Can I integrate from a mobile app?', a: 'Yes. The integration surface is standard HTTP plus server-sent events, so any client that can POST a request and read an SSE stream works — iOS, Android, React Native, Flutter, or a backend service. No platform-specific SDK is involved.' },
+  { q: 'Can the chat widget match my product’s look?', a: 'Yes. The widget generator lets you pick a schema, customize the appearance, and copy a single script tag. The widget renders inside a Shadow DOM, so its styles never collide with your page’s CSS — and your CSS never breaks the widget.' },
+  { q: 'How are conversation sessions handled?', a: 'Through stable session IDs. Your product passes a session ID with each request and the runtime maintains the conversation state — history, memory, context — server-side. Returning users pick up exactly where they left off, on any surface.' },
+  { q: 'Do I need an SDK?', a: 'No. The entire integration is a REST API and structured SSE — the done event even returns the session ID for your next request. If your stack can call an HTTP endpoint and parse JSON lines, it can run a SyntheticBrew agent.' },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">{feature.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">Where it sits in your stack</p>
+      <h2 class="section-title">AI agent API architecture: your server stays in front</h2>
+      <p class="section-lede">SyntheticBrew is headless by design. Your server handles authentication, then forwards requests — the engine reasons, calls tools, and streams typed events back. The whole runtime is one Go binary plus PostgreSQL: two containers, nothing exotic to operate.</p>
+      <div class="workflow">
+        <article><h3>Your server</h3><p>Next.js, FastAPI, Go — whatever you already run. It authenticates the user, then forwards the request.</p></article>
+        <article><h3>REST API</h3><p>One POST to <code>/api/v1/agents/&#123;name&#125;/chat</code> with the message and a stable session ID.</p></article>
+        <article><h3>SyntheticBrew Engine</h3><p>One Go binary + PostgreSQL. It reasons, delegates, executes tools server-side, and persists the session.</p></article>
+        <article><h3>Any LLM</h3><p>OpenAI, Anthropic, Google Gemini, Azure OpenAI, Ollama, OpenRouter — or any OpenAI-compatible provider such as DeepSeek and Mistral.</p></article>
+      </div>
+      <p class="section-lede" style="margin-top:26px">The response flows the other way as a structured SSE stream your UI renders as native progress. If you are weighing this against assembling the stack yourself, start with <a href="/blog/how-to-build-an-ai-agent/">how to build an AI agent</a> or the <a href="/compare/langchain/">SyntheticBrew vs LangChain</a> comparison.</p>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container split">
+      <div>
+        <p class="eyebrow" style="color:#ff8a74">The whole integration</p>
+        <h2 class="section-title">AI agent API: one POST request, a stream of typed events</h2>
+        <p style="color:#c9c2b7">Your frontend sends one message. The runtime reasons, delegates, calls tools, waits for confirmation when required, persists the session, and streams every step back as a typed event — no client-side tool executor, no polling.</p>
+        <ul class="check-list">
+          <li>Standard REST request from any language</li>
+          <li>Structured server-sent events with keep-alive</li>
+          <li>Stable session IDs for conversation continuity</li>
+        </ul>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>POST /api/v1/agents/support/chat</span><span>text/event-stream</span></div>
+        <pre><span class="code-comment">// Your product sends one request</span>
+<span class="code-key">data:</span> &#123;"type":"thinking"&#125;
+<span class="code-key">data:</span> &#123;"type":"tool_call","tool":"order.lookup"&#125;
+<span class="code-key">data:</span> &#123;"type":"tool_result","status":"completed"&#125;
+<span class="code-key">data:</span> &#123;"type":"message_delta","content":"Your order…"&#125;
+<span class="code-key">data:</span> &#123;"type":"done","session_id":"sess_abc"&#125;</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">Fastest path to production</p>
+        <h2 class="section-title">Embed AI agent chat with one script tag</h2>
+        <p class="section-lede">The widget generator turns an agent into an embeddable chat in three steps: pick a schema, customize the look, copy one script tag — chat is live on your site.</p>
+        <ul class="check-list">
+          <li><strong>Shadow DOM isolation.</strong> The widget’s styles cannot leak into your page, and your page’s CSS cannot break the widget.</li>
+          <li><strong>Origin enforcement.</strong> A per-tenant <code>frame-ancestors</code> CSP means your widget only loads on domains you approved — nobody can iframe your agent onto their site.</li>
+          <li><strong>Full event fidelity.</strong> The widget renders the same typed stream as your custom UI: tool calls, confirmations, sub-agent work, structured output.</li>
+        </ul>
+      </div>
+      <PlatformScreenshot src="/screenshots/widget-generator.png" alt="SyntheticBrew widget generator with theming controls and embed script tag" caption="Pick a schema, customize the look, copy one script tag — chat is live" />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">Three ways in</p>
+      <h2 class="section-title">AI integration platform surfaces: widget, REST + SSE, MCP</h2>
+      <p class="section-lede">Pick the surface that matches how much UI you want to own — all three run against the same engine, sessions, and security model.</p>
+      <div class="three-grid">
+        <article class="card">
+          <h3>Embeddable widget</h3>
+          <p>Generated, Shadow-DOM-isolated chat added with a single script tag. Zero frontend work; theming and origin control included.</p>
+        </article>
+        <article class="card">
+          <h3>REST API + SSE</h3>
+          <p>Full control: POST a message, render the typed event stream as native UI in web, mobile, or backend clients. An included web client shows the pattern end to end.</p>
+          <p><a href="/docs/integration/rest-api/">REST API integration guide →</a></p>
+        </article>
+        <article class="card">
+          <h3>MCP tools</h3>
+          <p>Connect your APIs as tools the agents call server-side — or point your coding agent at the engine and build against it directly.</p>
+          <p><a href="/docs/integration/connect-coding-agent/">Connect a coding agent →</a></p>
+        </article>
+      </div>
+      <p class="section-lede" style="margin-top:26px">This is the integration path <a href="/solutions/saas-product-teams/">SaaS and product teams</a> use to ship agent features without replacing their frontend, auth, or domain APIs.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">AI product integration: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact section-tint">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">AI product integration pairs with these capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Add the agent. Keep your stack.</h2>
+      <p>One POST, one event stream, one script tag if you want the shortcut — try it against Cloud or a local engine in minutes.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

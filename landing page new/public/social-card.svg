@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="1" stop-color="#f3eadd"/>
+    </linearGradient>
+    <linearGradient id="cup" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f77860"/>
+      <stop offset="1" stop-color="#d94d3a"/>
+    </linearGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#5c281c" flood-opacity=".2"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="952" cy="315" r="236" fill="none" stroke="#d7513e" stroke-opacity=".14" stroke-width="2"/>
+  <circle cx="952" cy="315" r="186" fill="none" stroke="#d7513e" stroke-opacity=".22" stroke-width="2" stroke-dasharray="8 10"/>
+  <g transform="translate(815 147)" filter="url(#shadow)">
+    <path d="M28 132h222v104c0 74-42 119-111 119S28 310 28 236V132Z" fill="url(#cup)"/>
+    <path d="M242 169h36c61 0 70 94-5 111h-27" fill="none" stroke="#d94d3a" stroke-width="30" stroke-linecap="round"/>
+    <ellipse cx="139" cy="132" rx="111" ry="28" fill="#f77860"/>
+    <ellipse cx="139" cy="132" rx="91" ry="17" fill="#fffaf0"/>
+    <ellipse cx="139" cy="135" rx="68" ry="10" fill="#70402f"/>
+    <path d="M96 76c-24-10-29-29-22-47 3-8 0-15-10-19 10-4 13-11 10-19-7-18-2-37 22-47" fill="none" stroke="#b94332" stroke-width="8" stroke-linecap="round"/>
+    <path d="M181 76c24-10 29-29 22-47-3-8 0-15 10-19-10-4-13-11-10-19 7-18 2-37-22-47" fill="none" stroke="#b94332" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <g fill="#201f1c" font-family="Arial, Helvetica, sans-serif">
+    <text x="92" y="102" font-size="26" font-weight="700" letter-spacing="1">SYNTHETICBREW</text>
+    <text x="92" y="234" font-size="72" font-weight="800">Build AI agents</text>
+    <text x="92" y="314" font-size="72" font-weight="800">for <tspan fill="#d7513e">real work.</tspan></text>
+    <text x="92" y="384" fill="#5d5a54" font-size="25">Orchestration · MCP tools · Grounded knowledge · Memory</text>
+    <rect x="92" y="444" width="204" height="52" rx="26" fill="#b94332"/>
+    <text x="123" y="477" fill="#ffffff" font-size="20" font-weight="700">Cloud · Self-host</text>
+  </g>
+</svg>

@@ -1,0 +1,93 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import Terminal from '@/components/Terminal.astro';
+
+const examples = [
+  {
+    slug: 'hr-assistant',
+    icon: '🏢',
+    title: 'HR Assistant',
+    subtitle: 'AI-powered HR chatbot with company knowledge base',
+    text: 'Watch the agent search policy documents, look up employee records, check leave balances, and submit requests — each step visible in real time.',
+    features: ['Knowledge Base (RAG)', 'Employee Lookup', 'Leave Management', 'Multi-step Workflows'],
+    suggestions: [
+      "Check Alice Johnson's vacation balance",
+      'Submit a sick day for Bob Martinez next Monday',
+      "What's the PTO policy for employees with 5+ years?",
+    ],
+    githubUrl: 'https://github.com/syntheticinc/syntheticbrew-examples/tree/main/hr-assistant',
+    setupCommands: [
+      'git clone https://github.com/syntheticinc/syntheticbrew-examples',
+      'cd syntheticbrew-examples/hr-assistant',
+      'docker compose up -d',
+    ],
+  },
+  {
+    slug: 'support-agent',
+    icon: '🛠️',
+    title: 'Support Agent',
+    subtitle: 'Multi-agent support system with parallel diagnostics',
+    text: 'See the agent identify the issue type, run diagnostics on service health, analyze error logs, and create tickets — with parallel tool execution.',
+    features: ['Parallel Diagnostics', 'Error Log Analysis', 'Knowledge Base', 'Ticket Management'],
+    suggestions: [
+      'Customer CUST-001 reports file uploads failing with timeouts',
+      'CUST-003 was overcharged, check their billing and process a refund',
+      'Create a high-priority ticket for CUST-002 about sync issues',
+    ],
+    githubUrl: 'https://github.com/syntheticinc/syntheticbrew-examples/tree/main/support-agent',
+    setupCommands: [
+      'git clone https://github.com/syntheticinc/syntheticbrew-examples',
+      'cd syntheticbrew-examples/support-agent',
+      'docker compose up -d',
+    ],
+  },
+  {
+    slug: 'sales-agent',
+    icon: '🛒',
+    title: 'Sales Agent',
+    subtitle: 'Sales assistant with approval workflows and configurable rules',
+    text: 'The agent searches products, checks inventory, validates discount rules, and creates quotes with confirmation gates — showing approval workflows.',
+    features: ['Product Catalog', 'Inventory Checks', 'Business Rules', 'Quote Confirmation'],
+    suggestions: [
+      'Find laptops under $1200 and check which are in stock',
+      'Create a quote for 10 Keychron keyboards with maximum discount',
+      'What monitors do you have? Check inventory for the Dell',
+    ],
+    githubUrl: 'https://github.com/syntheticinc/syntheticbrew-examples/tree/main/sales-agent',
+    setupCommands: [
+      'git clone https://github.com/syntheticinc/syntheticbrew-examples',
+      'cd syntheticbrew-examples/sales-agent',
+      'docker compose up -d',
+    ],
+  },
+];
+---
+<SiteLayout title="AI Agent Examples | SyntheticBrew" description="Try working AI agent examples for HR, support, and sales: knowledge retrieval, tools, parallel work, confirmation gates — run them locally." keywords={['AI agent examples', 'AI agent demos', 'multi-agent examples']}>
+  <section class="content-hero"><div class="container"><p class="eyebrow">Working demos</p><h1>AI agent examples you can inspect and run</h1><p>Each example is a complete SyntheticBrew agent with visible tool calls, a public GitHub repository, and a self-hostable Docker Compose setup.</p></div></section>
+
+  <section class="section-compact"><div class="container three-grid">{examples.map((item) => (
+    <article class="card" data-reveal>
+      <span style="font-size:2rem" role="img" aria-label="">{item.icon}</span>
+      <h2>{item.title}</h2>
+      <strong class="muted">{item.subtitle}</strong>
+      <p style="margin-top:14px">{item.text}</p>
+      <ul class="keyword-chips">{item.features.map((feature) => <li>{feature}</li>)}</ul>
+      <p style="margin-top:24px"><a href={`/examples/${item.slug}`} style="color:var(--coral-dark);font-weight:700" data-analytics="example_demo_open">Try the live demo →</a></p>
+      <p style="margin-top:10px"><a href={item.githubUrl} target="_blank" rel="noopener noreferrer" data-analytics="example_github_open">Source on GitHub ↗</a></p>
+    </article>
+  ))}</div></section>
+
+  <section class="section section-tint"><div class="container">
+    <div class="narrow center"><p class="eyebrow">Self-host the demos</p><h2 class="section-title">Run these AI agent examples locally with Docker Compose</h2><p class="section-lede">Every example ships with its agents, tools, knowledge, and sample data. Clone the repository, start the stack, and you have the same system as the live demo — on your machine.</p></div>
+    <div class="three-grid" style="margin-top:42px">{examples.map((item) => (
+      <div class="card" data-reveal>
+        <h3>{item.title}</h3>
+        <div style="margin-top:16px"><Terminal command={item.setupCommands.join('\n')} label={`${item.slug} · setup`} /></div>
+        <p class="muted" style="margin-top:18px">Prompts to try in the demo:</p>
+        <ul class="keyword-chips">{item.suggestions.map((suggestion) => <li>{suggestion}</li>)}</ul>
+      </div>
+    ))}</div>
+  </div></section>
+
+  <section class="section-compact"><div class="container bottom-cta"><h2>Build your own agent next.</h2><p>The examples run on the same free Community Edition runtime you would deploy in production — download it and adapt any example to your domain.</p><p style="margin-top:22px"><a class="button" href="/download/" data-analytics="self_host_download">Download SyntheticBrew Engine</a> <a class="button button-secondary" href="/docs/getting-started/quick-start/" data-analytics="self_host_quickstart">Read the quick start</a></p></div></section>
+</SiteLayout>

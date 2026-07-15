@@ -1,0 +1,15 @@
+# Production-like local preview: one Caddy container serving the new landing
+# dist/, the built docs site, and the built SPA with production routing.
+# See deploy/Caddyfile.preview for usage.
+services:
+  preview:
+    image: caddy:2-alpine
+    ports:
+      - "4330:4330"
+    volumes:
+      - ./Caddyfile.preview:/etc/caddy/Caddyfile:ro
+      - ../dist:/srv/landing:ro
+      - ../../syntheticbrew-cloud-web/docs-site/dist:/srv/docs:ro
+      - ../../syntheticbrew-cloud-web/cloud-web-spa/dist:/srv/spa:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

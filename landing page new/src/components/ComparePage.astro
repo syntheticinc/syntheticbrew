@@ -1,0 +1,78 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+
+interface Row { dim: string; sb: string; other: string; }
+interface Faq { q: string; a: string; }
+interface Differ { title: string; what: string; why: string; }
+interface Props {
+  competitor: string;
+  title: string;
+  description: string;
+  h1: string;
+  lede: string;
+  rows: Row[];
+  differs: Differ[];
+  enterprise?: string[];
+  fitTitle: string;
+  fitText: string;
+  faqs: Faq[];
+  related?: { label: string; href: string }[];
+}
+const { competitor, title, description, h1, lede, rows, differs, enterprise = [], fitTitle, fitText, faqs, related = [] } = Astro.props;
+const schema = [
+  {
+    '@type': 'Article',
+    headline: h1,
+    description,
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+<SiteLayout title={title} description={description} keywords={[`SyntheticBrew vs ${competitor}`, `${competitor} alternative`, 'open-source AI agent infrastructure']} schema={schema}>
+  <section class="content-hero"><div class="container"><p class="eyebrow">Head-to-head</p><h1>{h1}</h1><p>{lede}</p></div></section>
+
+  <section class="section section-tint"><div class="container"><p class="eyebrow">Side by side</p><h2 class="section-title">SyntheticBrew vs {competitor}: side-by-side comparison</h2><table class="comparison-table"><thead><tr><th>Dimension</th><th>SyntheticBrew</th><th>{competitor}</th></tr></thead><tbody>{rows.map((row) => <tr><td><strong>{row.dim}</strong></td><td>{row.sb}</td><td>{row.other}</td></tr>)}</tbody></table></div></section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Where SyntheticBrew differs</p>
+      <h2 class="section-title">Where SyntheticBrew differs from {competitor} — and why it matters</h2>
+      <div class="three-grid">
+        {differs.map((item) => (
+          <article class="card" data-reveal>
+            <h3>{item.title}</h3>
+            <p>{item.what}</p>
+            <p style="margin-top:12px"><strong>Why it matters:</strong> {item.why}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {enterprise.length > 0 && (
+    <section class="section section-dark">
+      <div class="container narrow">
+        <p class="eyebrow" style="color:#ff8a74">For enterprise teams</p>
+        <h2 class="section-title">An enterprise-ready {competitor} alternative</h2>
+        <ul class="check-list">
+          {enterprise.map((point) => <li>{point}</li>)}
+        </ul>
+        <p style="margin-top:26px"><a class="button" href="/enterprise/">Enterprise AI agents <span aria-hidden="true">→</span></a></p>
+      </div>
+    </section>
+  )}
+
+  <section class="section"><div class="container narrow center"><p class="eyebrow">Choose for the job</p><h2 class="section-title">{fitTitle}</h2><p class="section-lede centered">{fitText}</p><CtaGroup centered compact /></div></section>
+
+  <section class="section section-tint"><div class="container narrow"><p class="eyebrow">Questions</p><h2 class="section-title">SyntheticBrew vs {competitor}: FAQ</h2><div class="faq">{faqs.map((item) => <details><summary>{item.q}</summary><p>{item.a}</p></details>)}</div>
+  {related.length > 0 && (
+    <p style="margin-top:30px">More comparisons: {related.map((item, index) => <span>{index > 0 && ' · '}<a href={item.href}>{item.label}</a></span>)}</p>
+  )}
+  </div></section>
+</SiteLayout>

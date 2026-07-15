@@ -1,0 +1,192 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP } from '@/data/site';
+
+const feature = FEATURE_MAP['multi-agent-orchestration'];
+
+const faq = [
+  {
+    q: 'What is multi-agent orchestration?',
+    a: 'Multi-agent orchestration is coordinating several specialized AI agents on one task instead of overloading a single prompt. In SyntheticBrew, a supervisor agent owns the conversation and delegates to specialists via flow edges, transfer, and runtime spawning — each specialist with its own model, prompt, and narrowly scoped tools.',
+  },
+  {
+    q: 'How do agents delegate work to each other?',
+    a: 'Two ways. Transfer hands the conversation to another agent along a configured flow edge. Spawn launches a sub-agent at runtime, governed by a spawn policy, with blocking spawn, wait, status, list, and stop actions — so the supervisor can fire off parallel sub-agents and collect their results.',
+  },
+  {
+    q: 'How do I stop sub-agents from spawning endlessly?',
+    a: 'Spawning is opt-in and bounded. The spawn policy declares which flows an agent may spawn and caps concurrent sub-agents, spawn-cycle detection stops A-spawns-B-spawns-A loops at runtime, and every agent has its own step limit and a 120-second default turn duration.',
+  },
+  {
+    q: 'Can I watch what each agent in the system is doing?',
+    a: 'Yes. Delegation streams as structured SSE events — agent_spawn when a sub-agent starts, tool_call and tool_result while it works, agent_result when it hands back. Sessions persist the full event log for replay, and the audit log records the actor, action, resource, session, and task for every run.',
+  },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'Article',
+    headline: feature.h1,
+    description: feature.description,
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+
+const spawnPolicy = `agent: research-supervisor
+max_turn_duration: 120s        # engine default
+spawn_policy:
+  allowed_flows:               # only these may be spawned
+    - market-research
+    - report-drafting
+  max_concurrent: 3            # parallel sub-agent cap
+# spawn-cycle detection stops A -> B -> A loops
+# blocking actions: spawn, wait, status, list, stop`;
+
+const eventStream = `event: agent_spawn      → sub-agent "market-research" starts
+event: tool_call        → search_catalog {"query": "…"}
+event: tool_result      → 42 records returned
+event: agent_result     → sub-agent hands findings back
+event: message_delta    → supervisor streams the answer
+event: done             → run complete, fully persisted`;
+
+const related = ['ai-agent-builder', 'ai-agent-observability', 'ai-agent-security'].map((slug) => FEATURE_MAP[slug]);
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">{feature.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <div class="center narrow">
+        <p class="eyebrow">Teams, not mega-prompts</p>
+        <h2 class="section-title">Multi-agent orchestration: supervisors, specialists, and flow edges</h2>
+        <p class="section-lede centered">One agent with thirty tools and a two-page prompt fails in ways you cannot debug. A team of specialists, each with a focused role and only the tools it should touch, fails in ways you can see — and fix.</p>
+      </div>
+      <div class="three-grid">
+        <article class="card" data-reveal>
+          <h3>Supervisor</h3>
+          <p>Owns the conversation, decides which specialist handles each part of the task, and assembles the final answer. It never needs direct access to every tool in the system.</p>
+        </article>
+        <article class="card" data-reveal>
+          <h3>Specialists</h3>
+          <p>Each runs its own ReAct loop with its own model, prompt, and tool bindings scoped through flow config. A rules agent does not automatically gain access to billing tools.</p>
+        </article>
+        <article class="card" data-reveal>
+          <h3>Coordination</h3>
+          <p>Agents coordinate via flow edges, transfer, and spawn — declared in configuration, not hidden in prompt text — so the shape of the system is reviewable before it reaches users.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Bounded autonomy</p>
+        <h2 class="section-title">AI agent orchestration with spawn policies you control</h2>
+        <p class="section-lede">Beyond static flow edges, a supervisor can spawn sub-agents at runtime — but only inside the boundaries you declare. The spawn policy lists exactly which flows may be spawned and caps how many run concurrently, and the engine detects spawn cycles so agents cannot recursively launch each other.</p>
+        <ul class="check-list">
+          <li><strong>Allowed flows list</strong> — spawning is a whitelist, never a default.</li>
+          <li><strong>Concurrency cap</strong> — bound how many sub-agents run in parallel per supervisor.</li>
+          <li><strong>Cycle detection</strong> — A→B→A spawn loops are stopped at runtime.</li>
+          <li><strong>Blocking control</strong> — spawn, wait, status, list, and stop actions let the supervisor manage sub-agents like processes.</li>
+          <li><strong>Hard time bounds</strong> — every agent turn is capped, 120 seconds by default, alongside per-agent step limits.</li>
+        </ul>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>Spawn policy</span><span>YAML</span></div>
+        <pre>{spawnPolicy}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">Nothing invisible</p>
+        <h2 class="section-title">Agent workflows you can watch: delegation as structured events</h2>
+        <p class="section-lede">Delegation is not a black box between request and response. Every handoff streams to your product as typed SSE events, so your UI can show real progress — &ldquo;researching your order&rdquo; instead of an unexplained spinner — and your engineers can replay the exact sequence afterward from the persisted session log.</p>
+        <p style="margin-top:20px">This is a core difference from code-first frameworks where coordination lives in application code you maintain yourself. See how the approaches compare in <a href="/compare/crewai/">SyntheticBrew vs CrewAI</a> and <a href="/compare/langchain/">SyntheticBrew vs LangChain</a>.</p>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>Delegation over SSE</span><span>event stream</span></div>
+        <pre>{eventStream}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Beyond the chat window</p>
+      <h2 class="section-title">Multi-agent workflows for long-running background work</h2>
+      <p class="section-lede">Not every job fits inside one conversation turn. Dispatch long-running agent work as background tasks tracked through the task system: sub-agents parallelize the work under the spawn policy's concurrency cap, gates validate the output before it is delivered, and the full run remains auditable after the fact. Teams in regulated and industrial settings use this pattern for report generation, reconciliation, and fleet analysis — see <a href="/solutions/banking/">SyntheticBrew for banking</a> and <a href="/solutions/manufacturing-iot/">SyntheticBrew for manufacturing and IoT</a>.</p>
+      <div class="callout" style="margin-top:28px">{feature.callout}</div>
+    </div>
+  </section>
+
+  <section class="section-compact section-tint">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">Related capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">Multi-agent orchestration: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Build the team. Keep the boundaries.</h2>
+      <p>Orchestrate supervisors and specialists with scoped tools and spawn policies — in Cloud or on your own infrastructure.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

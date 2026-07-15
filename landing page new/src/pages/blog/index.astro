@@ -1,0 +1,41 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import { BLOG_POSTS } from '@/data/blog';
+
+const posts = [...BLOG_POSTS].sort((a, b) => b.date.localeCompare(a.date));
+---
+<SiteLayout
+  title="AI Agents in Production — SyntheticBrew Blog"
+  description="Comparisons, architecture guides, and lessons from running AI agents in production: orchestration, MCP tools, knowledge graphs, and in-depth tool breakdowns."
+  keywords={['AI agents in production', 'AI agent comparison', 'AI agent architecture', 'SyntheticBrew blog']}
+>
+  <section class="content-hero">
+    <div class="container">
+      <p class="eyebrow">Blog</p>
+      <h1>AI agents in production — the SyntheticBrew blog</h1>
+      <p>In-depth comparisons, architecture guides, and what we learn shipping agent infrastructure.</p>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container three-grid">
+      {posts.map((post) => (
+        <a class="card" href={post.path} data-reveal>
+          <small class="eyebrow">{new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · {post.readingMinutes} min</small>
+          <h2 style="margin-top:12px; font-size:1.25rem">{post.h1}</h2>
+          <p style="margin-top:12px">{post.teaser}</p>
+          <p style="margin-top:18px; color:var(--coral-dark); font-weight:700">Read the article →</p>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Comparing tools for a real project?</h2>
+      <p>Skip the reading list — book a fit call and walk through your workflow, constraints, and a clear answer on whether SyntheticBrew fits.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

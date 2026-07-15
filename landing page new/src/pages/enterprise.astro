@@ -1,0 +1,150 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { SITE } from '@/data/site';
+
+const governance = [
+  { title: 'Immutable audit log', text: 'Every administrative action is recorded — who changed what and when — for security, compliance, and governance reviews.' },
+  { title: 'Least-privilege API keys', text: 'Scope keys to exactly what each integration needs: chat, tasks, agents, config, or admin. Revoke any key instantly.' },
+  { title: 'Tool security zones', text: 'Tools are tiered by risk. Dangerous actions require explicit confirmation, and agents see only the tools they are configured for.' },
+];
+
+const securityCards = [
+  { title: 'Tamper-proof auth', text: 'Every API request is verified against an Ed25519-signed token. Forged tokens, downgrade attacks, and replay attempts are rejected at the door.' },
+  { title: 'Zero secret management', text: 'No passwords, no rotating shared keys, no .env to leak. Self-hosted runs out of the box; plug in your existing IdP with one public key.' },
+  { title: 'Bring your own LLM keys', text: 'Pass per-customer LLM API keys via request headers — used once, never stored, never logged. Clean per-tenant billing without vendor lock-in.' },
+  { title: 'No double-billing, ever', text: 'If usage tracking cannot reach the cloud, requests stop — instead of silently double-counting later. Your invoice always matches reality.' },
+];
+
+const faqs = [
+  {
+    q: 'What makes an AI agent "enterprise-grade"?',
+    a: 'Reliability and control. The agent must be grounded in your data, auditable, scoped to least privilege, and deployable on infrastructure you control. SyntheticBrew is built in Go as a single production binary with those properties built in — not a prototyping toolkit.',
+  },
+  {
+    q: 'How do you keep enterprise AI agents grounded instead of guessing?',
+    a: 'Grounding. Knowledge graphs give the agent typed, deterministic retrieval over your real records, and RAG covers unstructured documents. You can also instruct the agent to say "I don\'t know" rather than guess. For done-for-you builds, an eval harness scores every answer for groundedness and correct citation before launch.',
+  },
+  {
+    q: 'Can we keep our data on our own infrastructure?',
+    a: 'Yes. SyntheticBrew is self-hosted — deploy with Docker Compose, Kubernetes using Helm, or a standalone binary alongside PostgreSQL, on-premise or in your private cloud, with your own LLM keys. Your data and conversations never leave your environment.',
+  },
+  {
+    q: 'Do you offer a done-for-you build?',
+    a: 'Yes. We deliver a production agent in your platform to a measured bar — accepted against evals on your real data — then hand it over for you to run. Fixed scope, fixed price, no lock-in. Book a fit call to scope it.',
+  },
+];
+
+const schema = [
+  {
+    '@type': 'Article',
+    headline: 'Enterprise AI agents: grounded, self-hosted, accountable',
+    description: 'Enterprise AI agents you can actually ship: self-hosted, grounded in your data, with audit logs, scoped keys, and tool security zones.',
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+<SiteLayout
+  title="Enterprise AI Agents, Self-Hosted & Grounded | SyntheticBrew"
+  description="Enterprise AI agents you can actually ship: self-hosted, grounded in your data, with audit logs, scoped keys, and tool security zones. Reliable, not demo-ware."
+  keywords={['enterprise AI agents', 'secure AI agents', 'AI data residency']}
+  schema={schema}
+>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">For platform and security teams</p>
+        <h1>Enterprise AI agents: grounded, self-hosted, accountable.</h1>
+        <p class="hero-lede">Move beyond demo-ware with an agent runtime designed around data control, exact retrieval, scoped tools, authenticated context, and visible execution.</p>
+        <CtaGroup compact />
+      </div>
+      <PlatformScreenshot src="/screenshots/admin/audit-log.png" alt="SyntheticBrew enterprise agent audit log" eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">Production requirements</p>
+      <h2 class="section-title">What enterprise AI agents need to reach users</h2>
+      <div class="four-grid">
+        <article class="card"><h3>Grounded retrieval</h3><p>Use RAG for narrative evidence and typed knowledge graphs for exact entities and relationships.</p></article>
+        <article class="card"><h3>Security boundaries</h3><p>Scope tools per agent, forward identity, and require confirmation for consequential operations.</p></article>
+        <article class="card"><h3>Data residency</h3><p>Self-host the Go runtime, PostgreSQL, and model configuration inside your environment.</p></article>
+        <article class="card"><h3>Operational evidence</h3><p>Trace structured run events, review audit data, and monitor runtime health.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow center">
+      <p class="eyebrow">Reliability</p>
+      <h2 class="section-title">Grounded AI agents: answers from your records, not guesswork</h2>
+      <p class="section-lede centered">The market is full of AI that looks impressive in a demo and then makes things up in front of a customer. SyntheticBrew grounds answers in your data: a knowledge-graph taxonomy gives the agent typed, deterministic retrieval, and RAG covers your documents. The agent answers from your records — and can be instructed to refuse when the evidence is missing.</p>
+      <p class="section-lede centered">For done-for-you builds, an eval harness scores every answer for groundedness and correct citation on your real data before launch — reliability you can measure.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">Governance</p>
+      <h2 class="section-title">AI agent governance: audit logs, scoped keys, security zones</h2>
+      <p class="section-lede">Know what every agent did, and limit what each one can do.</p>
+      <div class="three-grid">
+        {governance.map((item) => <article class="card" data-reveal><h3>{item.title}</h3><p>{item.text}</p></article>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Secure by default</p>
+      <h2 class="section-title">Secure AI agents: identity, keys, and billing you never have to babysit</h2>
+      <div class="four-grid">
+        {securityCards.map((item) => <article class="card" data-reveal><h3>{item.title}</h3><p>{item.text}</p></article>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Control plane</p>
+        <h2 class="section-title">Separate what users can do from what operators manage</h2>
+        <p class="section-lede">Optional two-port mode splits the runtime into an external data plane — the chat and agent APIs your product calls — and an internal admin plane carrying the dashboard and management APIs, which you keep behind a VPN or firewall.</p>
+        <ul class="check-list">
+          <li>External data plane for chat and agent APIs</li>
+          <li>Internal admin plane behind your VPN or firewall</li>
+          <li>Ed25519-signed JWT authentication</li>
+          <li>Scoped API keys and BYOK</li>
+          <li>Per-agent tool access with confirmation boundaries</li>
+        </ul>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin/api-keys.png" alt="SyntheticBrew scoped API keys for enterprise agents" />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow center">
+      <p class="eyebrow">Verifiable up front</p>
+      <h2 class="section-title">Open-source enterprise AI you can vet before you commit</h2>
+      <p class="section-lede centered">The runtime your agents run on is open source. Your engineers can read it, run it, and stress-test it before a contract is signed — proof it is production-grade, not a surprise at handover. Most enterprise AI vendors are a black box until then.</p>
+      <p><a class="button button-secondary" href={SITE.github} target="_blank" rel="noopener noreferrer">Review the engine on GitHub ↗</a></p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">Enterprise AI agents: common questions</h2>
+      <div class="faq">{faqs.map((faq) => <details><summary>{faq.q}</summary><p>{faq.a}</p></details>)}</div>
+    </div>
+  </section>
+
+  <section class="section-compact"><div class="container bottom-cta"><h2>Evaluate the exact runtime you will operate.</h2><p>The engine is open source, so your team can inspect and test the system before a production decision.</p><CtaGroup centered /></div></section>
+</SiteLayout>

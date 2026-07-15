@@ -1,0 +1,125 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+
+const approaches = [
+  { approach: 'Closed cloud platforms', problem: 'Per-token pricing, data leaves your servers, locked to one provider', syntheticbrew: 'Self-hosted with your own API keys. Pay only your LLM provider — no markup' },
+  { approach: 'Agent SDKs / frameworks', problem: 'A library, not a product. No API server, no admin UI, no session persistence', syntheticbrew: 'Complete runtime: REST API, admin dashboard, background tasks, session management' },
+  { approach: 'Visual AI builders', problem: 'Simple chatbots only. No autonomous reasoning, no scoped tools, no sub-agents', syntheticbrew: 'Multi-step reasoning agents that delegate, call tools, and coordinate' },
+  { approach: 'Single-model APIs', problem: 'One provider, no orchestration, no memory, no grounding', syntheticbrew: 'Mix any models across agents. Built-in RAG, knowledge graphs, sessions, memory' },
+  { approach: 'Custom in-house build', problem: '3–6 months to build, ongoing maintenance, team distracted from product', syntheticbrew: 'Production-ready in minutes. We maintain the engine — you ship your product' },
+];
+
+const comparisons = [
+  { name: 'Dify', href: '/compare/dify/', blurb: 'AI app studio vs embeddable runtime: architecture, licensing, per-tool confirmation.' },
+  { name: 'LangChain', href: '/compare/langchain/', blurb: 'Framework code vs a deployable product — and what LangSmith does not cover.' },
+  { name: 'n8n', href: '/compare/n8n/', blurb: 'Workflow automation with AI nodes vs agent-first infrastructure, license included.' },
+  { name: 'CrewAI', href: '/compare/crewai/', blurb: 'Python crews for prototyping vs runtime delegation with policies and audit.' },
+  { name: 'Flowise', href: '/compare/flowise/', blurb: 'Visual flow prototyping vs config-as-code agents with typed grounding.' },
+  { name: 'Langflow', href: '/compare/langflow/', blurb: 'Python canvas experiments vs a compiled, governed production runtime.' },
+];
+
+const checklist = [
+  'Can one agent spawn and delegate to sub-agents at runtime, with limits and cycle detection?',
+  'Does the end user’s identity reach every tool call, so your RBAC keeps enforcing itself?',
+  'Can you require human confirmation on a specific tool — not just somewhere in a workflow?',
+  'Is retrieval deterministic where it must be: typed entities, real IDs, full-recall counts?',
+  'Does the license permit multi-tenant, embedded commercial use without a negotiation?',
+  'Can your security team read the runtime’s source and audit every action afterward?',
+  'Would your ops team rather run 2 containers or 13?',
+];
+
+const faqs = [
+  { q: 'What is the best AI agent platform?', a: 'It depends on the job. For building standalone AI apps visually, studios like Dify are strong. For code-first experimentation, frameworks like LangChain, LangGraph, and CrewAI fit. For embedding production agents into your own product — multi-tenant, permission-aware, auditable, self-hosted — that is the job SyntheticBrew is built for, and every claim is verifiable in its open-source code.' },
+  { q: 'How should I compare AI agent platforms?', a: 'Ignore feature grids and demo polish; test the production questions: runtime delegation, forwarded end-user identity in tool calls, per-tool confirmation, deterministic retrieval, license terms for embedding, source access for security review, and operational footprint. The checklist on this page separates demo platforms from infrastructure quickly.' },
+  { q: 'Open source vs closed cloud AI agent platforms?', a: 'Closed cloud platforms meter per token, keep your data in their environment, and own the runtime. Open, self-hosted infrastructure runs in your perimeter with your model keys at provider cost. The trade-off is operating it yourself — which is why SyntheticBrew ships as one Go binary plus PostgreSQL, and offers managed Cloud when you would rather not.' },
+];
+
+const schema = [
+  {
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+<SiteLayout
+  title="AI Agent Platform Comparison | SyntheticBrew"
+  description="AI agent platform comparison: closed clouds, frameworks, visual builders, and SyntheticBrew — with head-to-head pages for Dify, LangChain, n8n, and more."
+  keywords={['AI agent platform comparison', 'best AI agent platform', 'AI agent platform alternatives', 'compare AI agent platforms']}
+  schema={schema}
+>
+  <section class="content-hero">
+    <div class="container">
+      <p class="eyebrow">Choosing your approach</p>
+      <h1>AI agent platform comparison: find the best fit for production</h1>
+      <p>Every way of shipping AI agents trades something away. Here is where each approach breaks down in production, what SyntheticBrew does instead, and detailed head-to-head pages for the tools on your shortlist.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">By approach</p>
+      <h2 class="section-title">How the approaches to AI agents stack up</h2>
+      <table class="comparison-table">
+        <thead><tr><th>Approach</th><th>Where it breaks down</th><th>SyntheticBrew</th></tr></thead>
+        <tbody>
+          {approaches.map((row) => (
+            <tr><td><strong>{row.approach}</strong></td><td>{row.problem}</td><td>{row.syntheticbrew}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">By tool</p>
+      <h2 class="section-title">SyntheticBrew vs the tools on your shortlist</h2>
+      <div class="three-grid">
+        {comparisons.map((item) => (
+          <a class="card" href={item.href} data-reveal>
+            <h3>SyntheticBrew vs {item.name}</h3>
+            <p>{item.blurb}</p>
+            <p style="margin-top:16px; color:var(--coral-dark); font-weight:700">Read the comparison →</p>
+          </a>
+        ))}
+      </div>
+      <p class="section-lede" style="margin-top:26px">Prefer the narrative version? Read the <a href="/blog/dify-alternative-open-source-ai-agents/">full Dify alternative breakdown</a> or <a href="/blog/langchain-vs-langgraph/">LangChain vs LangGraph</a>.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Buying criteria</p>
+      <h2 class="section-title">The best AI agent platform checklist for production teams</h2>
+      <p class="section-lede">Whatever you pick, walk in with these questions — they separate demo platforms from production infrastructure faster than any feature grid:</p>
+      <ul class="check-list">
+        {checklist.map((item) => <li>{item}</li>)}
+      </ul>
+      <p style="margin-top:22px">SyntheticBrew answers yes to every line, verifiably, in <a href="https://github.com/syntheticinc/syntheticbrew" target="_blank" rel="noopener noreferrer">open-source code</a>.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">AI agent platform comparison FAQ</h2>
+      <div class="faq">
+        {faqs.map((item) => (
+          <details>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Compare against the real thing.</h2>
+      <p>Self-host the open-source runtime in one Docker command, try Cloud free, or book a fit call and walk through your shortlist together.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

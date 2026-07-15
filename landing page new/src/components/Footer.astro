@@ -1,0 +1,52 @@
+---
+import { SITE } from '@/data/site';
+---
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <div class="footer-intro">
+      <a class="brand" href="/" aria-label="SyntheticBrew home">
+        <img class="brand-light" src="/logo-light.png" alt="SyntheticBrew" width="162" height="36" loading="lazy" />
+        <img class="brand-dark" src="/logo-dark.svg" alt="SyntheticBrew" width="162" height="36" loading="lazy" />
+      </a>
+      <p>Open infrastructure for AI agents that reason, use tools, remember context, and run where you choose.</p>
+      <a href={SITE.github} target="_blank" rel="noopener noreferrer">View on GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+    <div>
+      <span class="footer-heading">Platform</span>
+      <a href="/features/ai-agent-builder/">AI Agent Builder</a>
+      <a href="/features/mcp-integration/">MCP Integration</a>
+      <a href="/features/multi-agent-orchestration/">Orchestration</a>
+      <a href="/knowledge-graphs/">Knowledge Graphs</a>
+      <a href="/self-hosted/">Self-hosted</a>
+    </div>
+    <div>
+      <span class="footer-heading">Use SyntheticBrew</span>
+      <a href="/register">Try Cloud</a>
+      <a href="/download/">Download</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="/build/">Contact sales</a>
+      <a href="/enterprise/">Enterprise</a>
+    </div>
+    <div>
+      <span class="footer-heading">Resources</span>
+      <a href="/docs/">Documentation</a>
+      <a href="/blog/">Blog</a>
+      <a href="/examples/">Examples</a>
+    </div>
+    <div>
+      <span class="footer-heading">Compare</span>
+      <a href="/compare/">All comparisons</a>
+      <a href="/compare/dify/">vs Dify</a>
+      <a href="/compare/langchain/">vs LangChain</a>
+      <a href="/compare/n8n/">vs n8n</a>
+      <a href="/compare/crewai/">vs CrewAI</a>
+      <a href="/compare/flowise/">vs Flowise</a>
+      <a href="/compare/langflow/">vs Langflow</a>
+    </div>
+  </div>
+  <div class="container footer-bottom">
+    <span>© 2026 SyntheticBrew</span>
+    <div><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href={`mailto:${SITE.email}`}>Email</a></div>
+  </div>
+</footer>

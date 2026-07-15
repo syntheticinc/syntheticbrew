@@ -1,0 +1,192 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP } from '@/data/site';
+
+const feature = FEATURE_MAP['agent-memory'];
+
+const faq = [
+  {
+    q: 'What is AI agent memory?',
+    a: 'Facts an agent retains across conversations — who the customer is, what was decided, what context is still open — as opposed to the transcript of a single session. In SyntheticBrew, memory is per-schema, cross-session persistence built into the runtime: entries are scoped to a tenant, schema, and user, stored in PostgreSQL, and available the next time that user returns.',
+  },
+  {
+    q: 'Agent memory vs RAG — what is the difference?',
+    a: 'Memory stores what the agent learned from interacting with a specific user: preferences, decisions, open context. RAG retrieves from a knowledge base you curated — documents, manuals, policies — the same corpus for every user. A production agent usually needs both: RAG for what your organization knows, memory for what this relationship knows.',
+  },
+  {
+    q: 'How is memory isolated between agents and tenants?',
+    a: 'Every memory entry is scoped by the (tenant, schema, user) triple, and schemas are hard boundaries — one agent system never leaks context into another, and one customer never sees traces of another. All of it lives in PostgreSQL you control, in Cloud or self-hosted.',
+  },
+  {
+    q: 'Can I replay past conversations?',
+    a: 'Yes. Sessions are persisted with their full event log — every reasoning step, tool call, tool result, and delegation — so any past run can be replayed exactly as it happened, for debugging, review, or audit.',
+  },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'Article',
+    headline: feature.h1,
+    description: feature.description,
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+
+const kinds = [
+  {
+    layer: 'Session history',
+    stores: 'Every conversation, persisted as a full event log — reasoning steps, tool calls, results, delegations. Replayable exactly as it ran.',
+    scope: 'Per session, kept in PostgreSQL for debugging, review, and audit.',
+  },
+  {
+    layer: 'Memory',
+    stores: 'Cross-session facts the agent retains: who the customer is, what was decided, what context is still open.',
+    scope: 'Scoped to (tenant, schema, user). Retention configurable per agent, with a max_entries cap.',
+  },
+  {
+    layer: 'Knowledge',
+    stores: 'Narrative documents your team curates — manuals, policies, articles — retrieved via agentic RAG while the agent reasons.',
+    scope: 'Per schema, the same corpus for every user of that agent system.',
+  },
+];
+
+const memoryConfig = `agent: support-agent
+memory:
+  enabled: true
+  max_entries: 100        # per-agent retention cap
+# every entry is keyed by (tenant, schema, user)
+# stored in your PostgreSQL — Cloud or self-hosted`;
+
+const related = ['agentic-rag', 'knowledge-graphs', 'ai-agent-observability'].map((slug) => FEATURE_MAP[slug]);
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">{feature.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow center">
+      <p class="eyebrow">Beyond one conversation</p>
+      <h2 class="section-title">AI agent memory that survives the conversation</h2>
+      <p class="section-lede centered">An agent that greets a returning customer like a stranger is not an assistant — it is a form with better grammar. SyntheticBrew gives agents per-schema, cross-session persistence: they remember customers, context, and decisions across conversations, without your application replaying an entire history on every turn.</p>
+      <p class="section-lede centered">Because memory is part of the runtime, not an SDK exercise, every agent gets it by flipping one configuration switch — and every team stops rebuilding the same persistence layer.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Three layers, one runtime</p>
+      <h2 class="section-title">Persistent agent memory, session history, and knowledge — three kinds of remembering</h2>
+      <p class="section-lede">&ldquo;Memory&rdquo; hides three different problems. SyntheticBrew separates them so each is stored, scoped, and retained the right way.</p>
+      <table class="comparison-table">
+        <thead><tr><th>Layer</th><th>What it stores</th><th>Scope and persistence</th></tr></thead>
+        <tbody>
+          {kinds.map((row) => <tr><td><strong>{row.layer}</strong></td><td>{row.stores}</td><td>{row.scope}</td></tr>)}
+        </tbody>
+      </table>
+      <p style="margin-top:22px">There is a fourth, structured kind: typed <a href="/knowledge-graphs/">knowledge graphs</a>, where entities and relationships are declared as a schema and retrieved deterministically — for facts where a wrong ID is unacceptable.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Boundaries by default</p>
+        <h2 class="section-title">LLM memory scoped by tenant, schema, and user</h2>
+        <p class="section-lede">Persistence without isolation is a liability. Every memory entry in SyntheticBrew is keyed by the (tenant, schema, user) triple, and schemas are hard boundaries: one agent system never leaks context into another, and one customer's history never surfaces in another's conversation.</p>
+        <ul class="check-list">
+          <li><strong>Schema isolation</strong> — your support agents and your internal ops agents keep entirely separate memory.</li>
+          <li><strong>Per-agent retention</strong> — each agent sets its own <code>max_entries</code> cap, so memory stays relevant instead of accumulating forever.</li>
+          <li><strong>Your PostgreSQL</strong> — memory and session history live in the PostgreSQL deployment you run, in Cloud or fully self-hosted. Nothing is parked in a vendor store you cannot query.</li>
+        </ul>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>Memory config</span><span>YAML</span></div>
+        <pre>{memoryConfig}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">Continuity your users feel</p>
+        <h2 class="section-title">Conversation memory in production: remembered customers, replayable sessions</h2>
+        <p class="section-lede">The payoff is concrete. A returning customer is recognized, the open issue is still open, and the agent picks up where the last conversation ended — across web, widget, and API surfaces, keyed by stable session identifiers. When something goes wrong, the persisted event log lets you replay the exact run: every reasoning step, tool call, and result.</p>
+        <p style="margin-top:20px">This is the backbone of support automation — see <a href="/solutions/customer-service/">SyntheticBrew for customer service</a>. And for what your organization knows, as opposed to what the relationship knows, pair memory with <a href="/features/agentic-rag/">agentic RAG</a>.</p>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin-agent-detail.png" alt="SyntheticBrew agent detail screen showing memory configuration" caption="Memory scope and retention configured per agent." />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <div class="callout">{feature.callout}</div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">Related capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">AI agent memory: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Agents that remember. Data you own.</h2>
+      <p>Give your agents cross-session memory in your own PostgreSQL — start in Cloud or self-host the open-source engine.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

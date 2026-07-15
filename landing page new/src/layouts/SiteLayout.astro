@@ -1,0 +1,333 @@
+---
+import '@/styles/global.css';
+import Header from '@/components/Header.astro';
+import Footer from '@/components/Footer.astro';
+import { FEATURES, SITE } from '@/data/site';
+
+interface Props {
+  title: string;
+  description: string;
+  keywords?: string[];
+  image?: string;
+  noindex?: boolean;
+  schema?: Record<string, unknown> | Record<string, unknown>[];
+}
+
+const {
+  title,
+  description,
+  keywords = [],
+  image = '/social-card.png',
+  noindex = false,
+  schema = [],
+} = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site ?? SITE.url);
+const imageURL = new URL(image, Astro.site ?? SITE.url);
+const pageSchema = {
+  '@type': 'WebPage',
+  '@id': `${canonicalURL.href}#webpage`,
+  url: canonicalURL.href,
+  name: title,
+  description,
+  isPartOf: { '@id': `${SITE.url}/#website` },
+  about: { '@id': `${SITE.url}/#software` },
+};
+const extraSchema = Array.isArray(schema) ? schema : [schema];
+
+// Data served to browser-based AI agents via WebMCP (script at the end of <body>).
+// Pricing values mirror src/pages/pricing.astro — update both together.
+const agentToolData = {
+  overview:
+    'SyntheticBrew is open-source AI agent infrastructure: a production runtime with multi-agent orchestration, MCP and HTTP tool execution, persistent sessions and memory, agentic RAG, typed knowledge graphs, an admin dashboard, and REST plus structured SSE APIs. Available as managed Cloud, free self-hosted Community Edition, or a delivered implementation.',
+  features: FEATURES.map((feature) => ({
+    title: feature.shortTitle,
+    url: SITE.url + feature.path,
+    summary: feature.description,
+  })),
+  pricing: [
+    { plan: 'Community Edition', price: 'Free forever (self-hosted)', notes: 'Full engine, unlimited agents, bring your own LLM key' },
+    { plan: 'Cloud Free', price: '$0', notes: 'Up to 100 monthly active users, 2 schemas, 25 knowledge-base documents, "Powered by SyntheticBrew" attribution' },
+    { plan: 'Cloud Pro', price: '$49/mo or $490/yr', notes: '2,000 monthly active users, 3 schemas, 100 knowledge-base documents, no attribution badge, email support' },
+    { plan: 'Cloud Business', price: '$199/mo or $1,990/yr', notes: '20,000 monthly active users, 25 schemas, 500 knowledge-base documents, priority support' },
+    { plan: 'Enterprise', price: 'Contact us', notes: 'Custom limits, SLA, delivered implementation' },
+  ],
+  pricingNote: 'Every plan: unlimited messages with your own LLM key, never billed per token. Details: https://syntheticbrew.ai/pricing/',
+  links: {
+    docs: `${SITE.url}/docs/`,
+    llms: `${SITE.url}/llms.txt`,
+    auth: `${SITE.url}/auth.md`,
+    mcpDocsServer: 'https://mcp.syntheticbrew.ai/sse',
+    apiCatalog: `${SITE.url}/.well-known/api-catalog`,
+    agentSkills: `${SITE.url}/.well-known/agent-skills/index.json`,
+    github: SITE.github,
+    register: `${SITE.url}/register`,
+  },
+};
+const graph = [
+  {
+    '@type': 'Organization',
+    '@id': `${SITE.url}/#organization`,
+    name: SITE.name,
+    legalName: 'Synthetic AI Inc',
+    url: SITE.url,
+    logo: { '@type': 'ImageObject', url: `${SITE.url}/icon-512.png` },
+    sameAs: [SITE.github],
+  },
+  {
+    '@type': 'WebSite',
+    '@id': `${SITE.url}/#website`,
+    url: SITE.url,
+    name: SITE.name,
+    publisher: { '@id': `${SITE.url}/#organization` },
+    inLanguage: 'en-US',
+  },
+  {
+    '@type': 'SoftwareApplication',
+    '@id': `${SITE.url}/#software`,
+    name: 'SyntheticBrew Engine',
+    url: SITE.url,
+    applicationCategory: 'DeveloperApplication',
+    operatingSystem: 'Linux, macOS, Windows',
+    description: 'Open-source infrastructure for building and running production AI agents.',
+    offers: {
+      '@type': 'Offer',
+      price: '0',
+      priceCurrency: 'USD',
+      description: 'Self-hosted Community Edition',
+    },
+    author: { '@id': `${SITE.url}/#organization` },
+  },
+  pageSchema,
+  ...extraSchema.filter((entry) => Object.keys(entry).length > 0),
+];
+---
+
+<!doctype html>
+<html lang="en-US" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#fffdf8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {keywords.length > 0 && <meta name="keywords" content={keywords.join(', ')} />}
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    <link rel="canonical" href={canonicalURL} />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SyntheticBrew" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={imageURL} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="SyntheticBrew AI agent platform" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={imageURL} />
+
+    <script is:inline type="application/ld+json" set:html={JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })} />
+
+    <script is:inline>
+      (function () {
+        var saved = localStorage.getItem('syntheticbrew-theme');
+        var dark = saved === 'dark' || (saved === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      })();
+    </script>
+
+    <!-- Existing production analytics: GA4 measurement tag (not a GTM container). -->
+    <script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-QM8W4T1H8S"></script>
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-QM8W4T1H8S');
+    </script>
+
+    <!-- Existing production Yandex Metrica counter. -->
+    <script is:inline>
+      (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+      })(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=109861753','ym');
+      ym(109861753,'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href,accurateTrackBounce:true,trackLinks:true});
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <noscript><div><img src="https://mc.yandex.ru/watch/109861753" class="tracking-pixel" alt="" /></div></noscript>
+    <Header />
+    <main id="main-content">
+      <slot />
+    </main>
+    <Footer />
+
+    <div class="lightbox" data-lightbox hidden role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+      <button type="button" class="lightbox-close" data-lightbox-close aria-label="Close full-size view">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <img class="lightbox-image" alt="" />
+    </div>
+
+    <script is:inline>
+      (function () {
+        var toggle = document.querySelector('[data-theme-toggle]');
+        var menuButton = document.querySelector('[data-menu-toggle]');
+        var menu = document.querySelector('[data-mobile-menu]');
+
+        if (toggle) {
+          toggle.addEventListener('click', function () {
+            var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+            document.documentElement.dataset.theme = next;
+            localStorage.setItem('syntheticbrew-theme', next);
+            localStorage.setItem('starlight-theme', next);
+            toggle.setAttribute('aria-label', next === 'dark' ? 'Use light theme' : 'Use dark theme');
+          });
+        }
+
+        if (menuButton && menu) {
+          menuButton.addEventListener('click', function () {
+            var open = menuButton.getAttribute('aria-expanded') === 'true';
+            menuButton.setAttribute('aria-expanded', String(!open));
+            menu.hidden = open;
+          });
+        }
+
+        var dropdowns = document.querySelectorAll('details.nav-dropdown');
+        function closeDropdowns(except) {
+          dropdowns.forEach(function (dropdown) {
+            if (dropdown !== except) dropdown.removeAttribute('open');
+          });
+        }
+        dropdowns.forEach(function (dropdown) {
+          dropdown.addEventListener('toggle', function () {
+            if (dropdown.open) closeDropdowns(dropdown);
+          });
+        });
+        document.addEventListener('click', function (event) {
+          var inside = event.target instanceof Element && event.target.closest('details.nav-dropdown');
+          closeDropdowns(inside || null);
+        });
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape') closeDropdowns(null);
+        });
+
+        document.querySelectorAll('[data-analytics]').forEach(function (link) {
+          link.addEventListener('click', function () {
+            var eventName = link.getAttribute('data-analytics');
+            var params = {
+              link_url: link.getAttribute('href') || '',
+              link_text: (link.textContent || '').trim(),
+              page_path: window.location.pathname,
+            };
+            if (typeof window.gtag === 'function') window.gtag('event', eventName, params);
+            if (typeof window.ym === 'function') window.ym(109861753, 'reachGoal', eventName, params);
+          });
+        });
+
+        var lightbox = document.querySelector('[data-lightbox]');
+        if (lightbox) {
+          var lightboxImage = lightbox.querySelector('.lightbox-image');
+          var lightboxClose = lightbox.querySelector('[data-lightbox-close]');
+          var lastTrigger = null;
+
+          var closeLightbox = function () {
+            lightbox.hidden = true;
+            lightboxImage.src = '';
+            document.documentElement.style.overflow = '';
+            if (lastTrigger) { lastTrigger.focus(); lastTrigger = null; }
+          };
+
+          document.querySelectorAll('[data-lightbox-src]').forEach(function (trigger) {
+            trigger.addEventListener('click', function () {
+              lastTrigger = trigger;
+              lightboxImage.src = trigger.getAttribute('data-lightbox-src');
+              lightboxImage.alt = trigger.getAttribute('data-lightbox-alt') || '';
+              lightboxImage.onerror = function () {
+                lightboxImage.onerror = null;
+                var fallback = trigger.getAttribute('data-lightbox-fallback');
+                if (fallback) lightboxImage.src = fallback;
+              };
+              lightbox.hidden = false;
+              document.documentElement.style.overflow = 'hidden';
+              lightboxClose.focus();
+            });
+          });
+
+          lightboxClose.addEventListener('click', closeLightbox);
+          lightbox.addEventListener('click', function (event) {
+            if (event.target === lightbox) closeLightbox();
+          });
+          document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !lightbox.hidden) closeLightbox();
+          });
+        }
+
+        var reveals = document.querySelectorAll('[data-reveal]');
+        if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          var observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.setAttribute('data-visible', 'true');
+                observer.unobserve(entry.target);
+              }
+            });
+          }, { rootMargin: '0px 0px -8% 0px' });
+          reveals.forEach(function (item) { observer.observe(item); });
+        } else {
+          reveals.forEach(function (item) { item.setAttribute('data-visible', 'true'); });
+        }
+      })();
+    </script>
+
+    <!-- WebMCP: expose read-only site tools to browser-based AI agents. No-op where the API is absent. -->
+    <script is:inline define:vars={{ agentToolData }}>
+      (function () {
+        if (!('modelContext' in navigator) || typeof navigator.modelContext.provideContext !== 'function') return;
+        function text(value) {
+          return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
+        }
+        navigator.modelContext.provideContext({
+          tools: [
+            {
+              name: 'get_product_overview',
+              description: 'One-paragraph overview of SyntheticBrew plus the list of core features with URLs.',
+              inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+              async execute() {
+                return text({ overview: agentToolData.overview, features: agentToolData.features });
+              },
+            },
+            {
+              name: 'list_pricing_plans',
+              description: 'SyntheticBrew pricing: free self-hosted Community Edition and Cloud plans (Free, Pro, Business, Enterprise), priced by monthly active users, never per token.',
+              inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+              async execute() {
+                return text({ plans: agentToolData.pricing, note: agentToolData.pricingNote });
+              },
+            },
+            {
+              name: 'get_agent_endpoints',
+              description: 'Machine-readable entry points for agents: docs, llms.txt, auth.md, the public docs-search MCP server, the API catalog, and the Agent Skills index.',
+              inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+              async execute() {
+                return text(agentToolData.links);
+              },
+            },
+          ],
+        });
+      })();
+    </script>
+  </body>
+</html>

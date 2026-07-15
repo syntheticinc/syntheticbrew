@@ -1,0 +1,20 @@
+---
+interface Props { src: string; alt: string; caption?: string; eager?: boolean; }
+const { src, alt, caption, eager = false } = Astro.props;
+const isWide = src.endsWith('/chat-with-tools.png');
+const width = isWide ? 1920 : 1278;
+const height = isWide ? 1080 : 1304;
+const modernSrc = src.replace(/\.png$/, '.webp');
+---
+
+<figure class="platform-shot" data-reveal>
+  <div class="browser-bar" aria-hidden="true"><i></i><i></i><i></i><span>app.syntheticbrew.ai</span></div>
+  <button type="button" class="shot-zoom" data-lightbox-src={modernSrc} data-lightbox-fallback={src} data-lightbox-alt={alt} aria-label={`View full size: ${alt}`}>
+    <picture>
+      <source srcset={modernSrc} type="image/webp" />
+      <img src={src} alt={alt} width={width} height={height} loading={eager ? 'eager' : 'lazy'} decoding="async" />
+    </picture>
+    <span class="shot-zoom-hint" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg> Click to enlarge</span>
+  </button>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

@@ -1,0 +1,199 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP, SITE } from '@/data/site';
+
+const feature = FEATURE_MAP['ai-agent-builder'];
+
+const faq = [
+  {
+    q: 'Can I build AI agents without writing code?',
+    a: 'Yes. Describe what you need in plain English and the AI builder proposes the agents, tools, flows, and gates — or configure everything on the visual canvas. When your team wants config-as-code, export any agent as YAML and check it into your repo.',
+  },
+  {
+    q: 'What does the AI agent builder actually generate?',
+    a: 'Real runtime configuration: a supervisor and specialist agents, tool bindings scoped per agent, confirmation gates on consequential actions, memory scope, and the flow edges that connect them. Nothing is a mockup — click any agent on the canvas to inspect or override what was generated.',
+  },
+  {
+    q: 'Is the visual builder a prototyping tool or production infrastructure?',
+    a: 'The canvas edits the same configuration the production engine runs. Generated agents execute a ReAct loop with per-agent step limits and a 120-second default turn duration, expose a REST API with structured SSE streaming, and persist memory and session history in PostgreSQL.',
+  },
+  {
+    q: 'Which LLM providers can generated agents use?',
+    a: 'OpenAI, Anthropic, Google Gemini, Azure OpenAI, Ollama, OpenRouter, or any OpenAI-compatible provider such as DeepSeek and Mistral — and you can pick a different model for each agent in the system.',
+  },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'Article',
+    headline: feature.h1,
+    description: feature.description,
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+
+const generatedConfig = `name: support-supervisor
+model: claude-sonnet          # any provider, per agent
+max_steps: 12
+max_turn_duration: 120s       # engine default
+tools:
+  - search_docs               # knowledge base (RAG)
+  - lookup_order              # MCP: orders API
+  - escalate_refund           # MCP: billing API
+confirm_before:
+  - escalate_refund           # pauses for approval
+memory:
+  enabled: true
+  max_entries: 50             # per-agent cap`;
+
+const related = ['multi-agent-orchestration', 'mcp-integration', 'agent-memory'].map((slug) => FEATURE_MAP[slug]);
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">{feature.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <div class="center narrow">
+        <p class="eyebrow">Describe. Brew. Run.</p>
+        <h2 class="section-title">AI agent builder workflow: describe, brew, run</h2>
+        <p class="section-lede centered">From a plain-English brief to a production endpoint — without stitching together agent plumbing in between.</p>
+      </div>
+      <div class="workflow">
+        <article>
+          <h3>01 · Describe</h3>
+          <p>Tell SyntheticBrew what you need. Write a plain-English brief and the AI builder proposes the agents, tools, and flows — or skip the prompt and configure everything visually on the canvas.</p>
+        </article>
+        <article>
+          <h3>02 · Brew</h3>
+          <p>Agents assemble themselves: a supervisor plus specialists, tool bindings, confirmation gates, and memory scope. Each agent runs a ReAct reasoning loop out of the box — no framework code to write.</p>
+        </article>
+        <article>
+          <h3>03 · Run</h3>
+          <p>Ship to production behind a REST API with structured SSE streaming, the included web client, or an embeddable widget. Memory persists across sessions and every step stays inspectable.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">One prompt, a working system</p>
+        <h2 class="section-title">No-code AI agent builder: from one brief to a running agent team</h2>
+        <p class="section-lede">Give the builder a brief like <em>&ldquo;a support agent that answers from our docs, looks up orders, and escalates refunds.&rdquo;</em> It generates:</p>
+        <ul class="check-list">
+          <li><strong>A supervisor agent</strong> that owns the conversation and delegates to specialists.</li>
+          <li><strong>A docs specialist</strong> wired to a knowledge base, retrieving evidence with agentic RAG.</li>
+          <li><strong>An order-lookup tool binding</strong> to your orders API over MCP, scoped to that agent only.</li>
+          <li><strong>A gated refund escalation</strong> marked <code>confirm_before</code>, so it pauses for explicit approval before anything irreversible runs.</li>
+          <li><strong>Memory scope</strong> so the agent remembers the customer on the next conversation.</li>
+        </ul>
+        <p style="margin-top:24px">Want the concept-level walkthrough first? Read <a href="/blog/how-to-build-an-ai-agent/">how to build an AI agent, step by step</a>.</p>
+      </div>
+      <div>
+        <div class="code-window">
+          <div class="code-window-header"><span>Generated agent config</span><span>YAML</span></div>
+          <pre>{generatedConfig}</pre>
+        </div>
+        <p class="muted" style="margin-top:14px; font-size:.85rem">Every generated agent is plain configuration you can read, diff, and version — not a black box.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">Inspect and override</p>
+        <h2 class="section-title">Visual AI agent builder where the canvas stays the source of truth</h2>
+        <p class="section-lede">The canvas is not a diagram of the system — it is the system. Click any agent to inspect or override what was generated: system prompt, model choice, tool access, spawn rules, memory configuration. The admin dashboard puts every knob of the engine in one place, and the same configuration exports and imports as YAML for review in a pull request.</p>
+        <p style="margin-top:20px">That is the difference from drag-and-drop tools that stop at the prototype: generated agents run a real ReAct loop with per-agent step limits and a 120-second default turn duration, per-tool timeouts, and full session persistence. See how that compares in <a href="/compare/flowise/">SyntheticBrew vs Flowise</a>.</p>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin-agent-detail.png" alt="SyntheticBrew agent detail screen with prompt, model, tools, and memory configuration" caption="Drill into any agent: system prompt, model, tools, spawn rules, memory config — export or import as YAML." />
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Agents that build agents</p>
+        <h2 class="section-title">Build AI agents with an agent — the builder runs on its own engine</h2>
+        <p class="section-lede">The AI builder is itself a SyntheticBrew agent running on the same runtime it configures: the same ReAct loop, the same tool execution, the same streaming protocol. When you brief it, you are watching the platform use itself — which means the builder exercises every code path your agents will depend on in production.</p>
+        <p style="margin-top:20px">Product teams use this loop to go from an idea in a sprint-planning doc to a reviewable agent system the same day. If that is your situation, see <a href="/solutions/saas-product-teams/">SyntheticBrew for SaaS and product teams</a>.</p>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin-agents.png" alt="SyntheticBrew admin dashboard listing configured agents" caption="The admin dashboard: every knob of the engine in one place." />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <div class="callout">{feature.callout}</div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">Related capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">AI agent builder: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Describe the agent. Ship the system.</h2>
+      <p>Brief the builder in Cloud, self-host the open-source engine, or <a href={SITE.calendly} target="_blank" rel="noopener noreferrer">book a call</a> and have us deliver the implementation.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

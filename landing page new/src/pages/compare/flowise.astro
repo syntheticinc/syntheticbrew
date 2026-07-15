@@ -1,0 +1,62 @@
+---
+import ComparePage from '@/components/ComparePage.astro';
+const rows = [
+  { dim: 'What it is', sb: 'Embeddable AI agent runtime for your product', other: 'Visual drag-and-drop builder for LLM flows and chatbots' },
+  { dim: 'Core stack', sb: 'Go — one compiled binary + PostgreSQL', other: 'Node.js application with a visual canvas' },
+  { dim: 'Building model', sb: 'Declarative config + AI builder; canvas for inspection, config as source of truth', other: 'Drag nodes onto a canvas and wire them' },
+  { dim: 'Multi-agent', sb: 'Runtime supervisor/specialist delegation with spawn policies', other: 'Agent and multi-agent nodes composed on the canvas' },
+  { dim: 'Tenant context in tools', sb: 'End-user identity and custom headers forwarded into every tool call', other: 'Credentials per node/flow; per-request end-user context is your plumbing' },
+  { dim: 'Human confirmation', sb: 'Per-tool confirm-before gates', other: 'Human-in-the-loop patterns modeled in the flow' },
+  { dim: 'Grounding', sb: 'Vector RAG + typed knowledge graphs with generated, deterministic tools', other: 'Vector store and retriever nodes' },
+  { dim: 'Ops layer', sb: 'Sessions, memory, audit log, health, metrics, scoped tokens in the binary', other: 'You harden and operate the Node app; observability varies by setup' },
+  { dim: 'Widget', sb: 'Generated Shadow-DOM chat widget, one script tag', other: 'Embeddable chat widget available' },
+];
+const differs = [
+  {
+    title: 'Canvas for understanding, config for truth',
+    what: 'Flowise makes the canvas the program. SyntheticBrew gives you a visual canvas to inspect and edit agents, but the source of truth is declarative config you can review in git and apply atomically.',
+    why: 'Visual programs are fast to start and hard to govern: no diffs, no PR review, no rollback story. When the agent is production software, its definition needs the same lifecycle as the rest of your code.',
+  },
+  {
+    title: 'Typed grounding, not just vector recall',
+    what: 'Both products do vector RAG. SyntheticBrew adds typed knowledge graphs: declare your domain as JSON Schema and the engine generates deterministic retrieval tools with exact IDs, relationships, and full-recall counts.',
+    why: 'Vector search finds similar text; it cannot guarantee the agent quotes a real product ID or an actual price. For commerce, banking, and operations, “similar” is not “correct” — typed retrieval is what keeps agents from inventing records.',
+  },
+  {
+    title: 'Security review is part of the product',
+    what: 'Forwarded end-user identity, per-agent tool scopes, confirmation gates, Ed25519-signed JWTs, scoped tokens, and an immutable audit log ship in the runtime.',
+    why: 'Prototyping tools defer these questions to “later”. If your buyers have security teams, later is now — and retrofitting identity and audit onto a canvas app is harder than deploying a runtime that has them.',
+  },
+];
+const enterprise = [
+  'One compiled binary + PostgreSQL inside your perimeter — a stack security teams can reason about.',
+  'End-user identity forwarded to tools so your existing RBAC enforces itself.',
+  'Immutable audit trail of every agent action and tool call.',
+  'BSL 1.1 license with a fixed Apache 2.0 conversion date; multi-tenant self-hosting permitted.',
+];
+const faqs = [
+  { q: 'What are the best Flowise alternatives?', a: 'For visual flow building, Langflow is the closest sibling and Dify offers a fuller app studio. If your need has shifted from building flows to running production agents inside your own product — with tenancy, audit, and typed grounding — SyntheticBrew is the runtime-shaped alternative.' },
+  { q: 'Flowise vs Langflow vs SyntheticBrew?', a: 'Flowise (Node.js) and Langflow (Python) are both visual LLM-flow builders — great for prototyping chatbots and RAG pipelines. SyntheticBrew is agent infrastructure: a Go runtime your product calls over REST + SSE, with orchestration, scoped tools, memory, and audit built in. Prototype in a canvas if you like — ship on a runtime.' },
+  { q: 'Can I keep my Flowise prototype?', a: 'Yes — treat it as the spec. The prompts, retrieval choices, and tool ideas you validated in Flowise translate directly into SyntheticBrew agent configs and MCP tools, and your frontend swaps to the REST + SSE API or the generated widget.' },
+  { q: 'When is Flowise the better fit?', a: 'Quick internal chatbots, demos, and RAG experiments where drag-and-drop speed matters more than governance, tenancy, or typed grounding. It is one of the fastest ways to try an idea — which is a different job than running one.' },
+];
+const related = [
+  { label: 'SyntheticBrew vs Langflow', href: '/compare/langflow/' },
+  { label: 'SyntheticBrew vs Dify', href: '/compare/dify/' },
+  { label: 'SyntheticBrew vs n8n', href: '/compare/n8n/' },
+];
+---
+<ComparePage
+  competitor="Flowise"
+  title="Flowise Alternatives: SyntheticBrew vs Flowise"
+  description="Flowise alternatives: the visual LLM-flow builder vs SyntheticBrew’s production Go runtime — config-as-code, typed grounding, tenancy."
+  h1="Flowise alternatives: visual flow builder vs production agent runtime"
+  lede="Flowise is one of the fastest ways to prototype an LLM flow. SyntheticBrew is what you deploy when the prototype has to become a governed, tenant-aware product feature. Different jobs — here is how they compare."
+  rows={rows}
+  differs={differs}
+  enterprise={enterprise}
+  fitTitle="Prototype speed or production posture — you can have both, in order"
+  fitText="Validate the idea on a canvas if that is your team’s style. Then give it identity, boundaries, typed grounding, and an audit trail by deploying the open-source SyntheticBrew runtime — and let your product integrate through one API."
+  faqs={faqs}
+  related={related}
+/>

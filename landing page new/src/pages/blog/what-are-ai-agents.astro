@@ -1,0 +1,68 @@
+---
+import BlogPost from '@/components/BlogPost.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import { BLOG_MAP } from '@/data/blog';
+
+const post = BLOG_MAP['what-are-ai-agents'];
+const faqs = [
+  { q: 'What is the difference between an AI agent and a chatbot?', a: 'A chatbot generates responses; an AI agent takes actions. The agent runs a reason–act–observe loop: it decides what to do, calls tools (APIs, databases, searches), reads the results, and continues until the task is done. A chatbot answers your question about an order; an agent looks the order up and files the return.' },
+  { q: 'What is the difference between AI agents and agentic AI?', a: '“AI agent” names the system — a model with tools, memory, and a goal loop. “Agentic AI” names the property — the degree to which a system can pursue goals autonomously. In practice the terms are used interchangeably; what matters is the capability list: reasoning, tool use, memory, and bounded autonomy.' },
+  { q: 'Are AI agents actually useful today?', a: 'Yes, within clear limits. Grounded, tool-scoped agents reliably handle support triage, order lookups, guided operations, and internal workflows in production today — including named deployments like Kilo AIoT on SyntheticBrew. Fully autonomous agents pursuing open-ended goals remain research territory; production agents succeed because their boundaries are explicit.' },
+  { q: 'Do I need an AI agent or just RAG?', a: 'If users only need answers from documents, retrieval-augmented generation without tools may be enough. The moment they need lookups in live systems, actions with side effects, or multi-step work that adapts to results, you need an agent — with the security model that implies.' },
+];
+const faqSchema = [{
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+}];
+---
+<BlogPost post={post} extraSchema={faqSchema}>
+  <p>An <strong>AI agent</strong> is a system that uses a large language model not just to answer, but to <em>act</em>: it reasons about a goal, calls tools — APIs, databases, searches — observes the results, and repeats until the job is done or a boundary stops it. That loop, usually written <strong>reason → act → observe → repeat</strong>, is the whole difference between an agent and a chatbot.</p>
+  <p>A chatbot tells you what your return policy says. An agent checks the actual order, confirms it qualifies, and files the return — pausing for your approval before anything irreversible happens.</p>
+
+  <h2>How AI agents work: the reasoning loop</h2>
+  <p>Under the hood, every serious agent runs some version of the same cycle (the research literature calls it ReAct — reasoning and acting):</p>
+  <ol>
+    <li><strong>Reason:</strong> the model reads the goal, the conversation, and its memory, and decides the next step.</li>
+    <li><strong>Act:</strong> it calls a tool — “look up order #4521,” “search the policy docs,” “list devices with open alarms.”</li>
+    <li><strong>Observe:</strong> the tool result comes back and becomes part of the context.</li>
+    <li><strong>Repeat</strong> — until the task completes, a step limit is reached, or a rule requires a human to approve.</li>
+  </ol>
+  <p>Everything that makes agents production-ready lives around that loop: <strong>grounding</strong> (so answers come from your data, not the model’s imagination), <strong>memory</strong> (so it remembers the customer across sessions), <strong>tool scopes and confirmation gates</strong> (so it cannot do what it should not), and <strong>observability</strong> (so you can see every step it took, and why).</p>
+
+  <h2>Types of AI agents</h2>
+  <p>Textbooks list five classical types (reflex, model-based, goal-based, utility-based, learning). For building products, a practical taxonomy matters more:</p>
+  <ul>
+    <li><strong>Conversational agents</strong> — user-facing assistants that answer and act inside a chat: support agents, shopping assistants, domain copilots.</li>
+    <li><strong>Task agents</strong> — given a bounded job (“analyze this upload,” “draft rules for these devices”), they work in the background and report back.</li>
+    <li><strong>Multi-agent systems</strong> — a supervisor delegates to specialists, each with a narrow role and its own tools. This is how production teams keep agents reliable: small responsibilities, explicit handoffs. (See <a href="/features/multi-agent-orchestration/">multi-agent orchestration</a>.)</li>
+    <li><strong>Autonomous agents</strong> — open-ended goal pursuit with minimal supervision. The demos are spectacular; the production track record is thin. Treat autonomy as a dial you turn up as trust accumulates, not a starting point.</li>
+  </ul>
+
+  <h2>AI agent use cases that work today</h2>
+  <p>The pattern behind every successful deployment is the same: grounded knowledge + scoped tools + human checkpoints. Concretely:</p>
+  <ul>
+    <li><strong>Customer service</strong> — answer from approved docs, look up the customer’s real account, prepare refunds or changes for approval. (<a href="/solutions/customer-service/">Pattern</a>)</li>
+    <li><strong>Ecommerce</strong> — product discovery over a typed catalog, order status, guided returns. (<a href="/solutions/ecommerce/">Pattern</a>)</li>
+    <li><strong>Banking and regulated workflows</strong> — policy navigation and operations support with identity forwarding and audit trails. (<a href="/solutions/banking/">Pattern</a>)</li>
+    <li><strong>Manufacturing and IoT</strong> — permission-scoped questions over live device data, drafted rules and alarms, confirmed execution. This one runs in production today: <a href="/solutions/manufacturing-iot/">Kilo AIoT uses SyntheticBrew</a> as its agent layer.</li>
+    <li><strong>Inside any SaaS product</strong> — the general case: if the workflow lives behind an API, an agent can work it. (<a href="/solutions/saas-product-teams/">Pattern</a>)</li>
+  </ul>
+
+  <h2>What AI agents need to run in production</h2>
+  <p>The gap between an agent demo and an agent feature is infrastructure, not intelligence. Before one reaches your customers, something has to provide: an API with streaming progress, session persistence, cross-session memory, per-agent tool boundaries, forwarded user identity, confirmation gates, an audit log, and recovery behavior when a tool or model fails. That layer is the actual cost of agents — build it yourself (months), or deploy it as a product and configure your domain on top. That second option is what <a href="/">SyntheticBrew</a> is: open-source AI agent infrastructure, one Go binary, self-hosted or Cloud.</p>
+  <p>Ready to go deeper? The practical sequel to this article is <a href="/blog/how-to-build-an-ai-agent/">how to build an AI agent, step by step</a> — or compare the <a href="/compare/">platform approaches</a> if you are evaluating tools.</p>
+
+  <h2>What are AI agents: FAQ</h2>
+  <div class="faq">
+    {faqs.map((item) => (
+      <details>
+        <summary>{item.q}</summary>
+        <p>{item.a}</p>
+      </details>
+    ))}
+  </div>
+
+  <div style="margin-top:44px">
+    <CtaGroup centered />
+  </div>
+</BlogPost>

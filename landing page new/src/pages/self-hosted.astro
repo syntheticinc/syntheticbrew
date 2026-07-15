@@ -1,0 +1,143 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import Terminal from '@/components/Terminal.astro';
+import { SITE } from '@/data/site';
+
+const why = [
+  { title: 'Your data never leaves', text: 'Agents, knowledge, and conversations stay on your infrastructure. Nothing is shipped to a third-party cloud you do not control — the answer to data residency and on-premise AI requirements.' },
+  { title: 'Your own LLM keys, no markup', text: 'Bring your own keys for OpenAI, Anthropic, Google Gemini, Azure OpenAI, Ollama, OpenRouter, or any OpenAI-compatible provider such as DeepSeek and Mistral. You pay your LLM provider directly — no per-token platform markup, no metered runtime.' },
+  { title: 'You own it — no lock-in', text: 'Config-as-code in your repo. Open-source core under BSL 1.1, converting to Apache 2.0. It keeps running regardless of what happens to any vendor.' },
+  { title: 'Built in Go — production-grade', text: 'A single compiled binary: fast, concurrent, and lightweight, with per-tool 30-second timeouts, circuit breakers, and LLM retry built in. Not a prototyping toolkit — infrastructure built to run in production.' },
+];
+
+const rows = [
+  { dim: 'Where your data lives', sb: 'On your infrastructure — the runtime and PostgreSQL run inside your own security perimeter, on-premise or in your private cloud.', other: 'On the vendor’s cloud, under their terms, in the regions they offer.' },
+  { dim: 'Cost model', sb: 'Free to self-host. You pay your LLM provider directly — no per-token platform markup, no metered runtime.', other: 'Metered per request, per token, or per seat, with the platform sitting in your cost path.' },
+  { dim: 'Inspectability', sb: 'Open core — read the exact runtime your agents run on before you commit, and modify it.', other: 'A black box you cannot audit until you are already committed.' },
+  { dim: 'Model choice', sb: 'OpenAI, Anthropic, Google Gemini, Azure OpenAI, Ollama, OpenRouter, or any OpenAI-compatible provider — including fully local models via Ollama.', other: 'The models the vendor offers, on the vendor’s schedule.' },
+  { dim: 'Lock-in', sb: 'Config-as-code in your repo. BSL 1.1 converts to Apache 2.0 after four years.', other: 'Migrating away means rebuilding agents, knowledge, and integrations elsewhere.' },
+];
+
+const faqs = [
+  {
+    q: 'What does self-hosting an AI agent mean?',
+    a: 'Self-hosting means the agent runtime runs on infrastructure you control — your own servers, your VPC, or on-premise — rather than a third-party cloud. With SyntheticBrew it is a Docker Compose stack (the engine plus PostgreSQL), so your data and your LLM keys never leave your environment.',
+  },
+  {
+    q: 'Can I run AI agents on-premise or air-gapped?',
+    a: 'Yes. SyntheticBrew runs anywhere Docker runs — Linux, macOS, or Windows (WSL2) — including on-premise and private networks. Point it at a local model via Ollama for a fully private, air-gapped deployment, or at any hosted LLM with your own keys.',
+  },
+  {
+    q: 'Can I build a self-hosted AI chatbot into my product?',
+    a: 'Yes. Your product talks to the runtime over a REST API and receives structured server-sent events, so a self-hosted AI chatbot can live in your own frontend. You can also use the included web client or embed the generated widget.',
+  },
+  {
+    q: 'Is it really open source?',
+    a: 'The engine is source-available under BSL 1.1, which converts to Apache 2.0 after four years. You can read the exact production runtime your agents run on before you commit — and modify it.',
+  },
+  {
+    q: 'How much does self-hosting cost?',
+    a: 'The Community Edition is free to self-host, with no per-agent, step, session, or storage limits. You only pay your own LLM provider for tokens — there is no per-token platform markup.',
+  },
+];
+
+const schema = [
+  {
+    '@type': 'Article',
+    headline: 'Self-hosted AI agents — your infrastructure, your keys, your data',
+    description: 'Run AI agents on your own infrastructure with your own LLM keys in one Docker command. Open source, on-premise-ready, no vendor lock-in.',
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+<SiteLayout
+  title="Self-Hosted AI Agents, Open-Source | SyntheticBrew"
+  description="Run AI agents on your own infrastructure with your own LLM keys — one Docker command. Open-source core, on-premise-ready, no vendor lock-in."
+  keywords={['self-hosted AI', 'self-hosted AI chatbot', 'open-source AI agents', 'on-premise AI']}
+  schema={schema}
+>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">Your infrastructure, your keys</p>
+        <h1>Self-hosted AI agents — your infrastructure, your keys, your data.</h1>
+        <p class="hero-lede">Run AI agents on your own infrastructure with your own LLM keys. One Docker command, any supported LLM, and your data never leaves. Open source, on-premise-ready, no vendor lock-in.</p>
+        <div class="cta-group">
+          <a class="button" href="/download/">Self-host it</a>
+          <a class="button button-secondary" href={SITE.github} target="_blank" rel="noopener noreferrer">Star on GitHub ↗</a>
+        </div>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin/health.png" alt="SyntheticBrew self-hosted engine health dashboard" eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">Control, cost, sovereignty</p>
+      <h2 class="section-title">Why self-host AI agents?</h2>
+      <p class="section-lede">Control, cost, and sovereignty — without giving up capability.</p>
+      <div class="four-grid">
+        {why.map((item) => <article class="card" data-reveal><h3>{item.title}</h3><p>{item.text}</p></article>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow center">
+      <p class="eyebrow">Read it first</p>
+      <h2 class="section-title">Open-source AI agents you can read before you run</h2>
+      <p class="section-lede centered">The engine your agents run on is public on GitHub. Read the exact production infrastructure before you trust it — see that it scales, that it is real, that it is not amateur glue. Most platforms are a black box until you are already committed.</p>
+    </div>
+    <div class="container narrow" style="margin-top:14px">
+      <div class="callout">BSL 1.1 today, Apache 2.0 after four years. Free to self-host, embed, and modify.</div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Quick start</p>
+      <h2 class="section-title">Self-hosted AI setup: one Docker command</h2>
+      <p class="section-lede">Two containers — the engine and PostgreSQL. A working agent answering over a REST API in minutes.</p>
+      <Terminal command="curl -fsSL https://syntheticbrew.ai/releases/docker-compose.yml -o docker-compose.yml && docker compose up -d" />
+      <p class="muted center" style="margin-top:22px;font-size:.85rem">Full guide in the <a href="https://syntheticbrew.ai/docs/getting-started/quick-start/">quick start</a>. Prefer Kubernetes or a standalone binary? Both are supported.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">The trade you do not have to make</p>
+      <h2 class="section-title">Self-hosted AI vs closed cloud agent platforms</h2>
+      <table class="comparison-table">
+        <thead><tr><th>Dimension</th><th>Self-hosted SyntheticBrew</th><th>Closed cloud agent platforms</th></tr></thead>
+        <tbody>
+          {rows.map((row) => <tr><td><strong>{row.dim}</strong></td><td>{row.sb}</td><td>{row.other}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">Self-hosted AI: common questions</h2>
+      <div class="faq">{faqs.map((faq) => <details><summary>{faq.q}</summary><p>{faq.a}</p></details>)}</div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Your infrastructure. Your keys. Your agent.</h2>
+      <p>Download the Community Edition and have a self-hosted agent answering over a REST API in minutes — or read the engine first.</p>
+      <div class="cta-group centered">
+        <a class="button" href="/download/">Download Community Edition</a>
+        <a class="button button-secondary" href={SITE.github} target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+      </div>
+    </div>
+  </section>
+</SiteLayout>

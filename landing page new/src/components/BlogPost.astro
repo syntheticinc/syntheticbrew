@@ -1,0 +1,66 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import { SITE } from '@/data/site';
+import type { BlogPost } from '@/data/blog';
+import { BLOG_POSTS } from '@/data/blog';
+
+interface Props {
+  post: BlogPost;
+  extraSchema?: Record<string, unknown>[];
+}
+const { post, extraSchema = [] } = Astro.props;
+const related = BLOG_POSTS.filter((item) => item.slug !== post.slug).slice(0, 3);
+const displayDate = new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+const schema = [
+  {
+    '@type': 'Article',
+    headline: post.h1,
+    description: post.description,
+    datePublished: post.date,
+    author: { '@id': `${SITE.url}/#organization` },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew', logo: { '@type': 'ImageObject', url: `${SITE.url}/icon-512.png` } },
+    mainEntityOfPage: `${SITE.url}${post.path}`,
+  },
+  ...extraSchema,
+];
+---
+<SiteLayout title={post.title} description={post.description} keywords={post.keywords} schema={schema}>
+  <article>
+    <section class="content-hero">
+      <div class="container narrow">
+        <p class="eyebrow"><a href="/blog/">Blog</a> · {displayDate} · {post.readingMinutes} min read</p>
+        <h1>{post.h1}</h1>
+        <p>{post.description}</p>
+      </div>
+    </section>
+
+    <div class="container narrow article-prose">
+      <slot />
+    </div>
+
+    {related.length > 0 && (
+      <section class="section-compact">
+        <div class="container narrow">
+          <p class="eyebrow">Keep reading</p>
+          <div class="related-grid">
+            {related.map((item) => (
+              <a class="related-card" href={item.path}>
+                <small>Article</small>
+                <strong>{item.h1} <span aria-hidden="true">→</span></strong>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+
+    <section class="section-compact">
+      <div class="container bottom-cta">
+        <h2>See the runtime behind the argument.</h2>
+        <p>SyntheticBrew is open source — inspect the code, self-host it free, or book a call and have us deliver the implementation.</p>
+        <CtaGroup centered />
+      </div>
+    </section>
+  </article>
+</SiteLayout>

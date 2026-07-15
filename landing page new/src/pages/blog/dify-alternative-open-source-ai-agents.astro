@@ -1,0 +1,119 @@
+---
+import BlogPost from '@/components/BlogPost.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import { BLOG_MAP } from '@/data/blog';
+import { SITE } from '@/data/site';
+
+const post = BLOG_MAP['dify-alternative-open-source-ai-agents'];
+const faqs = [
+  { q: 'What is the best open-source Dify alternative?', a: 'For embedding AI agents into your own product, SyntheticBrew: a self-hosted Go runtime with dynamic multi-agent orchestration, forwarded tenant identity, per-tool confirmation, typed knowledge graphs, and a license that permits multi-tenant use. For building standalone AI apps visually, Flowise and Langflow are closer Dify substitutes.' },
+  { q: 'Is Dify really open source?', a: 'Dify’s license is a modified Apache 2.0 with added conditions: you may not operate a multi-tenant environment without written authorization, and you may not remove the Dify logo from the frontend. It is source-available with commercial restrictions. SyntheticBrew CE uses standard BSL 1.1 — multi-tenant self-hosting and embedding are permitted — and converts to Apache 2.0 after four years.' },
+  { q: 'Is SyntheticBrew harder to set up than Dify?', a: 'It is easier: two containers (engine + PostgreSQL) versus Dify’s thirteen in the default self-host stack. One curl command and docker compose up gets you the runtime, the admin dashboard, and the API.' },
+  { q: 'Can I migrate from Dify to SyntheticBrew?', a: 'Yes. Knowledge bases re-upload directly; workflow logic maps to supervisor/specialist agent configs; HTTP tools and MCP servers reconnect with per-agent scopes; and your frontend switches to the REST + SSE API or the generated widget. Most migrations are measured in days, and we offer a done-for-you option.' },
+];
+const faqSchema = [{
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+}];
+---
+<BlogPost post={post} extraSchema={faqSchema}>
+  <p>Dify is a well-known open-source AI app builder with a polished visual studio and a broad plugin ecosystem. If your team wants to build a standalone AI application inside a well-designed editor, Dify does that job well.</p>
+  <p>So why are you searching for a Dify alternative?</p>
+  <p>In our experience it is almost always the same reason: <strong>you are not building an AI app — you are building AI into <em>your</em> app.</strong> Multi-tenant, permission-aware, security-reviewed, embedded in a product your customers pay for. At that point Dify’s architecture and license both start working against you, and no amount of canvas polish fixes an architectural mismatch.</p>
+  <p>Think WordPress versus Strapi. WordPress is a superb platform for building <em>a site on WordPress</em>. But when you need a headless engine inside your own product, you reach for different infrastructure. Dify is the WordPress of AI apps. <strong>SyntheticBrew is the Strapi of AI agents</strong> — a headless, open-source runtime your product talks to over REST and SSE, invisible to your users.</p>
+  <p>Version-specific details below refer to Dify v1.15.0 (July 2026).</p>
+
+  <h2>What is Dify?</h2>
+  <p>Dify is an open-source(-ish — more on the license below) platform for building AI applications visually: chatbots, RAG pipelines, and workflows assembled from nodes on a canvas. It runs on a Python backend (Flask + Celery) with a Next.js frontend, supports a wide range of models, and ships knowledge-base retrieval, an Agent node, and since v1.6 two-way MCP support.</p>
+  <p>Credit where due — Dify shipped real improvements in 2026: a Human Input node for workflow-level approvals, real-time collaborative editing, a <code>difyctl</code> CLI, and an experimental sandboxed “Dify Agent”. For product managers and AI builders creating standalone apps, it is a mature studio.</p>
+  <p>The keyword in every sentence above is <em>app</em>. Dify’s center of gravity is applications built and operated inside Dify. The moment the requirement becomes “agents inside our existing product, on our identity model, under our audit regime,” you are shopping in a different category — whether you know it yet or not.</p>
+
+  <h2>SyntheticBrew vs Dify: side-by-side comparison</h2>
+  <table class="comparison-table">
+    <thead><tr><th>Dimension</th><th>SyntheticBrew</th><th>Dify</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Category</strong></td><td>Embeddable agent runtime (headless)</td><td>AI application studio</td></tr>
+      <tr><td><strong>Stack</strong></td><td>Go — one compiled binary + PostgreSQL</td><td>Python (Flask + Celery) + Next.js</td></tr>
+      <tr><td><strong>Self-host footprint</strong></td><td>2 containers</td><td>13 containers in the default v1.15 stack</td></tr>
+      <tr><td><strong>Multi-agent</strong></td><td>Dynamic runtime spawn + delegation with policies</td><td>Agent nodes in a workflow DAG; no runtime sub-agent spawning</td></tr>
+      <tr><td><strong>Tenant context in tools</strong></td><td>Per-request header forwarding (Authorization, org, user, custom)</td><td>Static per-server headers; no documented per-request forwarding</td></tr>
+      <tr><td><strong>Per-tool confirmation</strong></td><td>Yes — confirm-before on any tool</td><td>No — workflow-level Human Input node; per-tool request closed “not planned”</td></tr>
+      <tr><td><strong>MCP</strong></td><td>HTTP, SSE, streamable-HTTP, stdio; per-agent scoping</td><td>HTTP only; can also publish apps as MCP servers</td></tr>
+      <tr><td><strong>Structured grounding</strong></td><td>Typed knowledge graphs + vector RAG</td><td>Vector knowledge bases</td></tr>
+      <tr><td><strong>License</strong></td><td>Standard BSL 1.1 → Apache 2.0 after 4 years; multi-tenant allowed</td><td>Modified Apache 2.0; multi-tenant prohibited without written authorization; logo must stay</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Why a Go binary beats a 13-container Python stack in production</h2>
+  <p>“Core stack: Go vs Python” reads like trivia until you operate both. Here is what it actually means.</p>
+  <p>Dify’s default self-hosted deployment (v1.15.0) starts <strong>thirteen containers</strong>: the API, a Celery worker, a scheduler, the web frontend, Redis, a code-execution sandbox, a plugin daemon, an SSRF proxy, nginx, an init job, PostgreSQL, a vector database, and a collaboration websocket service. Each is a process to monitor, patch, size, and explain to your security team. Python services also carry a dependency tree that must be rebuilt and re-vetted with every release — that is the nature of the ecosystem, not a flaw in Dify’s engineering.</p>
+  <p>SyntheticBrew is <strong>one compiled Go binary plus PostgreSQL</strong>. Two containers. It idles in the low hundreds of megabytes of RAM and starts in seconds. There is no dependency tree to resolve at deploy time, because everything is compiled in.</p>
+  <p><strong>Why it matters:</strong> compiled, single-artifact runtimes are the profile of professional infrastructure — the reason ops teams standardize on tools built in Go. Fewer moving parts means fewer 3 a.m. pages, cheaper instances, faster security review, and a system one engineer can hold in their head. Prototyping stacks optimize for demo day; infrastructure optimizes for year three.</p>
+
+  <h2>Multi-tenant SaaS? Read the licenses first</h2>
+  <p>This is the paragraph that surprises most teams evaluating Dify for an embedded product.</p>
+  <p>Dify’s LICENSE is Apache 2.0 <em>with additional conditions</em>: you <strong>may not operate a multi-tenant environment</strong> without written authorization or a commercial license, and you may not remove or modify the Dify logo in the frontend. If you are embedding AI into a SaaS product — which is, by definition, multi-tenant — self-hosted Dify is not a free option. It is an enterprise negotiation.</p>
+  <p>SyntheticBrew Community Edition uses the <strong>standard BSL 1.1</strong> — the same recognized license model used by MariaDB, Sentry, and CockroachDB. Self-host it, embed it in your commercial product, run it multi-tenant: all permitted. The only restriction is reselling SyntheticBrew itself as a managed service, and the license automatically converts to Apache 2.0 after four years. No custom clauses, no logo requirements, nothing to negotiate.</p>
+  <div class="callout">Building a multi-tenant product? Check any platform's license terms before you architect around it. Ours is designed for exactly that use — <a href={SITE.calendly} target="_blank" rel="noopener noreferrer">book a fit call</a> if you want the fine print walked through.</div>
+
+  <h2>The Kilo test: five requirements a real product put on the table</h2>
+  <p>Kilo, an industrial IoT platform (12 microservices, multi-tenant), needed an AI assistant for its customers. Its requirements are a useful stress test because every embedded-agent project ends up with some version of them:</p>
+  <ol>
+    <li><strong>One orchestrator, five specialists.</strong> A supervisor that dynamically delegates to Rules, Alarms, Device, Dashboard, and Organization agents. In SyntheticBrew that is configuration — the supervisor spawns sub-agents at runtime under an explicit policy. Dify’s Agent node runs Function Calling or ReAct inside a workflow; one agent cannot spawn another at runtime, so you would emulate the team with six separate apps and routing middleware you maintain forever.</li>
+    <li><strong>Fifty domain tools, each scoped.</strong> Per-agent tool scoping means the rules agent physically cannot call billing tools. That boundary is a first-class SyntheticBrew concept.</li>
+    <li><strong>Tenant identity inside every tool call.</strong> When Tenant A asks “show my devices,” the tool must receive Tenant A’s organization ID — enforced by Kilo’s own RBAC. SyntheticBrew forwards Authorization, org, user, and custom headers from the inbound request into every tool call. Dify documents only static per-server headers, so tenant context becomes prompt-passed — the kind of workaround that fails a security review.</li>
+    <li><strong>“Delete 500 devices — are you sure?”</strong> Per-tool confirmation gates. SyntheticBrew: mark the tool <code>confirm_before</code>, done. Dify: the per-tool confirmation feature request was closed as “not planned”; the Human Input node pauses workflows, not tool calls.</li>
+    <li><strong>Operable by a small team.</strong> Two containers vs thirteen. Kilo’s verdict after go-live: “three to four weeks of work you get for docker compose up.”</li>
+  </ol>
+  <p>Kilo runs SyntheticBrew in production today — it is the named deployment behind our <a href="/solutions/manufacturing-iot/">manufacturing &amp; IoT pattern</a>.</p>
+
+  <h2>Dify pricing vs SyntheticBrew pricing</h2>
+  <p>Dify Cloud currently offers a free Sandbox (200 message credits), a Professional workspace at <strong>$590/year</strong> (5,000 credits/month, 3 members), and a Team workspace at <strong>$1,590/year</strong> (10,000 credits/month, 50 members), with usage metered in message credits and trigger events. Fair pricing for a hosted studio — but note the meters, and remember that self-hosting your multi-tenant product on Dify requires that enterprise conversation regardless.</p>
+  <p>SyntheticBrew Community Edition is <strong>free to self-host with no meters from us</strong> — no per-agent, per-step, per-session, or storage limits. You pay your LLM provider directly with your own keys, at cost, no markup. Cloud has a free tier if you would rather not operate anything, and enterprise/implementation work is scoped directly. Full details on the <a href="/pricing/">pricing page</a>.</p>
+
+  <h2>Dify vs n8n, Flowise, and LangChain</h2>
+  <p>Shortlists usually contain more than two names, so here is how they map:</p>
+  <ul>
+    <li><strong>Dify vs n8n:</strong> n8n is workflow automation with AI nodes — hundreds of app integrations, fair-code license (embedding requires a commercial license). Choose it for automations, not for embedded agents. <a href="/compare/n8n/">Our n8n comparison</a>.</li>
+    <li><strong>Dify vs Flowise / Langflow:</strong> lighter visual builders (Node.js / Python) — faster to start than Dify, fewer batteries included. Same category, smaller scope. <a href="/compare/flowise/">Flowise</a> · <a href="/compare/langflow/">Langflow</a>.</li>
+    <li><strong>Dify vs LangChain:</strong> a studio vs a code framework — with LangChain you write and operate everything yourself. <a href="/compare/langchain/">Our LangChain comparison</a>.</li>
+    <li><strong>SyntheticBrew</strong> sits in a fourth spot: not a studio, not a framework, not an automation tool — the production runtime you embed. <a href="/compare/dify/">The full spec-by-spec Dify comparison is here</a>.</li>
+  </ul>
+
+  <h2>The best AI agent platform for production teams: a buying checklist</h2>
+  <p>Whatever you pick — including if you pick Dify — walk in with these questions. They separate demo platforms from production infrastructure faster than any feature grid:</p>
+  <ul>
+    <li>Can one agent <strong>spawn and delegate to sub-agents at runtime</strong>, with concurrency limits and cycle detection?</li>
+    <li>Does the <strong>end user’s identity reach every tool call</strong> automatically, so your existing RBAC keeps enforcing itself?</li>
+    <li>Can you require <strong>human confirmation on a specific tool</strong>, not just somewhere in a workflow?</li>
+    <li>Is retrieval <strong>deterministic where it must be</strong> — typed entities, real IDs, full-recall counts — not just vector similarity?</li>
+    <li>Does the <strong>license permit multi-tenant, embedded commercial use</strong> without a negotiation?</li>
+    <li>Can your security team <strong>read the runtime’s source</strong> and audit every agent action after the fact?</li>
+    <li>Would your ops team rather run <strong>2 containers or 13</strong>?</li>
+  </ul>
+  <p>SyntheticBrew answers yes to every line — and each answer is verifiable in the <a href={SITE.github} target="_blank" rel="noopener noreferrer">open-source code</a>, not in a sales deck.</p>
+
+  <h2>How to switch from Dify to SyntheticBrew</h2>
+  <ol>
+    <li><strong>Deploy the runtime</strong> — one curl + <code>docker compose up -d</code> gets you the engine, PostgreSQL, and the admin dashboard (<a href="/download/">install options</a>).</li>
+    <li><strong>Re-upload knowledge</strong> — PDFs, DOCX, Markdown, text, and CSV ingest directly into schema-isolated knowledge bases; add a typed knowledge graph where exactness matters.</li>
+    <li><strong>Recreate agents as configuration</strong> — your validated prompts carry over; workflow branches become supervisor/specialist delegation, and the plain-English AI builder drafts the first version for you.</li>
+    <li><strong>Reconnect tools</strong> — HTTP tools and MCP servers register with per-agent scopes; mark destructive ones <code>confirm_before</code>.</li>
+    <li><strong>Point your product at the API</strong> — REST + SSE, the included web client, or the generated widget. Your frontend renders typed events instead of a spinner.</li>
+  </ol>
+  <p>Most teams complete this in days. If you would rather not do it at all, <a href="/build/">we deliver the implementation</a> — scoped, fixed-fee, with a 60-day warranty.</p>
+
+  <h2>Dify alternative FAQ</h2>
+  <div class="faq">
+    {faqs.map((item) => (
+      <details>
+        <summary>{item.q}</summary>
+        <p>{item.a}</p>
+      </details>
+    ))}
+  </div>
+
+  <div style="margin-top:44px">
+    <CtaGroup centered />
+  </div>
+</BlogPost>

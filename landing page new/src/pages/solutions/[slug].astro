@@ -1,0 +1,12 @@
+---
+import SolutionPage from '@/components/SolutionPage.astro';
+import { SOLUTIONS } from '@/data/site';
+
+export function getStaticPaths() {
+  return SOLUTIONS.map((solution) => ({ params: { slug: solution.slug }, props: { solution } }));
+}
+
+const { solution } = Astro.props;
+---
+
+<SolutionPage solution={solution} />

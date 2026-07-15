@@ -1,0 +1,165 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP } from '@/data/site';
+
+const feature = FEATURE_MAP['ai-agent-security'];
+const related = [FEATURE_MAP['ai-agent-observability'], FEATURE_MAP['mcp-integration'], FEATURE_MAP['self-hosted']];
+
+const risks = [
+  { risk: 'Prompt injection via tool output', control: 'Unknown and MCP tool output is risk-classified and wrapped before it reaches the model, so a poisoned document or API response cannot quietly rewrite the agent’s instructions.' },
+  { risk: 'Over-permissioned agents', control: 'Per-agent tool scoping: each specialist gets only its designated tools and MCP servers. A rules agent never silently gains billing tools.' },
+  { risk: 'Unauthorized data access', control: 'The end-user’s identity — Authorization, organization, user, and custom headers — is forwarded into every MCP and HTTP tool call, so your existing RBAC enforces itself on every request.' },
+  { risk: 'Rogue writes', control: 'confirm_before gates pause execution on consequential tools until the user explicitly approves — the agent proposes, a human disposes.' },
+  { risk: 'Token theft or forgery', control: 'Ed25519-only JWTs (algorithm-confusion attempts are rejected, expiry is required) plus scoped API tokens that are SHA-256-hashed at rest.' },
+  { risk: 'Admin surface exposure', control: 'Optional two-port split: the data plane serves chat while the entire admin plane sits on a separate port behind your VPN or firewall.' },
+];
+
+const authSnippet = `# API token — bb_ prefix + 64 hex chars,
+# shown once, SHA-256-hashed at rest
+bb_4f6c…64-hex…a91e
+
+# Scopes are a bitmask on the token:
+# chat · tasks · agents read/write · models
+# mcp · config · audit · admin …
+
+# JWT verification
+alg: EdDSA (Ed25519)   # the ONLY accepted algorithm
+exp: required          # unexpiring tokens rejected`;
+
+const faq = [
+  { q: 'How are API tokens stored?', a: 'Tokens use the format bb_ followed by 64 hex characters, are shown once at creation, and only their SHA-256 hash is stored at rest. Each token carries a scope bitmask — chat, tasks, agents read/write, models, MCP, config, audit, admin, and more — so a leaked narrow token cannot reach the admin surface.' },
+  { q: 'What does the audit log record?', a: 'Every consequential operation with actor type and subject, action, resource, a structured details JSON payload, session id, and task id. A separate tool-call log is queryable by session, tool, agent, status, user, and time.' },
+  { q: 'How are bring-your-own LLM keys handled?', a: 'BYOK per-request keys are used for the request and discarded — never stored and never logged. In self-hosted deployments your provider keys live in your own configuration, inside your own perimeter.' },
+  { q: 'Can a clever prompt give an agent extra tools?', a: 'No. Tool scopes are enforced by the runtime, not by the prompt: an agent can only call tools that were explicitly assigned to it in configuration. No instruction — from a user, a document, or another agent — can expand that set at runtime.' },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">{feature.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">Threats, mapped to controls</p>
+      <h2 class="section-title">AI agent security risks — and the boundary for each</h2>
+      <p class="section-lede">An agent is a program that writes its own next step, so every risk needs a boundary the model cannot talk its way past. Each of these controls is built into the runtime — not a gateway you bolt on later.</p>
+      <table class="comparison-table">
+        <thead><tr><th>Risk</th><th>Built-in control</th></tr></thead>
+        <tbody>
+          {risks.map((row) => <tr><td><strong>{row.risk}</strong></td><td>{row.control}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Enforced by the runtime, not the prompt</p>
+      <h2 class="section-title">Secure AI agents with runtime-enforced boundaries</h2>
+      <p class="section-lede">Prompts are suggestions; configuration is law. The three boundaries that matter most are all enforced below the model:</p>
+      <ul class="check-list">
+        <li><strong>Tamper-proof authentication.</strong> Ed25519 (EdDSA) is the only JWT algorithm the engine accepts — algorithm-confusion attacks are rejected outright, and every token must carry an expiry.</li>
+        <li><strong>Per-agent tool scoping.</strong> Each agent sees only the tools it was assigned. Delegation between specialists does not merge their permissions.</li>
+        <li><strong>Confirmation before consequence.</strong> Tools marked <code>confirm_before</code> stop the run and stream a confirmation event; execution resumes only on explicit approval.</li>
+        <li><strong>Forwarded identity.</strong> Your backend receives the real end-user’s Authorization, org, user, and custom tenant headers on every tool call — SyntheticBrew never becomes a super-user in your system.</li>
+      </ul>
+      <p style="margin-top:24px">Contrast this with wiring agents through a general-purpose automation tool, where one shared credential often acts for every user — a difference we walk through in <a href="/compare/n8n/">SyntheticBrew vs n8n</a>.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Credentials</p>
+        <h2 class="section-title">Agent tool security: scoped tokens and Ed25519-only JWTs</h2>
+        <p class="section-lede">Every credential in the system is designed to fail small.</p>
+        <ul class="check-list">
+          <li><strong>Scoped API tokens.</strong> A scope bitmask per token — chat, tasks, agents read/write, models, MCP, config, audit, admin — means a token for the chat API physically cannot touch configuration.</li>
+          <li><strong>Hashed at rest.</strong> Tokens (<code>bb_</code> + 64 hex characters) are shown once and stored only as a SHA-256 hash; a database leak does not leak usable credentials.</li>
+          <li><strong>BYOK, never retained.</strong> Per-request LLM keys are used and discarded — never stored, never logged.</li>
+          <li><strong>Embed safely.</strong> The chat widget enforces per-tenant <code>frame-ancestors</code> CSP, so your widget only loads on the origins you approved.</li>
+        </ul>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>Authentication model</span><span>how credentials fail small</span></div>
+        <pre>{authSnippet}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Network boundary</p>
+      <h2 class="section-title">AI agent security at the network layer: two-port deployment</h2>
+      <p class="section-lede">Self-hosted deployments can split the engine into two planes on separate ports. The external data plane (for example, port 8443) serves only the chat and agent APIs your product needs. The internal admin plane (for example, port 8444) carries the dashboard and every management API — and lives behind your VPN or firewall, unreachable from the internet even if the data plane is public.</p>
+      <p class="section-lede">The result: the surface an attacker can reach cannot reconfigure anything, and the surface that can reconfigure things is not reachable. Combined with audit trails from <a href="/features/ai-agent-observability/">agent observability</a>, this is the deployment shape that <a href="/solutions/banking/">banking workflows</a> and other <a href="/enterprise/">enterprise environments</a> expect.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">AI agent security: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">AI agent security pairs with these capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact section-tint">
+    <div class="container bottom-cta">
+      <h2>Give agents autonomy inside real boundaries</h2>
+      <p>Scoped tools, signed identity, confirmation gates, and an admin plane behind your VPN — start in Cloud or self-host inside your own perimeter.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

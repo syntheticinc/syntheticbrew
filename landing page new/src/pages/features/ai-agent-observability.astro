@@ -1,0 +1,178 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP } from '@/data/site';
+
+const feature = FEATURE_MAP['ai-agent-observability'];
+const related = [FEATURE_MAP['ai-agent-security'], FEATURE_MAP['multi-agent-orchestration'], FEATURE_MAP['self-hosted']];
+
+const events = [
+  { event: 'thinking', ui: 'A live reasoning indicator — the agent is working, and on what.' },
+  { event: 'message_delta', ui: 'Tokens streaming into the reply as they are generated.' },
+  { event: 'message', ui: 'A completed assistant message.' },
+  { event: 'tool_call', ui: 'Which tool the agent invoked, with its arguments.' },
+  { event: 'tool_result', ui: 'The outcome and status of that tool call.' },
+  { event: 'confirmation', ui: 'An approval prompt before a gated, consequential action runs.' },
+  { event: 'user_input_required', ui: 'The agent is paused, waiting on the user.' },
+  { event: 'agent_spawn', ui: 'A sub-agent was delegated part of the task.' },
+  { event: 'agent_result', ui: 'That sub-agent finished and handed its output back.' },
+  { event: 'structured_output', ui: 'A typed payload you can render as native UI — tables, cards, forms.' },
+  { event: 'agent.state_changed', ui: 'Agent status transitions during the run.' },
+  { event: 'done', ui: 'The run is complete, with its session id.' },
+  { event: 'error', ui: 'A failure, with detail — never a silent hang.' },
+];
+
+const metricsSnippet = `# Scraped by Prometheus
+syntheticbrew_http_requests_total
+syntheticbrew_http_request_duration_seconds
+syntheticbrew_active_sessions
+syntheticbrew_tool_calls_total{tool,status}
+syntheticbrew_llm_requests_total{provider,model}
+syntheticbrew_llm_request_duration_seconds
+
+# GET /api/v1/health -> status, version, uptime,
+# agents count, DB ping (503 when degraded)`;
+
+const faq = [
+  { q: 'What exactly is traced for each agent run?', a: 'Everything the run emitted: reasoning steps, streamed message deltas, every tool call with its result and status, sub-agent delegation and results, confirmations, state changes, errors, and completion. The full session event log is persisted, and the audit log adds actor type and subject, action, resource, a details JSON payload, session id, and task id for consequential operations.' },
+  { q: 'Can I replay a past agent session?', a: 'Yes. The complete event log of every session is persisted and replayable, so you can step through a production run after the fact — what the agent thought, which tools it called, what came back, and why it answered the way it did.' },
+  { q: 'Does SyntheticBrew integrate with Prometheus and Grafana?', a: 'Yes, with an Enterprise Edition license. The licensed engine exposes Prometheus metrics — HTTP request counts and latency, active sessions, tool calls labeled by tool and status, and LLM requests labeled by provider and model — so you can build Grafana dashboards and alert rules on the monitoring stack you already run. Health checks, the session event log, the tool-call log, and the audit trail are included in Community Edition.' },
+  { q: 'How long are event and audit logs retained?', a: 'As long as you decide. Logs live in the PostgreSQL instance of your deployment — Cloud or self-hosted — so retention is configurable in your environment rather than dictated by the platform.' },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">{feature.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">The execution protocol is the trace</p>
+      <h2 class="section-title">AI agent observability starts with a typed event stream</h2>
+      <p class="section-lede">An agent that only returns a final answer is a black box. SyntheticBrew streams 13 typed SSE event kinds while the agent works — the same events power your product UI, the admin dashboard's tool-call log, and the persisted session log, so everyone debugs the same run. SSE keep-alive signals keep long-running streams open through proxies and load balancers.</p>
+      <table class="comparison-table">
+        <thead><tr><th>Event</th><th>What your UI shows</th></tr></thead>
+        <tbody>
+          {events.map((row) => <tr><td><code>{row.event}</code></td><td>{row.ui}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">The operating checklist</p>
+      <h2 class="section-title">AI agent observability best practices</h2>
+      <p class="section-lede">What separates an agent you can operate from an agent you can only restart:</p>
+      <ul class="check-list">
+        <li><strong>Stream progress, not spinners.</strong> Render the typed events as visible steps — users trust an agent they can watch reason, delegate, and call tools.</li>
+        <li><strong>Persist the full event log for replay.</strong> When a production answer looks wrong, step through the exact run — every reasoning step, tool call, and result — instead of guessing from the final message.</li>
+        <li><strong>Audit every consequential action with actor context.</strong> Record who (or what) acted, on which resource, in which session — so a review question has an answer, not a shrug.</li>
+        <li><strong>Alert on circuit-breaker state and tool failure rates.</strong> Use the Prometheus tool-call metrics, labeled by tool and status, to catch a degrading MCP server before your users do.</li>
+        <li><strong>Correlate by session id.</strong> Event log, audit log, and tool-call log all carry the session id, so one identifier walks you across every record of a run.</li>
+      </ul>
+      <p style="margin-top:24px">These practices are what regulated deployments audit against — see how they apply in <a href="/solutions/banking/">AI agents for banking workflows</a> and across <a href="/enterprise/">the enterprise platform</a>.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Production signals</p>
+        <h2 class="section-title">LLM observability with Prometheus metrics and health checks</h2>
+        <p class="section-lede">The engine emits the numbers your existing monitoring stack expects — no sidecar, no agent-of-the-agent. The Prometheus endpoint activates with an Enterprise Edition license; health checks ship in Community Edition.</p>
+        <ul class="check-list">
+          <li><strong>Six metric families</strong> cover HTTP traffic and latency, active sessions, tool calls by tool and status, and LLM requests by provider and model.</li>
+          <li><strong>Health endpoint</strong> at <code>/api/v1/health</code> reports status, version, uptime, agents count, and a database ping — returning 503 when degraded, so your load balancer reacts automatically.</li>
+          <li><strong>Resilience is observable.</strong> Every tool call runs under a 30-second timeout; circuit breakers open after 3 failures in a 60-second window and retry after 120 seconds (closed → open → half-open, admin-resettable), and an LLM retry wrapper absorbs transient provider errors.</li>
+        </ul>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>Prometheus metrics</span><span>scrape targets</span></div>
+        <pre>{metricsSnippet}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">Operational evidence</p>
+        <h2 class="section-title">AI audit logs with actor, action, and resource</h2>
+        <p class="section-lede">Streaming tells you what is happening; the audit trail tells you what happened. Every consequential operation is recorded with actor type and subject, action, resource, a structured details JSON payload, session id, and task id.</p>
+        <ul class="check-list">
+          <li>A queryable tool-call log filters by session, tool, agent, status, user, and time — “show every failed call to the billing tool this week” is a query, not an archaeology project.</li>
+          <li>The persisted session event log captures the full run — every reasoning step, tool call, and result — and the admin dashboard makes every tool call across every session searchable and drill-in-able.</li>
+          <li>Observability and <a href="/features/ai-agent-security/">agent security</a> share the same records: the log that helps you debug is the log that answers your auditor.</li>
+        </ul>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin/audit-log.png" alt="SyntheticBrew audit log showing actor, action, and resource for agent operations" caption="Audit log: actor, action, and resource for every consequential operation — with session and task ids" />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">AI agent observability: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">AI agent observability pairs with these capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact section-tint">
+    <div class="container bottom-cta">
+      <h2>See every step your agents take</h2>
+      <p>Run an agent, open the tool-call log, and read every call it made — then wire the metrics into the monitoring you already trust.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

@@ -1,0 +1,63 @@
+---
+import ComparePage from '@/components/ComparePage.astro';
+const rows = [
+  { dim: 'What it is', sb: 'AI agent runtime you embed in your own product', other: 'Workflow automation platform with AI agent nodes' },
+  { dim: 'Center of gravity', sb: 'Agents that reason, delegate, and use scoped tools', other: 'Trigger → step → step automations across hundreds of app integrations' },
+  { dim: 'Core stack', sb: 'Go — one compiled binary + PostgreSQL', other: 'Node.js application, typically self-hosted via Docker' },
+  { dim: 'License', sb: 'BSL 1.1 → Apache 2.0 after four years; embed and self-host freely, multi-tenant allowed', other: 'Sustainable Use License (fair-code): source-available, but embedding or white-labeling in a commercial product requires an n8n commercial license' },
+  { dim: 'Multi-agent', sb: 'Supervisor delegates and spawns sub-agents dynamically at runtime', other: 'AI Agent nodes composed inside a workflow graph' },
+  { dim: 'Tenant context in tools', sb: 'Authorization, org, user, and custom headers forwarded into every tool call', other: 'Credentials are configured per workflow/connection; per-request end-user context is your plumbing' },
+  { dim: 'Human confirmation', sb: 'Per-tool confirm-before gates pause execution for approval', other: 'Wait/approval steps modeled inside the workflow' },
+  { dim: 'Product integration', sb: 'Headless REST + SSE API, embeddable chat widget', other: 'Workflows called via webhooks; the n8n editor is an internal tool, not a customer-facing surface' },
+  { dim: 'Grounding', sb: 'Vector RAG + typed knowledge graphs with generated retrieval tools', other: 'Vector store nodes and integrations you assemble per workflow' },
+];
+const differs = [
+  {
+    title: 'Agent-first, not automation-first',
+    what: 'n8n is an excellent automation tool that added AI nodes. SyntheticBrew is built around the agent loop itself: reasoning, delegation, scoped tools, memory, and typed grounding are the core product, not nodes in a canvas.',
+    why: 'Automations are deterministic pipelines; agents make decisions. When the AI is the product feature — a support agent, a domain copilot — you need runtime primitives (spawn, confirm-before, forwarded identity, audit) that a workflow canvas was never designed to express.',
+  },
+  {
+    title: 'A license built for embedding',
+    what: 'SyntheticBrew CE is standard BSL 1.1: self-host it, embed it in your commercial product, run it multi-tenant. n8n’s Sustainable Use License is fair-code — embedding it into a product you sell requires their commercial embed license.',
+    why: 'If you are building AI features into a SaaS you charge for, the license is not a footnote — it is the difference between shipping this sprint and a procurement negotiation.',
+  },
+  {
+    title: 'One binary your ops team will thank you for',
+    what: 'The whole runtime — orchestration, MCP execution, sessions, admin, audit — compiles into a single Go binary next to PostgreSQL.',
+    why: 'Every extra service is something to monitor, patch, and explain in a security review. Compiled, single-binary infrastructure is the professional-grade profile enterprises standardize on.',
+  },
+];
+const enterprise = [
+  'Embed commercially without a special license: BSL 1.1 with a fixed Apache 2.0 conversion date.',
+  'Forwarded end-user identity keeps your existing RBAC enforcing itself inside every tool call.',
+  'Immutable audit log, scoped API tokens, Ed25519-signed JWTs, and per-agent tool boundaries out of the box.',
+  'Self-host inside your perimeter with your own model keys — air-gap friendly with Ollama.',
+];
+const faqs = [
+  { q: 'What are the best n8n alternatives for AI agents?', a: 'If you are leaving n8n because AI agent workflows outgrew the automation canvas, you want an agent runtime rather than another automation tool: SyntheticBrew self-hosts as one Go binary and embeds in your product over REST + SSE. If you need general workflow automation with maximum app integrations, n8n itself, or tools in that category, remain the right shape.' },
+  { q: 'Can n8n and SyntheticBrew work together?', a: 'Yes, cleanly. Keep n8n for scheduled and event-driven automations, and call SyntheticBrew’s REST API when a step needs real agent reasoning — or expose your n8n webhooks to SyntheticBrew agents as HTTP tools. Many teams run automation and agent infrastructure side by side.' },
+  { q: 'Is n8n really not open source?', a: 'n8n is source-available under its Sustainable Use License (fair-code), which is not an OSI-approved open-source license. That works fine for internal automation, but embedding n8n in a commercial product requires a paid embed license. SyntheticBrew CE uses standard BSL 1.1 — embedding and multi-tenant self-hosting are permitted; only reselling it as a managed service is restricted, and it converts to Apache 2.0 after four years.' },
+  { q: 'When is n8n the better choice?', a: 'When the job is connecting many SaaS apps with scheduled or event-driven automations and the AI steps are occasional enrichments, n8n’s integration catalog and canvas are excellent. When the job is a production AI agent inside your product — with tenant isolation, approval gates, and grounded retrieval — that is SyntheticBrew’s territory.' },
+];
+const related = [
+  { label: 'SyntheticBrew vs Dify', href: '/compare/dify/' },
+  { label: 'SyntheticBrew vs Flowise', href: '/compare/flowise/' },
+  { label: 'SyntheticBrew vs LangChain', href: '/compare/langchain/' },
+  { label: 'Dify alternative — the full breakdown', href: '/blog/dify-alternative-open-source-ai-agents/' },
+];
+---
+<ComparePage
+  competitor="n8n"
+  title="n8n Alternatives for AI Agents: SyntheticBrew vs n8n"
+  description="n8n alternatives for AI agents: how SyntheticBrew’s embeddable Go runtime differs from workflow automation — licensing, multi-agent, tenancy."
+  h1="n8n alternatives: when AI agents outgrow workflow automation"
+  lede="n8n is a strong automation platform — hundreds of integrations, a capable canvas, AI agent nodes. But if the agent is the product you are shipping to customers, you are comparing an automation tool against agent infrastructure. Here is the full breakdown."
+  rows={rows}
+  differs={differs}
+  enterprise={enterprise}
+  fitTitle="Automation tool or agent infrastructure — pick the shape of your problem"
+  fitText="Connecting apps with scheduled automations? n8n is great at that, and the two products compose well together. Embedding a reasoning, tool-using, permission-aware AI agent into a commercial product? Deploy SyntheticBrew — the license, the runtime, and the security model were built for exactly that."
+  faqs={faqs}
+  related={related}
+/>

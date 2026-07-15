@@ -1,0 +1,203 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import Terminal from '@/components/Terminal.astro';
+
+const faq = [
+  { q: 'What is a knowledge graph for an LLM?', a: 'A knowledge graph is a typed model of your domain — entities (products, customers, records), their fields, and how they relate. Instead of asking the LLM to remember or guess those facts, the agent queries the graph for the real record. That makes answers grounded and deterministic rather than invented.' },
+  { q: 'Knowledge graph vs RAG — which should I use?', a: 'Use vector RAG for fuzzy search over unstructured documents (policies, articles, manuals). Use a knowledge graph for structured, typed lookups where exactness matters — IDs, statuses, relationships, prices. Most production agents need both, and SyntheticBrew runs them together.' },
+  { q: 'What is GraphRAG?', a: 'GraphRAG is retrieval-augmented generation backed by a knowledge graph instead of (or alongside) a vector index. The agent traverses typed entities to answer multi-hop questions accurately, then can fall back to vector search for free-text context.' },
+  { q: 'How do I build a knowledge graph for my AI agent?', a: 'In SyntheticBrew you declare your entities as JSON Schema, then run brewctl kg apply ./my-bundle. The engine validates references and generates the retrieval tools your agent uses automatically. The full walkthrough is in the Knowledge Graphs quickstart in the docs.' },
+];
+
+const schema = [
+  {
+    '@type': 'Article',
+    headline: 'Knowledge graphs for LLMs: stop your AI guessing your domain',
+    description: 'How knowledge graphs give LLMs typed, grounded retrieval, and when to use a knowledge graph vs RAG.',
+    author: { '@id': 'https://syntheticbrew.ai/#organization' },
+    publisher: { '@type': 'Organization', name: 'SyntheticBrew' },
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+
+const kgSchemaSample = `{
+  "$id": "brand",
+  "type": "object",
+  "x-id-field": "brand_id",
+  "properties": {
+    "brand_id":  { "type": "string" },
+    "name":      { "type": "string", "x-index": true },
+    "country":   { "type": "string", "x-index": true },
+    "parent_id": { "type": "string", "x-ref": "company" }
+  }
+}`;
+
+const taxonomyPanel = `category
+└─ footwear (Footwear)
+   ├─ north-aurora   tier: premium   hiking boots
+   ├─ stride-co      tier: mid       running shoes
+   └─ budget-basics  tier: budget    casual sneakers`;
+
+const declarationPanel = `# schemas/brand.schema.json
+x-id-field: code
+properties:
+  code:      { type: string }
+  category:  { type: string, x-ref: category, x-index: true }
+  tier:      { enum: [budget, mid, premium], x-index: true }
+
+$ brewctl kg apply ./my-bundle
+→ generated tools: list_brand(filters={category, tier}), get_brand(id)`;
+
+const answerPanel = `User:  "premium footwear brands?"
+
+tool_call   list_brand(filters={category:"footwear", tier:"premium"})
+tool_result 1 record
+
+Agent: "1 premium footwear brand: north-aurora.
+        Total returned: 1 — no missed records."`;
+---
+
+<SiteLayout
+  title="Knowledge Graphs for LLMs | SyntheticBrew"
+  description="How knowledge graphs give LLMs typed, grounded retrieval — and when to use a knowledge graph vs RAG. Stop your AI guessing your domain."
+  keywords={['knowledge graph LLM', 'LLM knowledge graph', 'knowledge graph vs RAG', 'GraphRAG', 'grounded retrieval']}
+  schema={schema}
+>
+  <section class="content-hero">
+    <div class="container">
+      <p class="eyebrow">Knowledge graphs for LLMs</p>
+      <h1>Knowledge graphs for LLMs: stop your AI guessing your domain</h1>
+      <p>Hallucinated facts are why most product AI never earns user trust. Declare your domain once and the engine generates deterministic retrieval tools — no invented IDs, full recall on structured queries. Open-source, self-hosted, GitOps-native.</p>
+      <CtaGroup compact />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow center">
+      <h2 class="section-title">What is a knowledge graph for an LLM?</h2>
+      <p class="section-lede centered">A knowledge graph is a typed model of your domain — your entities, their fields, and how they relate. Instead of trusting the model to recall or invent those facts, the agent queries the graph for the real record. The answer is grounded in your data, not the model’s imagination.</p>
+      <p class="section-lede centered">That is the difference between an AI that looks right in a demo and one you can put in front of a customer.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="center narrow">
+        <h2 class="section-title">Knowledge graph vs RAG: when to use which</h2>
+        <p class="section-lede centered">They solve different problems. Most production agents need both.</p>
+      </div>
+      <div class="split">
+        <article class="card">
+          <h3>Vector RAG — fuzzy document search</h3>
+          <p>Best for unstructured text: policies, manuals, articles, support history. Semantic recall over documents where there is no exact key to look up.</p>
+        </article>
+        <article class="card">
+          <h3>Knowledge graph — typed, exact lookups</h3>
+          <p>Best for structured facts: IDs, statuses, prices, relationships. Deterministic retrieval where a wrong or invented value is unacceptable.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <div class="center narrow">
+        <h2 class="section-title">How knowledge-graph RAG (GraphRAG) grounds answers</h2>
+        <p class="section-lede centered">Declare your domain once. The engine generates the retrieval tools. Your agent answers from real records.</p>
+      </div>
+      <div class="workflow">
+        <article><h3>You write</h3><p>Entities as JSON Schema: categories, brands, attributes — with <code>x-id-field</code>, <code>x-ref</code> relationships, and <code>x-index</code> filters.</p></article>
+        <article><h3>brewctl kg apply</h3><p>The engine validates every reference and builds the graph atomically — all entities valid, or rollback.</p></article>
+        <article><h3>Auto-generated tools</h3><p>Each entity type produces <code>list_X</code>, <code>get_X</code>, and opt-in <code>list_X_ids</code> MCP tools, filterable by any indexed field.</p></article>
+        <article><h3>Grounded agent</h3><p>The agent resolves real records — cited, exact, with total counts so it never silently misses one.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">Why it holds up in production</p>
+        <h2 class="section-title">Declarative-first, not extracted by an LLM</h2>
+        <ul class="check-list">
+          <li><strong>Zero extraction drift.</strong> Other platforms ask an LLM to extract entities from your docs. You declare them. JSON Schema in, typed MCP tools out.</li>
+          <li><strong>Full recall.</strong> Queries return total counts, so the agent never quietly drops an approved record.</li>
+          <li><strong>GitOps-native.</strong> Your domain lives in git: PR review, branching, atomic apply with rollback, Helm integration.</li>
+          <li><strong>Coexists with vector RAG and memory.</strong> Narrative search, structured retrieval, and cross-session memory on the same agent.</li>
+        </ul>
+        <p style="margin-top:24px"><strong>Updated in Knowledge Graphs 1.4:</strong> batch fetch (up to 500 records per call), summary projections, server-side sort, and range filters — by our measurements, cutting typical retrieval token cost by roughly 12×. Catalogs that outgrow one file split by directory.</p>
+      </div>
+      <div>
+        <div class="code-window">
+          <div class="code-window-header"><span>my-bundle/brand.schema.json</span><span>JSON Schema</span></div>
+          <pre>{kgSchemaSample}</pre>
+        </div>
+        <div style="margin-top:18px"><Terminal label="Deploy the graph" command="brewctl kg apply ./my-bundle" /></div>
+        <p style="margin-top:14px; font-size:.85rem"><a href="/docs/getting-started/knowledge-graphs-quickstart/">Full walkthrough in the Knowledge Graphs quickstart →</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <div class="center narrow">
+        <p class="eyebrow">A worked example</p>
+        <h2 class="section-title">Knowledge graph example: from taxonomy to a grounded answer</h2>
+        <p class="section-lede centered">One small catalog, end to end: what you declare, what the engine generates, and what your agent answers.</p>
+      </div>
+      <div class="three-grid">
+        <div class="code-window" data-reveal>
+          <div class="code-window-header"><span>1 · Your taxonomy</span><span>human-readable</span></div>
+          <pre>{taxonomyPanel}</pre>
+        </div>
+        <div class="code-window" data-reveal>
+          <div class="code-window-header"><span>2 · Your declaration</span><span>schema in, tools out</span></div>
+          <pre>{declarationPanel}</pre>
+        </div>
+        <div class="code-window" data-reveal>
+          <div class="code-window-header"><span>3 · Your agent’s answer</span><span>grounded, cited</span></div>
+          <pre>{answerPanel}</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">In the platform</p>
+        <h2 class="section-title">Knowledge graphs in SyntheticBrew (open-source)</h2>
+        <p class="section-lede">Knowledge graphs are built into SyntheticBrew, the open-source, self-hosted AI agent runtime. Run it in one Docker command, connect any LLM, and ground your agents in your own data — on your own infrastructure.</p>
+        <p style="margin-top:24px"><a class="button" href="/">See the platform</a> <a class="button button-secondary" href="/build/" style="margin-left:10px">Have us build it for you</a></p>
+      </div>
+      <PlatformScreenshot src="/screenshots/schemas-list.png" alt="SyntheticBrew schema list for typed knowledge graph definitions" caption="Typed knowledge-graph schemas—real platform screen" />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow">
+      <h2 class="section-title">Knowledge graphs for LLMs: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Ground your agents. Keep your data.</h2>
+      <p>Start in Cloud, self-host the open-source engine, or have us model your domain and deliver the implementation.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

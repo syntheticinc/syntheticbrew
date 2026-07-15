@@ -1,0 +1,61 @@
+---
+import ComparePage from '@/components/ComparePage.astro';
+const rows = [
+  { dim: 'What it is', sb: 'Embeddable AI agent runtime for your product', other: 'Visual builder for LLM flows and agents (Python)' },
+  { dim: 'Core stack', sb: 'Go — one compiled binary + PostgreSQL', other: 'Python application with a visual canvas' },
+  { dim: 'Building model', sb: 'Declarative config + AI builder; canvas for inspection, config in git', other: 'Drag-and-drop components wired on a canvas; flows exportable as JSON' },
+  { dim: 'Multi-agent', sb: 'Runtime supervisor/specialist delegation with spawn policies and cycle detection', other: 'Agent components composed within a flow' },
+  { dim: 'Tenant context in tools', sb: 'End-user identity and custom headers forwarded into every tool call', other: 'Credentials configured per component; per-request end-user context is your plumbing' },
+  { dim: 'Grounding', sb: 'Vector RAG + typed knowledge graphs with deterministic generated tools', other: 'Vector store and retriever components' },
+  { dim: 'Ops layer', sb: 'Sessions, memory, audit log, metrics, scoped tokens in one binary', other: 'You host and harden the Python app; production posture varies by deployment' },
+  { dim: 'Human confirmation', sb: 'Per-tool confirm-before gates', other: 'Modeled inside the flow where supported' },
+];
+const differs = [
+  {
+    title: 'From flow experiments to a governed runtime',
+    what: 'Langflow is built for visually exploring LLM pipelines. SyntheticBrew is built for operating agents: delegation policies, per-agent tool scopes, session persistence, and an immutable audit log are runtime features, not canvas patterns.',
+    why: 'The properties that get an AI feature approved for customers — who did what, with which permissions, gated by what confirmation — have to live in the runtime. A canvas can draw them; a runtime enforces them.',
+  },
+  {
+    title: 'A compiled binary instead of a Python deployment',
+    what: 'SyntheticBrew ships as one Go binary beside PostgreSQL. A production Langflow deployment is a Python service plus its dependency tree that your team hosts, scales, and patches.',
+    why: 'Go’s single-artifact model is why infrastructure teams standardize on compiled runtimes: ~100–200 MB of RAM, ~2-second startup, no dependency conflicts, one thing to audit. It is the difference between infrastructure and a running notebook.',
+  },
+  {
+    title: 'Deterministic domain retrieval',
+    what: 'Typed knowledge graphs let you declare entities once and get generated MCP tools that return exact records, relationships, and total counts — alongside ordinary vector RAG.',
+    why: 'Enterprise agents fail on invented IDs and half-recalled catalogs. Deterministic retrieval is what lets an agent answer from your system of record instead of its best guess.',
+  },
+];
+const enterprise = [
+  'Self-hosted Go runtime inside your perimeter; air-gap friendly with Ollama.',
+  'Ed25519-signed JWTs, scoped API tokens, per-agent tool boundaries, immutable audit log.',
+  'Optional two-port split keeps the admin plane behind your VPN while the data plane serves your product.',
+  'Open-source code your security team can actually read before committing.',
+];
+const faqs = [
+  { q: 'What are the best Langflow alternatives?', a: 'Flowise is the closest visual sibling (Node.js), and Dify offers a fuller application studio. If the goal is production AI agents embedded in your own product rather than visual prototyping, SyntheticBrew is the runtime alternative: one Go binary with orchestration, scoped tools, grounding, and audit built in.' },
+  { q: 'Langflow vs Flowise — does the choice matter?', a: 'They are similar canvases in different ecosystems (Python vs Node.js). Either is fine for prototyping. The bigger architectural decision is what runs the agent in production — a hosted canvas app or a purpose-built runtime your product calls through an API.' },
+  { q: 'Can I move a Langflow prototype to SyntheticBrew?', a: 'Yes. The flow you validated becomes agent configuration: prompts map to agent flows, components map to MCP or HTTP tools, retrievers map to knowledge bases or typed knowledge graphs. Your product then integrates over REST + SSE or the embeddable widget.' },
+  { q: 'When is Langflow the better fit?', a: 'Rapid experimentation, internal demos, and teams standardized on Python who want to sketch pipelines visually before committing to an architecture. For customer-facing, permission-aware agents, graduate to a runtime.' },
+];
+const related = [
+  { label: 'SyntheticBrew vs Flowise', href: '/compare/flowise/' },
+  { label: 'SyntheticBrew vs Dify', href: '/compare/dify/' },
+  { label: 'SyntheticBrew vs LangChain', href: '/compare/langchain/' },
+];
+---
+<ComparePage
+  competitor="Langflow"
+  title="Langflow Alternatives: SyntheticBrew vs Langflow"
+  description="Langflow alternatives: the visual Python flow builder vs SyntheticBrew’s production Go runtime — governance, typed grounding, tenancy."
+  h1="Langflow alternatives: visual prototyping vs production agent infrastructure"
+  lede="Langflow is a popular canvas for sketching LLM flows in the Python ecosystem. SyntheticBrew is the infrastructure those sketches graduate to: a self-hosted Go runtime with delegation policies, scoped tools, typed grounding, and an audit trail your security team will ask about."
+  rows={rows}
+  differs={differs}
+  enterprise={enterprise}
+  fitTitle="Sketch visually. Operate on infrastructure."
+  fitText="Keep Langflow for exploration if your team enjoys it. When the feature ships to customers, deploy the open-source SyntheticBrew runtime — and keep the iteration speed through config, the dashboard, and the plain-English builder."
+  faqs={faqs}
+  related={related}
+/>

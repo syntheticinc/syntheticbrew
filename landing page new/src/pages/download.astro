@@ -1,0 +1,94 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import Terminal from '@/components/Terminal.astro';
+import AgentInstallPicker from '@/components/AgentInstallPicker.astro';
+import { SITE } from '@/data/site';
+---
+<SiteLayout
+  title="Download & Install SyntheticBrew | MCP, Docker, Binary"
+  description="Install SyntheticBrew with your coding agent over MCP, with Docker Compose, or as a standalone binary. Community Edition is free to self-host, no time limit."
+  keywords={['download SyntheticBrew', 'install SyntheticBrew MCP', 'self-hosted AI agent', 'AI agent Docker']}
+>
+  <section class="content-hero"><div class="container"><p class="eyebrow">Community Edition &amp; Cloud</p><h1>Install SyntheticBrew: coding agent, Docker, or binary</h1><p>Let your coding agent set everything up over MCP, or self-host the full AI agent runtime — admin dashboard, REST and SSE API, and PostgreSQL-backed state included.</p></div></section>
+
+  <section class="section-compact"><div class="container narrow">
+    <h2>Install with your coding agent (MCP) <span class="accent">recommended</span></h2>
+    <p>Your coding agent connects to the SyntheticBrew MCP server and provisions a ready-to-embed agent for you — no dashboard clicking.</p>
+    <p>Create a free account at <a href="/register" data-analytics="mcp_register">/register</a>, then run the command for your agent below. Your browser opens to sign in — there is no token to copy.</p>
+    <AgentInstallPicker id="download" />
+    <h3 style="margin-top:34px">What happens next</h3>
+    <ol style="margin-top:14px">
+      <li>Add the MCP server with the command above.</li>
+      <li>Run the login command — a browser opens; create an account or sign in and approve.</li>
+      <li>Tell your agent what you need. It provisions the agent, configures it, and hands you the embed snippet.</li>
+    </ol>
+    <p style="margin-top:18px">Total time: under 5 minutes. No config files.</p>
+    <h3 style="margin-top:34px">Self-hosting?</h3>
+    <p>Point the same command at <code>&lt;your-engine-url&gt;/api/v1/mcp/rpc</code> and pass a token header — open <code>/admin</code> → API Keys → “Connect a coding agent” to mint one: <code>--header "Authorization: Bearer YOUR_TOKEN"</code>.</p>
+    <h3 style="margin-top:34px">No account yet? Ask our docs first:</h3>
+    <Terminal command="claude mcp add --transport sse syntheticbrew-docs https://mcp.syntheticbrew.ai/sse" label="Docs-search MCP server" />
+    <p style="margin-top:14px">A public docs-search MCP server with one <code>search_docs</code> tool — no signup.</p>
+  </div></section>
+
+  <section class="section-compact section-tint"><div class="container narrow">
+    <h2>Docker Compose <span class="accent">self-hosted</span></h2>
+    <p>Download the verified Compose configuration, then start SyntheticBrew Engine and PostgreSQL 16. Ready in about 30 seconds.</p>
+    <Terminal command="curl -fsSL https://syntheticbrew.ai/releases/docker-compose.yml -o docker-compose.yml" label="1 · Download configuration" />
+    <div style="height:12px"></div>
+    <Terminal command="docker compose up -d" label="2 · Start Engine + PostgreSQL" />
+    <p style="margin-top:22px">Open <code>http://localhost:8443/admin</code> to configure your first agent. To upgrade later, run <code>docker compose pull && docker compose up -d</code>.</p>
+  </div></section>
+
+  <section class="section-compact"><div class="container narrow">
+    <p class="eyebrow">Standalone binary</p><h2 class="section-title">Install without Docker</h2>
+    <p>The engine is open source — build the binary straight from the repository. You need Go 1.25+ and an existing PostgreSQL 14 or later database.</p>
+    <Terminal command="git clone https://github.com/syntheticinc/syntheticbrew && cd syntheticbrew/engine" label="1 · Clone the repository" />
+    <div style="height:12px"></div>
+    <Terminal command="go build -o syntheticbrew ./cmd/ce" label="2 · Build the Engine binary" />
+    <h3 style="margin-top:34px">After the build</h3>
+    <p>Point the Engine at your database, set a model key, and start it.</p>
+    <Terminal command={'export DATABASE_URL="postgresql://user:pass@host:5432/syntheticbrew"'} label="3 · Set database connection" />
+    <div style="height:12px"></div>
+    <Terminal command="export LLM_API_KEY=sk-..." label="4 · Set your model key" />
+    <div style="height:12px"></div>
+    <Terminal command="./syntheticbrew" label="5 · Start the Engine" />
+    <p style="margin-top:22px">Then open <code>http://localhost:8443/admin</code> to configure your first agent. The Engine automatically creates all tables on first start — no manual SQL needed. On Windows, use Docker Compose above or build with the same Go command in PowerShell.</p>
+  </div></section>
+
+  <section class="section-compact section-tint"><div class="container narrow">
+    <p class="eyebrow">Enterprise Edition</p><h2 class="section-title">Upgrade a self-hosted install to Enterprise Edition</h2>
+    <p>Enterprise Edition activates on top of Community Edition with a license file — no reinstall and no separate build. Without a license, the Engine keeps running as Community Edition.</p>
+    <ol style="margin-top:18px">
+      <li>Get your <code>license.jwt</code> from the SyntheticBrew dashboard.</li>
+      <li>Place it at <code>~/.syntheticbrew/license.jwt</code> on the host running the Engine.</li>
+      <li>Restart the Engine — licensed Enterprise Edition features are now active.</li>
+    </ol>
+    <p style="margin-top:18px">See what Enterprise Edition includes on the <a href="/pricing/" data-analytics="ee_pricing_link">pricing page</a>.</p>
+  </div></section>
+
+  <section class="section"><div class="container narrow"><h2>System requirements</h2><table class="comparison-table"><thead><tr><th>Resource</th><th>Docker Compose</th><th>Binary</th></tr></thead><tbody><tr><td>Docker</td><td>20.10+</td><td>Not needed</td></tr><tr><td>Go toolchain</td><td>Not needed</td><td>1.25+ (build from source)</td></tr><tr><td>CPU</td><td>1 core; 2+ recommended</td><td>Same</td></tr><tr><td>RAM</td><td>1 GB; 2 GB+ recommended</td><td>512 MB plus PostgreSQL</td></tr><tr><td>Disk</td><td>500 MB plus data</td><td>100 MB plus PostgreSQL data</td></tr><tr><td>PostgreSQL</td><td>Included</td><td>14+ required</td></tr><tr><td>Network</td><td>Outbound to your LLM provider</td><td>Same</td></tr></tbody></table>
+    <h3 style="margin-top:34px">Keep going with the docs</h3>
+    <p style="margin-top:16px"><a class="button" href="/docs/getting-started/quick-start/" data-analytics="self_host_quickstart">Quick start: your first agent →</a></p>
+    <p style="margin-top:14px"><a href="/docs/deploy/docker/">Docker deployment guide</a> · <a href="/docs/deploy/kubernetes/">Kubernetes deployment with the Helm chart</a></p>
+  </div></section>
+
+  <section class="section-compact section-tint"><div class="container">
+    <p class="eyebrow">After install</p>
+    <h2 class="section-title">Connect SyntheticBrew to your product</h2>
+    <div class="related-grid">
+      <a class="related-card" href="/docs/integration/connect-coding-agent/#step-4-embed-the-chat-widget" data-analytics="integration_widget"><small>Chat widget</small><strong>Generate it in the Admin Dashboard — one script tag →</strong></a>
+      <a class="related-card" href="/docs/integration/rest-api/" data-analytics="integration_rest"><small>REST API + SSE</small><strong>{'POST /api/v1/agents/{name}/chat'} →</strong></a>
+      <a class="related-card" href="/docs/integration/connect-coding-agent/" data-analytics="integration_mcp"><small>MCP tools</small><strong>provision_agent from your coding agent →</strong></a>
+    </div>
+  </div></section>
+
+  <section class="section-compact"><div class="container">
+    <p class="eyebrow">Open source</p>
+    <h2 class="section-title">SyntheticBrew community: GitHub and docs</h2>
+    <div class="related-grid">
+      <a class="related-card" href={SITE.github} target="_blank" rel="noopener noreferrer" data-analytics="community_github"><small>GitHub</small><strong>Star, fork, contribute →</strong></a>
+      <a class="related-card" href="/docs/" data-analytics="community_docs"><small>Documentation</small><strong>Guides, API reference, examples →</strong></a>
+    </div>
+    <p class="muted" style="margin-top:22px">Licensed under BSL 1.1 — free to self-host, converting to Apache 2.0 after four years.</p>
+  </div></section>
+</SiteLayout>

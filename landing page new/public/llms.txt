@@ -1,0 +1,69 @@
+# SyntheticBrew Engine
+
+> Open infrastructure for production AI agents. Use Cloud, self-host Community Edition, or have SyntheticBrew deliver the implementation.
+
+SyntheticBrew is open-source AI agent infrastructure: a production runtime with multi-agent orchestration, MCP and HTTP tool execution, persistent sessions and memory, agentic RAG, typed knowledge graphs, a background task system, an admin dashboard, and REST plus structured SSE APIs.
+
+## Start here
+
+- [Website](https://syntheticbrew.ai/)
+- [Documentation](https://syntheticbrew.ai/docs/)
+- [Quick start](https://syntheticbrew.ai/docs/getting-started/quick-start/)
+- [Cloud registration](https://syntheticbrew.ai/register)
+- [GitHub repository](https://github.com/syntheticinc/syntheticbrew)
+- [Authentication for automated clients](https://syntheticbrew.ai/auth.md)
+- [API catalog](https://syntheticbrew.ai/.well-known/api-catalog)
+- [MCP server card](https://syntheticbrew.ai/.well-known/mcp/server-card.json)
+- [Agent Skills index](https://syntheticbrew.ai/.well-known/agent-skills/index.json)
+
+## Markdown mirrors
+
+Every page on this site returns a markdown version when requested with `Accept: text/markdown` (Content-Type: text/markdown). HTML stays the default.
+
+## Core capabilities
+
+- [AI agent builder](https://syntheticbrew.ai/features/ai-agent-builder/)
+- [Multi-agent orchestration](https://syntheticbrew.ai/features/multi-agent-orchestration/)
+- [MCP integration](https://syntheticbrew.ai/features/mcp-integration/)
+- [Persistent agent memory](https://syntheticbrew.ai/features/agent-memory/)
+- [Agentic RAG and knowledge](https://syntheticbrew.ai/features/agentic-rag/)
+- [Typed knowledge graphs](https://syntheticbrew.ai/knowledge-graphs/)
+- [Agent observability](https://syntheticbrew.ai/features/ai-agent-observability/)
+- [Agent security](https://syntheticbrew.ai/features/ai-agent-security/)
+- [REST, SSE, web, and widget integrations](https://syntheticbrew.ai/features/product-integrations/)
+- [Self-hosted deployment](https://syntheticbrew.ai/self-hosted/)
+
+## Comparisons and articles
+
+- [SyntheticBrew vs Dify](https://syntheticbrew.ai/compare/dify/)
+- [LangChain alternatives](https://syntheticbrew.ai/compare/langchain/)
+- [n8n alternatives for AI agents](https://syntheticbrew.ai/compare/n8n/)
+- [CrewAI alternatives](https://syntheticbrew.ai/compare/crewai/)
+- [Flowise alternatives](https://syntheticbrew.ai/compare/flowise/)
+- [Langflow alternatives](https://syntheticbrew.ai/compare/langflow/)
+- [All comparisons hub](https://syntheticbrew.ai/compare/)
+- [Blog](https://syntheticbrew.ai/blog/)
+- [Dify alternative: the full breakdown](https://syntheticbrew.ai/blog/dify-alternative-open-source-ai-agents/)
+- [LangChain vs LangGraph](https://syntheticbrew.ai/blog/langchain-vs-langgraph/)
+- [How to build an AI agent](https://syntheticbrew.ai/blog/how-to-build-an-ai-agent/)
+- [What are AI agents?](https://syntheticbrew.ai/blog/what-are-ai-agents/)
+
+## Solution patterns
+
+- [Customer service](https://syntheticbrew.ai/solutions/customer-service/)
+- [Ecommerce](https://syntheticbrew.ai/solutions/ecommerce/)
+- [Banking](https://syntheticbrew.ai/solutions/banking/)
+- [Manufacturing and IoT](https://syntheticbrew.ai/solutions/manufacturing-iot/)
+- [SaaS and product teams](https://syntheticbrew.ai/solutions/saas-product-teams/)
+
+## MCP endpoints for coding agents
+
+- Cloud MCP server (OAuth sign-in, provisions agents end-to-end): https://app.syntheticbrew.ai/api/v1/mcp/rpc
+- Public docs-search MCP server (SSE, one search_docs tool, no signup): https://mcp.syntheticbrew.ai/sse
+- Self-hosted engines expose the same MCP surface at <engine-url>/api/v1/mcp/rpc with a Bearer token.
+
+## Integration model
+
+Your application sends a chat request to the Engine REST API. SyntheticBrew performs agent reasoning, delegation, MCP or HTTP tool execution, confirmation gates, and session persistence on the server. The application receives structured SSE events such as agent_spawn, tool_call, tool_result, confirmation, message_delta, error, and done.
+
+Authentication and tenant context can be forwarded to MCP servers through configured headers. Your domain API remains responsible for authorization and tenant isolation.

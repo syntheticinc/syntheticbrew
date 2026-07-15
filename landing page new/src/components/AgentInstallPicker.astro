@@ -1,0 +1,121 @@
+---
+// "Pick your coding agent" install widget: tab chips per agent + the exact
+// install command(s), with copy buttons. Commands live in ONE place; used on
+// the download page (and anywhere else that needs the MCP install path).
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+
+const CLOUD_URL = 'https://app.syntheticbrew.ai/api/v1/mcp/rpc';
+const mcpJson = `{ "mcpServers": { "syntheticbrew": { "type": "http", "url": "${CLOUD_URL}" } } }`;
+const vscodeJson = `{"name":"syntheticbrew","type":"http","url":"${CLOUD_URL}"}`;
+
+type AgentTab = {
+  key: string;
+  label: string;
+  note: string;
+  blocks: { command: string; prompt?: string }[];
+};
+
+const AGENTS: AgentTab[] = [
+  {
+    key: 'claude',
+    label: 'Claude Code',
+    note: 'A browser opens to sign in — no token to copy.',
+    blocks: [
+      { command: `claude mcp add --transport http syntheticbrew ${CLOUD_URL}` },
+      { command: 'claude mcp login syntheticbrew' },
+    ],
+  },
+  {
+    key: 'codex',
+    label: 'Codex',
+    note: 'A browser opens to sign in — no token to copy.',
+    blocks: [
+      { command: `codex mcp add syntheticbrew --url ${CLOUD_URL}` },
+      { command: 'codex mcp login syntheticbrew' },
+    ],
+  },
+  {
+    key: 'cursor',
+    label: 'Cursor',
+    note: 'Add to ~/.cursor/mcp.json — Cursor opens a browser to sign in.',
+    blocks: [{ command: mcpJson, prompt: '' }],
+  },
+  {
+    key: 'vscode',
+    label: 'VS Code',
+    note: 'VS Code opens a browser to sign in.',
+    blocks: [{ command: `code --add-mcp '${vscodeJson}'` }],
+  },
+  {
+    key: 'any',
+    label: 'Any MCP client',
+    note: 'mcpServers config for any MCP client that supports OAuth.',
+    blocks: [{ command: mcpJson, prompt: '' }],
+  },
+];
+---
+
+<div class="agent-picker" data-aip={id}>
+  <div class="aip-tabs" role="tablist" aria-label="Coding agent">
+    {AGENTS.map((agent, index) => (
+      <button type="button" role="tab" aria-selected={index === 0 ? 'true' : 'false'} data-aip-tab={agent.key} class="aip-tab">
+        {agent.label}
+      </button>
+    ))}
+  </div>
+
+  {AGENTS.map((agent, index) => (
+    <div data-aip-panel={agent.key} class="aip-panel" hidden={index !== 0}>
+      <p class="aip-note">{agent.note}</p>
+      {agent.blocks.map((block) => (
+        <div class="code-window aip-block">
+          <div class="code-window-header"><span>Terminal</span><button type="button" class="aip-copy" data-copy={block.command}>Copy</button></div>
+          <pre><code>{(block.prompt ?? '$') && <span class="aip-prompt">{block.prompt ?? '$'} </span>}{block.command}</code></pre>
+        </div>
+      ))}
+    </div>
+  ))}
+</div>
+
+<script>
+  function initAgentPickers() {
+    document.querySelectorAll<HTMLElement>('[data-aip]').forEach((root) => {
+      if (root.dataset.initialized) return;
+      root.dataset.initialized = 'true';
+
+      const tabs = root.querySelectorAll<HTMLButtonElement>('[data-aip-tab]');
+      tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+          const key = tab.dataset.aipTab;
+          if (!key) return;
+          tabs.forEach((t) => t.setAttribute('aria-selected', t === tab ? 'true' : 'false'));
+          root.querySelectorAll<HTMLElement>('[data-aip-panel]').forEach((panel) => {
+            panel.hidden = panel.dataset.aipPanel !== key;
+          });
+        });
+      });
+
+      root.querySelectorAll<HTMLButtonElement>('.aip-copy').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const text = button.dataset.copy ?? '';
+          try {
+            await navigator.clipboard.writeText(text);
+            button.textContent = 'Copied!';
+            setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+          } catch {
+            button.textContent = 'Select & copy';
+          }
+        });
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAgentPickers);
+  } else {
+    initAgentPickers();
+  }
+</script>

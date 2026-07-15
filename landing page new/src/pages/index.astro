@@ -1,0 +1,213 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import CoffeeHero from '@/components/CoffeeHero.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import ProviderLogos from '@/components/ProviderLogos.astro';
+import HeroDemo from '@/components/HeroDemo';
+import { FEATURES, SITE, SOLUTIONS } from '@/data/site';
+
+const problems = [
+  { title: 'Built it yourself', text: '3–6 months of agent plumbing: orchestration, memory, tool calling, retries, observability. Your product waits while your team rebuilds infrastructure.' },
+  { title: 'Closed cloud platforms', text: '$500–2,000/mo with per-token markup that scales with usage. Your product and customer data leave your environment, and the runtime belongs to someone else.' },
+  { title: 'Python frameworks', text: 'A library, not a product. No REST API, no admin UI, no session persistence. You are still building the runtime — and every upgrade risks breaking changes.' },
+];
+
+const schema = {
+  '@type': 'FAQPage',
+  mainEntity: [
+    { '@type': 'Question', name: 'What is SyntheticBrew?', acceptedAnswer: { '@type': 'Answer', text: 'SyntheticBrew is open-source AI agent infrastructure: a production runtime with multi-agent orchestration, MCP tools, agentic RAG, typed knowledge graphs, persistent memory, REST and SSE APIs, and an admin dashboard.' } },
+    { '@type': 'Question', name: 'Can SyntheticBrew be self-hosted?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. Community Edition runs with Docker Compose, Kubernetes with Helm, or a standalone binary with your own PostgreSQL and LLM keys.' } },
+    { '@type': 'Question', name: 'Does SyntheticBrew support MCP?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. SyntheticBrew connects to MCP servers over HTTP, SSE, streamable-HTTP, and stdio, scopes tools per agent, forwards authentication context, executes tools server-side, and supports confirmation gates.' } },
+    { '@type': 'Question', name: 'How much does SyntheticBrew cost?', acceptedAnswer: { '@type': 'Answer', text: 'Community Edition is free to self-host with no usage limits. Cloud is priced by monthly active users with unlimited messages: a free tier, Pro at $49/month, Business at $199/month, and custom Enterprise plans. Bring your own LLM key — no token markup.' } },
+  ],
+};
+---
+
+<SiteLayout
+  title="Open-Source AI Agent Infrastructure | SyntheticBrew"
+  description="Open-source AI agent infrastructure: multi-agent orchestration, MCP tools, grounded knowledge, and memory. Self-host, use Cloud, or have us build it."
+  keywords={['open source AI agents', 'AI agent infrastructure', 'AI agent orchestration', 'MCP integration', 'self-hosted AI', 'agentic RAG']}
+  schema={schema}
+>
+  <section class="home-hero">
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Open infrastructure for AI agents</p>
+        <h1 class="display">Open-source AI agent infrastructure that <span class="accent">runs in production.</span></h1>
+        <p class="hero-lede">Build, connect, and run AI agents with multi-agent orchestration, MCP tools, grounded knowledge, and persistent memory — on your infrastructure or ours. One Go binary, your models, your data. Your coding agent can <a href="/download/">install it over MCP in minutes</a>.</p>
+        <CtaGroup />
+        <div class="hero-proof" aria-label="Platform highlights">
+          <span>Open-source core</span>
+          <span>Any LLM</span>
+          <span>REST + SSE</span>
+          <span>MCP-native</span>
+        </div>
+      </div>
+      <CoffeeHero />
+    </div>
+    <div class="container hero-demo-wrap">
+      <HeroDemo client:visible />
+      <p class="hero-demo-caption">Live demo: your coding agent installs SyntheticBrew over MCP, then the agent answers with real tool calls. Hover to pause.</p>
+    </div>
+  </section>
+
+  <ProviderLogos />
+
+  <section class="section section-tint">
+    <div class="container">
+      <div class="center narrow">
+        <p class="eyebrow">The production gap</p>
+        <h2 class="section-title">AI agent orchestration without months of infrastructure work</h2>
+        <p class="section-lede centered">An AI agent demo takes a day. The runtime behind it — sessions, memory, tool execution, recovery, audit — takes months. SyntheticBrew ships that runtime as one system your team can inspect and operate.</p>
+      </div>
+      <div class="three-grid">
+        {problems.map((problem, index) => (
+          <article class="card problem-card" data-reveal>
+            <span class="card-number">0{index + 1}</span>
+            <h3>{problem.title}</h3>
+            <p>{problem.text}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">AI agent builder</p>
+        <h2 class="section-title">No-code AI agent builder: describe it, inspect every decision</h2>
+        <p class="section-lede">The AI builder turns a plain-language brief into agents, tools, memory, and flows. The visual canvas keeps the result understandable and editable before you ship it.</p>
+        <ul class="check-list">
+          <li>Generate a supervisor and specialist agents from one prompt.</li>
+          <li>Bind MCP tools and models with explicit scopes.</li>
+          <li>Add gates, delegation, and persistent memory visually.</li>
+          <li>Test the real run in chat with every tool step visible.</li>
+        </ul>
+        <p style="margin-top: 28px"><a class="button button-secondary" href="/features/ai-agent-builder/">Explore the builder <span aria-hidden="true">→</span></a></p>
+      </div>
+      <PlatformScreenshot src="/screenshots/canvas-with-ai-builder.png" alt="SyntheticBrew AI agent builder and visual orchestration canvas" caption="AI builder and visual canvas—real platform screen" />
+    </div>
+  </section>
+
+  <section class="section section-tint" id="features">
+    <div class="container">
+      <p class="eyebrow">Platform features</p>
+      <h2 class="section-title">AI agent capabilities: reason, act, remember, recover</h2>
+      <p class="section-lede">Use the complete runtime or start with the capability blocking your team today. Each feature shares one API, one operational model, and one deployment choice.</p>
+      <div class="feature-grid">
+        {FEATURES.map((feature) => (
+          <a class="feature-card" href={feature.path} data-reveal>
+            <small>{feature.eyebrow}</small>
+            <span class="arrow" aria-hidden="true">↗</span>
+            <div>
+              <h3>{feature.shortTitle}</h3>
+              <p>{feature.lede}</p>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">MCP integration</p>
+        <h2 class="section-title">MCP integration: give AI agents tools without losing your security model</h2>
+        <p class="section-lede">SyntheticBrew executes MCP tools server-side, forwards the authenticated user and organization context, and pauses before configured destructive actions.</p>
+        <ul class="check-list">
+          <li>Connect HTTP, SSE, streamable-HTTP, and stdio MCP servers.</li>
+          <li>Scope tool access separately for every specialist.</li>
+          <li>Forward Authorization, org, user, and custom tenant headers.</li>
+          <li>Stream tool calls, results, and confirmations to any frontend.</li>
+        </ul>
+        <p style="margin-top: 28px"><a class="button button-secondary" href="/features/mcp-integration/">See MCP integration <span aria-hidden="true">→</span></a></p>
+      </div>
+      <PlatformScreenshot src="/screenshots/admin/mcp-servers.png" alt="MCP server configuration in the SyntheticBrew admin dashboard" caption="MCP server administration—real platform screen" />
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container split">
+      <div>
+        <p class="eyebrow" style="color:#ff8a74">A thin integration surface</p>
+        <h2 class="section-title">How to integrate an AI agent into your app</h2>
+        <p style="color:#c9c2b7">Your frontend sends one message. The runtime reasons, delegates, calls tools, waits for confirmation when required, persists the session, and streams typed events back. No client-side tool executor is required.</p>
+        <ul class="check-list">
+          <li>Standard REST request</li><li>Structured server-sent events</li><li>Any web, mobile, or backend client</li>
+        </ul>
+      </div>
+      <div class="code-window">
+        <div class="code-window-header"><span>POST /api/v1/agents/support/chat</span><span>text/event-stream</span></div>
+        <pre><span class="code-comment">// Your product sends one request</span>
+<span class="code-key">data:</span> &#123;"type":"agent_spawn","agent":"account-agent"&#125;
+<span class="code-key">data:</span> &#123;"type":"tool_call","tool":"account.lookup"&#125;
+<span class="code-key">data:</span> &#123;"type":"tool_result","status":"completed"&#125;
+<span class="code-key">data:</span> &#123;"type":"message_delta","content":"I found…"&#125;
+<span class="code-key">data:</span> &#123;"type":"done","session_id":"sess_abc"&#125;</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="solutions">
+    <div class="container center narrow">
+      <p class="eyebrow">Solutions</p>
+      <h2 class="section-title">AI agent use cases: customer service, ecommerce, banking, IoT — and any workflow in your product</h2>
+      <p class="section-lede centered">These are the patterns we document in depth, but the runtime is domain-agnostic: if the workflow lives behind an API, an agent can work it — grounded and permission-aware.</p>
+    </div>
+    <div class="container solution-tabs">
+      {SOLUTIONS.map((solution) => <a href={solution.path}>{solution.label} <span aria-hidden="true">→</span></a>)}
+    </div>
+    <div class="container center" style="margin-top:26px">
+      <p class="section-lede centered" style="margin-bottom:0">Comparing tools? See how SyntheticBrew stacks up against <a href="/compare/dify/">Dify</a>, <a href="/compare/langchain/">LangChain</a>, <a href="/compare/n8n/">n8n</a>, and <a href="/compare/">the other approaches</a> — or learn <a href="/blog/how-to-build-an-ai-agent/">how to build an AI agent</a> from scratch.</p>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container proof-panel" data-reveal>
+      <div class="proof-copy">
+        <p class="eyebrow">Real named deployment</p>
+        <h2>Powering the AI layer in Kilo AIoT</h2>
+        <p>SyntheticBrew is the agent engine behind Kilo’s permission-scoped device questions, rule and alarm workflows, confirmation before consequential actions, and result verification after writes.</p>
+        <p><a class="button" href="/solutions/manufacturing-iot/">See the manufacturing & IoT pattern <span aria-hidden="true">→</span></a></p>
+      </div>
+      <div class="proof-diagram" aria-label="Kilo AIoT deployment flow">
+        <div class="flow-stack"><div>Kilo application</div><div>SyntheticBrew agents</div><div>Scoped MCP tools</div><div>Device & operations APIs</div></div>
+      </div>
+    </div>
+    <div class="container hero-proof" style="margin-top:22px" aria-label="More production proof">
+      <span>Dogfooded — our AI builder runs on SyntheticBrew</span>
+      <span><a href="/examples/">Live examples — try working agents →</a></span>
+      <span><a href="https://github.com/syntheticinc/syntheticbrew-examples" target="_blank" rel="noopener noreferrer">Open examples on GitHub ↗</a></span>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container center narrow">
+      <p class="eyebrow">One engine, three paths</p>
+      <h2 class="section-title">Self-hosted AI agents, managed Cloud, or built for you</h2>
+      <p class="section-lede centered">The same production runtime is available as Cloud, an open-source self-hosted deployment, or a hands-on implementation delivered into your product.</p>
+    </div>
+    <div class="container three-grid">
+      <article class="card">
+        <span class="card-number">01</span><h3>Use Cloud</h3><p>Register and start building without operating the platform yourself. Free tier with 100 monthly active users, unlimited messages, bring your model keys — no token markup.</p><p style="margin-top:22px"><a href="/register" class="button" data-analytics="cloud_signup_start">Try Cloud</a></p>
+      </article>
+      <article class="card">
+        <span class="card-number">02</span><h3>Self-host</h3><p>Run Community Edition with your infrastructure, PostgreSQL, model keys, and network controls. Free forever, no runtime meter — install with Docker or <a href="/download/">let your coding agent do it over MCP</a>.</p><p style="margin-top:22px"><a href="/docs/getting-started/quick-start/" class="button button-secondary" data-analytics="self_host_quickstart">Read quick start</a></p>
+      </article>
+      <article class="card">
+        <span class="card-number">03</span><h3>Have us build it</h3><p>Book directly into Tim’s Calendly and scope a production implementation delivered to a measured acceptance bar.</p><p style="margin-top:22px"><a href={SITE.calendly} target="_blank" rel="noopener noreferrer" class="button button-secondary" data-analytics="contact_sales_start">Contact sales ↗</a></p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container bottom-cta">
+      <h2>From agent idea to production runtime.</h2>
+      <p>Build with your model, your tools, and your deployment choice—without asking your product team to recreate agent infrastructure.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

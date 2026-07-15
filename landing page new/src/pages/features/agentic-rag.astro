@@ -1,0 +1,167 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { FEATURE_MAP } from '@/data/site';
+
+const feature = FEATURE_MAP['agentic-rag'];
+const related = [FEATURE_MAP['knowledge-graphs'], FEATURE_MAP['agent-memory'], FEATURE_MAP['mcp-integration']];
+
+const formats = [
+  { format: 'PDF', use: 'Manuals, contracts, policy documents, and reports — the formats most institutional knowledge already lives in.' },
+  { format: 'DOCX', use: 'Working documents from your team: procedures, product specs, internal guides.' },
+  { format: 'Markdown (md)', use: 'Engineering docs, wikis, and READMEs — structure-preserving and ideal for chunking.' },
+  { format: 'CSV', use: 'Tabular reference data such as price lists, FAQs exported from other systems, or glossaries.' },
+  { format: 'Plain text (txt)', use: 'Transcripts, exports, and anything else — the universal fallback.' },
+];
+
+const faq = [
+  { q: 'What file formats can I upload to the knowledge base?', a: 'Five formats: txt, md, csv, pdf, and docx. Each upload moves through a visible status lifecycle — uploading, then indexing, then ready — so you always know when an agent can retrieve from a document. Web-page ingestion is not part of the pipeline; you upload files.' },
+  { q: 'Which embedding models can I use?', a: 'Any you want. The embedding model is a first-class entry in the model registry, and you can serve it from Ollama for a fully local setup or from any OpenAI-compatible embedding endpoint. Vectors are stored in PostgreSQL via pgvector, so there is no separate vector database to run.' },
+  { q: 'What happens when a document changes?', a: 'Re-upload it and trigger a reindex. The engine re-chunks and re-embeds the document through the same uploading → indexing → ready lifecycle, and agents retrieve from the fresh version once it reaches ready.' },
+  { q: 'When should I use a knowledge graph instead of RAG?', a: 'Use vector RAG for narrative, unstructured documents where semantic similarity is the right match. Use a knowledge graph when the agent must return exact records — IDs, prices, statuses, relationships — where an approximate answer is a wrong answer. SyntheticBrew runs both on the same agent.' },
+];
+
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+      { '@type': 'ListItem', position: 2, name: 'Features', item: 'https://syntheticbrew.ai/#features' },
+      { '@type': 'ListItem', position: 3, name: feature.shortTitle, item: `https://syntheticbrew.ai${feature.path}` },
+    ],
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+
+<SiteLayout title={feature.title} description={feature.description} keywords={feature.keywords} schema={schema}>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">{feature.eyebrow}</p>
+        <h1>{feature.h1}</h1>
+        <p class="hero-lede">Upload PDFs, DOCX, Markdown, CSV, and text into a schema-scoped knowledge base. Your agents search it automatically while they reason — combining retrieved evidence with tools and memory, with no RAG plumbing on your side.</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {feature.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={feature.screenshot} alt={feature.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container narrow center">
+      <h2 class="section-title">What is agentic RAG?</h2>
+      <p class="section-lede centered">Classic RAG is a static pipeline: retrieve once, stuff the results into the prompt, answer. Agentic RAG puts retrieval inside the agent’s reasoning loop instead — the agent decides <em>when</em> to search, <em>what</em> to search for, and whether the evidence it found is enough, then combines what it retrieved with tool calls and memory before answering.</p>
+      <p class="section-lede centered">The practical difference: a static pipeline retrieves for every question, even the ones that need a tool call or a follow-up query instead. An agentic retriever searches again with a refined query when the first pass comes back thin, skips retrieval when the answer needs live data from an API, and cites the evidence it actually used. If you are new to the pattern, start with <a href="/blog/what-are-ai-agents/">what AI agents are</a> — agentic RAG is that reasoning loop applied to your documents.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split">
+      <div>
+        <p class="eyebrow">No plumbing on your side</p>
+        <h2 class="section-title">RAG agents that retrieve while they reason</h2>
+        <p class="section-lede">You upload documents. The engine chunks them, embeds them, and exposes retrieval to the agent. That is the whole integration.</p>
+        <ul class="check-list">
+          <li><strong>Automatic retrieval.</strong> Agents search the knowledge base via vector similarity as part of their reasoning — you never orchestrate a retriever, ranker, or prompt-stuffing step in your application code.</li>
+          <li><strong>Per-schema isolation.</strong> Knowledge is scoped to a schema, so your support agent’s policy documents never leak into an unrelated agent system running on the same engine.</li>
+          <li><strong>Evidence plus action.</strong> The same reasoning loop that retrieves a warranty clause can then call a scoped MCP tool to look up the order it applies to — grounded answer, live data, one run.</li>
+          <li><strong>Visible lifecycle.</strong> Every document moves through uploading → indexing → ready, so operators can see exactly when new knowledge becomes retrievable.</li>
+        </ul>
+        <p style="margin-top:24px">This is the retrieval layer behind <a href="/solutions/customer-service/">AI agents for customer service</a>: answers drawn from approved policy and product documents instead of the model’s general training.</p>
+      </div>
+      <PlatformScreenshot src="/screenshots/knowledge.png" alt="SyntheticBrew knowledge base with uploaded documents and indexing status" caption="Upload PDFs and DOCX — agents search via vector similarity automatically, no RAG plumbing on your side" />
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <p class="eyebrow">Ingestion</p>
+      <h2 class="section-title">AI knowledge base formats: what you can ingest</h2>
+      <p class="section-lede">Five document formats cover most of the knowledge a production agent needs. Uploads are chunked and embedded server-side.</p>
+      <table class="comparison-table">
+        <thead><tr><th>Format</th><th>Best for</th></tr></thead>
+        <tbody>
+          {formats.map((row) => <tr><td><strong>{row.format}</strong></td><td>{row.use}</td></tr>)}
+        </tbody>
+      </table>
+      <div class="callout" style="margin-top:26px">Documents are files you upload and control — an approved, versioned corpus rather than whatever a crawler found. When a source changes, re-upload and reindex; the engine re-chunks and re-embeds it through the same lifecycle.</div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Runs where your data already lives</p>
+      <h2 class="section-title">Knowledge base software without a second database</h2>
+      <p class="section-lede">Most RAG stacks bolt a dedicated vector store onto your architecture. SyntheticBrew stores embeddings in PostgreSQL via pgvector — the same database that already holds your sessions and configuration. One engine, one database, nothing extra to operate, back up, or secure.</p>
+      <ul class="check-list">
+        <li><strong>pgvector storage.</strong> Vector search runs inside PostgreSQL — self-hosted deployments keep every embedding on their own infrastructure.</li>
+        <li><strong>Bring your own embeddings.</strong> The embedding model is a first-class registry entry: point it at Ollama for fully local embedding, or at any OpenAI-compatible embedding endpoint.</li>
+        <li><strong>Reindex on demand.</strong> Dedicated reindex endpoints re-process documents when you change the corpus or switch embedding models.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container">
+      <div class="center narrow">
+        <h2 class="section-title">Agentic RAG vs knowledge graph retrieval</h2>
+        <p class="section-lede centered">Two retrieval modes, two kinds of questions. Production agents usually need both — SyntheticBrew runs them side by side on the same agent.</p>
+      </div>
+      <div class="split">
+        <article class="card">
+          <h3>Vector RAG — narrative evidence</h3>
+          <p>Semantic search over unstructured documents: policies, manuals, guides, transcripts. The right tool when the user’s words and the document’s words differ but mean the same thing.</p>
+        </article>
+        <article class="card">
+          <h3>Knowledge graph — exact records</h3>
+          <p>Typed, deterministic lookups over declared entities: IDs, prices, statuses, relationships. The right tool when an approximately correct answer is simply wrong. See <a href="/knowledge-graphs/">knowledge graphs for LLMs</a>.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p>
+      <h2 class="section-title">Agentic RAG: common questions</h2>
+      <div class="faq">
+        {faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact section-tint">
+    <div class="container">
+      <p class="eyebrow">Keep exploring</p>
+      <h2 class="section-title">Agentic RAG pairs with these capabilities</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Feature</small>
+            <strong>{item.shortTitle} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Ground your agents in your own documents</h2>
+      <p>Upload a PDF, watch it reach ready, and ask the agent about it — in Cloud or on your own PostgreSQL. No retriever code, no second database.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.astro/
+.DS_Store
+
+# The parent repository ignores PNGs globally. These are required product and brand assets.
+!public/*.png
+!public/screenshots/*.png
+!public/screenshots/admin/*.png

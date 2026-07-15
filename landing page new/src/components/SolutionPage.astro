@@ -1,0 +1,115 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import CtaGroup from '@/components/CtaGroup.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import { SOLUTIONS, type Solution } from '@/data/site';
+
+interface Props { solution: Solution; }
+const { solution } = Astro.props;
+const related = SOLUTIONS.filter((item) => item.slug !== solution.slug).slice(0, 3);
+const schema = {
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://syntheticbrew.ai/' },
+    { '@type': 'ListItem', position: 2, name: 'Solutions', item: 'https://syntheticbrew.ai/#solutions' },
+    { '@type': 'ListItem', position: 3, name: solution.label, item: `https://syntheticbrew.ai${solution.path}` },
+  ],
+};
+---
+
+<SiteLayout title={solution.title} description={solution.description} keywords={solution.keywords} schema={schema}>
+  <section class="page-hero solution-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">Solution pattern · {solution.label}</p>
+        <h1>{solution.h1}</h1>
+        <p class="hero-lede">{solution.lede}</p>
+        <CtaGroup compact />
+        <ul class="keyword-chips" aria-label="Topics covered">
+          {solution.keywords.map((keyword) => <li>{keyword}</li>)}
+        </ul>
+      </div>
+      <PlatformScreenshot src={solution.screenshot} alt={solution.screenshotAlt} eager />
+    </div>
+  </section>
+
+  <aside class="challenge-band" aria-label="Industry challenge">
+    <div class="container">
+      <strong>The challenge</strong>
+      <p>{solution.challenge}</p>
+    </div>
+  </aside>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Where it can help</p>
+      <h2 class="section-title">{solution.keywords[0]}: practical use cases</h2>
+      <p class="section-lede">These are implementation patterns, not claims about unnamed customers. The exact scope depends on your systems, permissions, controls, and acceptance criteria.</p>
+      <div class="outcome-grid">
+        {solution.uses.map((use) => (
+          <article class="card" data-reveal>
+            <h3>{use.title}</h3>
+            <p>{use.text}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container split reverse">
+      <div>
+        <p class="eyebrow">Reference architecture</p>
+        <h2 class="section-title">Secure AI agents: control at every boundary</h2>
+        <p class="section-lede">SyntheticBrew handles reasoning and orchestration. Your application remains responsible for authentication, domain authorization, and the data or actions exposed through each tool.</p>
+        <ul class="architecture">
+          {solution.architecture.map((layer) => <li>{layer}</li>)}
+        </ul>
+      </div>
+      <div>
+        <h3>Production controls included</h3>
+        <ul class="check-list">
+          <li>Per-agent tool and MCP server scoping.</li>
+          <li>Forwarded JWT, organization, user, and tenant context.</li>
+          <li>Confirmation gates before consequential actions.</li>
+          <li>Structured events for progress, errors, and completion.</li>
+          <li>Self-hosted or Cloud deployment with your choice of LLM.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  {solution.proof && (
+    <section class="section">
+      <div class="container named-proof" data-reveal>
+        <small>{solution.proof.label}</small>
+        <h2>{solution.proof.title}</h2>
+        <p>{solution.proof.text}</p>
+        <a href={solution.proof.href} target="_blank" rel="noopener noreferrer">Visit Kilo <span aria-hidden="true"> ↗</span></a>
+      </div>
+    </section>
+  )}
+
+  <section class="section-compact">
+    <div class="container">
+      <p class="eyebrow">Other solution patterns</p>
+      <h2 class="section-title">More AI agent use cases</h2>
+      <div class="related-grid">
+        {related.map((item) => (
+          <a class="related-card" href={item.path}>
+            <small>Solution</small>
+            <strong>{item.label} <span aria-hidden="true">→</span></strong>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section-compact">
+    <div class="container bottom-cta">
+      <h2>Choose how you want to ship.</h2>
+      <p>Evaluate the workflow in Cloud, run the open-source engine on your infrastructure, or book your personal sales call for a delivered implementation.</p>
+      <CtaGroup centered />
+    </div>
+  </section>
+</SiteLayout>

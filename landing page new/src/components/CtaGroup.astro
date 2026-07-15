@@ -1,0 +1,20 @@
+---
+import { PRIMARY_CTA } from '@/data/site';
+
+interface Props { centered?: boolean; compact?: boolean; }
+const { centered = false, compact = false } = Astro.props;
+---
+
+<div class:list={['cta-group', { centered, compact }]}> 
+  {PRIMARY_CTA.map((item) => (
+    <a
+      class:list={['button', item.kind === 'secondary' && 'button-secondary', item.kind === 'quiet' && 'button-quiet']}
+      href={item.href}
+      data-analytics={item.event}
+      target={'external' in item && item.external ? '_blank' : undefined}
+      rel={'external' in item && item.external ? 'noopener noreferrer' : undefined}
+    >
+      {item.label}{'external' in item && item.external && <span aria-hidden="true"> ↗</span>}
+    </a>
+  ))}
+</div>

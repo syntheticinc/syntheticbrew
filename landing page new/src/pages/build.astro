@@ -1,0 +1,241 @@
+---
+import SiteLayout from '@/layouts/SiteLayout.astro';
+import PlatformScreenshot from '@/components/PlatformScreenshot.astro';
+import ProductDemo from '@/components/ProductDemo';
+import { SITE } from '@/data/site';
+
+const steps = [
+  { title: 'Fit call', text: 'In a free 30-minute call, we map the workflow, data, tools, and first acceptance bar—and say plainly if the project is not a fit.' },
+  { title: 'Scope and fixed quote', text: 'You receive a concrete scope, responsibilities, acceptance criteria, and fixed price before the build begins. You commit only if the number works.' },
+  { title: 'Build and tune', text: 'We configure the runtime, grounding, prompts, MCP tools, integration, and deployment against your real environment—tuned until it answers right.' },
+  { title: 'Measure and hand over', text: 'The implementation ships only after the agreed evals pass on your real data. You receive config-as-code, deployment assets, documentation, and admin access—with a 60-day warranty on platform defects.' },
+];
+
+const deliver = [
+  { us: 'The production runtime — reasoning, streaming, sessions, memory, tool-calling, recovery, admin, logs', you: 'Your product UI and the auth in front of it' },
+  { us: 'The knowledge graph tuned for full recall and zero invented IDs', you: 'The MCP tools to your own systems (or we build them, as an add-on)' },
+  { us: 'Prompt and reasoning tuned until it answers right — and refuses when data is missing', you: 'Your data and APIs, exposed to an agreed contract' },
+  { us: 'An eval harness that proves groundedness on your real data before launch', you: 'Operating it after handover — it runs on your infra' },
+];
+
+const comparison = [
+  {
+    approach: 'Build it in-house',
+    catch: 'Your AI can scaffold a demo fast. Then months disappear into grounding, evals, tuning, and deployment — pulling your engineers off the roadmap.',
+    sb: 'We deliver the production-grade result to a measured bar in weeks, then hand it to your team to run.',
+  },
+  {
+    approach: 'Hyperscaler agent service',
+    catch: 'Fast primitives, but you still build the grounding and integration yourself — and you are locked to one cloud.',
+    sb: 'Grounding and MCP integration done and tuned. Open core, your model of choice, runs on your infra.',
+  },
+  {
+    approach: 'Generic AI agency',
+    catch: 'Hands you a wrapper prototype with no proof it is right, then disappears. Quality varies wildly.',
+    sb: 'Delivered against an objective eval bar, on a real open-source platform — and the config is yours to keep and change.',
+  },
+];
+
+const control = [
+  { title: 'Runs on your infrastructure', text: 'After handover it lives in your environment, behind your auth. Your data never leaves your control — and never trains a model.' },
+  { title: 'You own it, not us', text: 'Config-as-code in your repo, taxonomy and prompts yours to change. No dependency on us to keep it running.' },
+  { title: 'Open core you can inspect', text: 'The engine is public (BSL 1.1). Inspect the runtime before you trust it. If we vanished tomorrow, your agent keeps running.' },
+  { title: 'Signed, tamper-proof auth', text: 'Every request is cryptographically signed (Ed25519). Bring your own LLM keys — used per request, never stored or logged.' },
+];
+
+const proof = [
+  { title: 'Shipped in production', text: 'We have taken a grounded agent over a real device-fleet platform all the way to production — the hard tuning, integration, and deployment included.' },
+  { title: 'Dogfooded in Cloud', text: 'syntheticbrew.ai runs on the same engine and grounding stack we deliver to you. We use it ourselves, every day.' },
+  { title: 'Verifiable up front', text: 'We do not trade on borrowed logos. You get what you can verify yourself — the source, a running instance, and the license terms.' },
+];
+
+const faqs = [
+  {
+    q: 'Do you host and operate the delivered agent?',
+    a: 'No — and that is deliberate. We implement it to a proven bar and hand it over; it runs on your infrastructure, behind your auth, under your control. No dependency on a young vendor sitting in your critical path. If you want us on call afterwards, that is an optional support retainer, never bundled into the base.',
+  },
+  {
+    q: 'We have no ML team — can we actually run it after handover?',
+    a: 'Yes. The agent is a service plus config-as-code — taxonomy, prompts, and tools in your repo — that your backend engineers run like any other service, with the deploy assets and docs we hand over. Day-to-day operation needs no ML specialist. The one ML-flavored task is re-tuning grounding as your data and schemas drift; that is exactly what the optional support retainer covers if you would rather not own it.',
+  },
+  {
+    q: 'Why pay you if our team could build this with AI?',
+    a: 'You could scaffold a demo — most teams can now. The work we sell is the part that takes months: tuning the knowledge graph for full recall, getting the prompt to use tools and refuse when data is missing, building and hardening the integration, and proving groundedness with evals on your real data. We have done exactly this in production. You get the result in weeks, and your engineers stay on your roadmap.',
+  },
+  {
+    q: 'What exactly do we end up owning?',
+    a: 'Everything specific to you — your MCP tools, taxonomy, prompts, and the whole config as code in your repo, plus the deployment assets and docs. You can change it, redeploy it, or take it further without us. The open-source engine underneath is yours to self-host.',
+  },
+  {
+    q: 'What if we do not have a clean API?',
+    a: 'Common. If your systems are not cleanly exposed, building the MCP connector is an add-on we scope in the fit call — or your team builds it against our contract. Either way there are no surprises after the quote.',
+  },
+  {
+    q: 'How do you handle the risk that we are not happy with it?',
+    a: 'The engagement is staged and the acceptance bar is objective: it ships only when it passes evals on your real data. You see the numbers before you sign off. And the fit call is free, so you learn whether it is even worth doing at zero cost.',
+  },
+  {
+    q: 'What happens if you go out of business?',
+    a: 'Your agent keeps running — it is on your infra, the config is yours, and the engine is open source (BSL 1.1). The public source is your escrow: you are never dependent on us to keep the lights on.',
+  },
+];
+
+const schema = [
+  {
+    '@type': 'Service',
+    name: 'Custom AI agent development services',
+    provider: { '@type': 'Organization', name: 'SyntheticBrew', url: SITE.url },
+    areaServed: 'Worldwide',
+    description: 'Production AI agent implementation, grounding, MCP integration, evaluation, deployment, and handover.',
+  },
+  {
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((item) => ({ '@type': 'Question', name: item.q, acceptedAnswer: { '@type': 'Answer', text: item.a } })),
+  },
+];
+---
+
+<SiteLayout
+  title="AI Agent Development Services | SyntheticBrew"
+  description="Custom AI agent development to a measured bar: grounding, MCP integration, evals, deployment, and handover. Fixed fee, 60-day warranty, you own the result."
+  keywords={['AI agent development services', 'custom AI agent development', 'AI agent development company']}
+  schema={schema}
+>
+  <section class="page-hero">
+    <div class="container page-hero-grid">
+      <div>
+        <p class="eyebrow">For product and platform teams</p>
+        <h1>AI agent development services — a production agent, delivered into your product.</h1>
+        <p class="hero-lede">The demo is the easy part. We handle the grounding, tools, orchestration, evaluation, integration, and deployment needed to make the agent dependable—then hand it over for you to run.</p>
+        <div class="cta-group">
+          <a class="button" href={SITE.calendly} target="_blank" rel="noopener noreferrer" data-analytics="contact_sales_start">Book your fit call ↗</a>
+          <a class="button button-secondary" href="#process">See the process</a>
+        </div>
+        <p class="muted" style="margin-top:18px;font-size:.82rem">Your sales call opens directly in Tim’s personal Calendly.</p>
+      </div>
+      <PlatformScreenshot src="/screenshots/ai-builder.png" alt="SyntheticBrew AI builder used for custom agent implementation" eager />
+    </div>
+    <div class="container hero-demo-wrap">
+      <p class="eyebrow" style="justify-content:center;display:flex">Same question, side by side</p>
+      <ProductDemo client:visible />
+      <p class="hero-demo-caption">A quick self-built agent guesses. A grounded SyntheticBrew agent checks stock, solves the delivery, and closes the sale. Hover to pause.</p>
+    </div>
+  </section>
+
+  <section class="section section-tint">
+    <div class="container center narrow">
+      <p class="eyebrow">The result</p>
+      <h2 class="section-title">Not a prototype. A system accepted against evidence.</h2>
+      <p class="section-lede centered">The engagement is designed around the behavior the agent must demonstrate on your data—not an impressive one-off response.</p>
+    </div>
+    <div class="container three-grid">
+      <article class="card"><span class="card-number">01</span><h3>Grounded</h3><p>Knowledge graphs and RAG are tuned so the agent resolves real records and refuses when required evidence is absent.</p></article>
+      <article class="card"><span class="card-number">02</span><h3>Integrated</h3><p>MCP tools connect the agent to your APIs with agreed authorization, tenant context, and confirmation boundaries.</p></article>
+      <article class="card"><span class="card-number">03</span><h3>Transferable</h3><p>Configuration, deployment assets, docs, and the implementation specific to your product are handed over to your team.</p></article>
+    </div>
+  </section>
+
+  <section class="section" id="process">
+    <div class="container">
+      <p class="eyebrow">How we work</p>
+      <h2 class="section-title">A clear path from fit to handover</h2>
+      <div class="four-grid">
+        {steps.map((step, index) => <article class="card" data-reveal><span class="card-number">0{index + 1}</span><h3>{step.title}</h3><p>{step.text}</p></article>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-tint" id="what">
+    <div class="container">
+      <p class="eyebrow">The dividing line</p>
+      <h2 class="section-title">What our AI agent development services deliver — and what stays yours</h2>
+      <p class="section-lede">We do the hard, unglamorous part that makes it work. Everything specific to you stays yours — to own, change, and run.</p>
+      <table class="comparison-table">
+        <thead><tr><th>We deliver and tune</th><th>Stays yours — you own and run it</th></tr></thead>
+        <tbody>
+          {deliver.map((row) => <tr><td>✓ {row.us}</td><td>→ {row.you}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+    <div class="container narrow" style="margin-top:34px">
+      <div class="callout">It ships only when it passes evals on your real data — you sign off on numbers, not a vibe.</div>
+    </div>
+  </section>
+
+  <section class="section" id="compare">
+    <div class="container">
+      <p class="eyebrow">How we compare</p>
+      <h2 class="section-title">Hiring an AI agent development company vs building in-house</h2>
+      <p class="section-lede">We will tell you when building in-house is the right call.</p>
+      <table class="comparison-table">
+        <thead><tr><th>Approach</th><th>The usual catch</th><th>With SyntheticBrew</th></tr></thead>
+        <tbody>
+          {comparison.map((row) => <tr><td><strong>{row.approach}</strong></td><td>{row.catch}</td><td>{row.sb}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section section-tint" id="control">
+    <div class="container">
+      <p class="eyebrow">Control and ownership</p>
+      <h2 class="section-title">Custom AI agent development you own — we are never in your critical path</h2>
+      <p class="section-lede">We deliver and hand over. The agent runs in your environment, on an open core — no dependency on a young vendor to keep the lights on.</p>
+      <div class="four-grid">
+        {control.map((item) => <article class="card" data-reveal><h3>{item.title}</h3><p>{item.text}</p></article>)}
+      </div>
+      <p class="muted center" style="margin-top:30px;font-size:.82rem">EU data residency, GDPR DPA, and a security questionnaire — handled during scoping.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container center narrow">
+      <p class="eyebrow">Why trust us with the result</p>
+      <h2 class="section-title">An AI agent development company you can verify</h2>
+    </div>
+    <div class="container three-grid">
+      {proof.map((item) => <article class="card" data-reveal><h3>{item.title}</h3><p>{item.text}</p></article>)}
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container split">
+      <div>
+        <p class="eyebrow" style="color:#ff8a74">Verifiable platform</p>
+        <h2 class="section-title">Inspect the engine before you trust the service.</h2>
+        <p style="color:#c9c2b7">The Go runtime is public under BSL 1.1. Your engineers can review the exact platform used for reasoning, tools, sessions, memory, and streaming before an engagement starts.</p>
+        <p><a class="button" href={SITE.github} target="_blank" rel="noopener noreferrer">View the engine on GitHub ↗</a></p>
+      </div>
+      <div class="flow-stack"><div>Your product and auth</div><div>Delivered SyntheticBrew agent</div><div>Your MCP tools and knowledge</div><div>Your infrastructure and operations</div></div>
+    </div>
+  </section>
+
+  <section class="section section-tint" id="pricing">
+    <div class="container">
+      <p class="eyebrow">Pricing</p>
+      <h2 class="section-title">AI agent development cost: one fixed fee, support optional</h2>
+      <p class="section-lede">Custom AI agent development, scoped and fixed after a free fit call — no open meter, no mandatory subscription.</p>
+      <table class="comparison-table">
+        <thead><tr><th>Engagement</th><th>Implementation — what you actually buy</th><th>Support — optional, never bundled</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Pricing</strong></td><td>Fixed project fee, scoped after the free fit call. No surprises after the quote.</td><td>Retainer or time and materials. Cancel anytime — or run it entirely yourself.</td></tr>
+          <tr><td><strong>What it is</strong></td><td>A working, grounded agent in your platform — proven, deployed, and handed over.</td><td>Us on call after handover: changes, tuning, and priority fixes.</td></tr>
+          <tr><td><strong>Included</strong></td><td>Free scoping fit call · MCP tools, knowledge graph, and prompts tuned · eval-bar acceptance on your real data · deployment and handover (config-as-code, docs) · 60-day warranty on platform defects.</td><td>Ongoing changes and new tools · grounding re-tuning as data drifts · priority response.</td></tr>
+        </tbody>
+      </table>
+      <div class="cta-group centered" style="margin-top:34px">
+        <a class="button" href={SITE.calendly} target="_blank" rel="noopener noreferrer" data-analytics="contact_sales_start">Book a fit call ↗</a>
+        <a class="button button-secondary" href={SITE.calendly} target="_blank" rel="noopener noreferrer" data-analytics="contact_sales_start">Ask about support ↗</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">Questions</p><h2 class="section-title">AI agent development services: what technical buyers ask first</h2>
+      <div class="faq">{faqs.map((faq) => <details><summary>{faq.q}</summary><p>{faq.a}</p></details>)}</div>
+    </div>
+  </section>
+
+  <section class="section-compact"><div class="container bottom-cta"><h2>Talk directly with the person scoping the work.</h2><p>Choose an available time in Tim’s personal Calendly. The first fit call is about the workflow, evidence, and constraints—not a slide deck.</p><div class="cta-group centered"><a class="button" href={SITE.calendly} target="_blank" rel="noopener noreferrer" data-analytics="contact_sales_start">Book your fit call ↗</a></div></div></section>
+</SiteLayout>

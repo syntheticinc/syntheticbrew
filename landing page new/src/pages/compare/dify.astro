@@ -1,0 +1,66 @@
+---
+import ComparePage from '@/components/ComparePage.astro';
+const rows = [
+  { dim: 'What it is', sb: 'Embeddable AI agent runtime — a headless engine your product talks to over REST + SSE', other: 'AI application studio — you build chatbots and workflows inside Dify’s visual editor' },
+  { dim: 'Core stack', sb: 'Go — one compiled binary plus PostgreSQL (2 containers)', other: 'Python (Flask + Celery) with a Next.js frontend — 13 containers in the default self-host stack (v1.15)' },
+  { dim: 'Multi-agent', sb: 'Dynamic: a supervisor delegates and spawns sub-agents at runtime, with concurrency and cycle policies', other: 'Agent nodes inside a workflow canvas (Function Calling or ReAct, capped iterations) — no runtime sub-agent spawning' },
+  { dim: 'Tenant context in tools', sb: 'Forwarded automatically: Authorization, org, user, and custom headers travel from your API request into every MCP tool call', other: 'Static per-server headers set at config time; no documented per-request header forwarding into tool calls' },
+  { dim: 'Human confirmation', sb: 'Per-tool: mark any tool confirm-before and execution pauses for explicit user approval', other: 'Workflow-level Human Input node; per-tool confirmation was declined in their tracker (closed “not planned”)' },
+  { dim: 'MCP', sb: 'HTTP, SSE, streamable-HTTP, and stdio transports; per-agent tool scoping; server-side execution', other: 'Two-way MCP over HTTP only (no stdio); can also publish Dify apps as MCP servers' },
+  { dim: 'Knowledge', sb: 'Vector RAG plus typed knowledge graphs with auto-generated, deterministic retrieval tools', other: 'Knowledge bases with vector retrieval and summary-index options' },
+  { dim: 'License', sb: 'Standard BSL 1.1 (MariaDB, Sentry, CockroachDB model) → Apache 2.0 after four years; self-host free, multi-tenant allowed', other: 'Modified Apache 2.0: multi-tenant use prohibited without written authorization; logo may not be removed from the frontend' },
+  { dim: 'Implementation service', sb: 'Optional done-for-you production build with a measured acceptance bar', other: 'Platform plus partner ecosystem' },
+];
+const differs = [
+  {
+    title: 'Built in Go, not a Python fleet',
+    what: 'SyntheticBrew is one compiled binary plus PostgreSQL. Dify’s default self-host stack is 13 containers: API, worker, scheduler, sandbox, plugin daemon, proxy, Redis, vector DB, and more.',
+    why: 'Fewer moving parts is what “production-grade” actually means: faster startup, a fraction of the RAM, one thing to monitor, patch, and explain to your security team. Prototyping stacks demo well; compiled infrastructure runs quietly for years.',
+  },
+  {
+    title: 'Your tenant isolation works inside tool calls',
+    what: 'SyntheticBrew forwards the authenticated user, organization, and custom headers from your API request into every tool call. Dify documents only static per-server headers.',
+    why: 'Without per-request context, a tool cannot know which customer is asking — so multi-tenant data isolation has to be faked through prompts. With forwarding, your existing RBAC keeps enforcing itself. For a B2B product this is the difference between passing and failing a security review.',
+  },
+  {
+    title: 'Agents that cannot act without permission',
+    what: 'Any tool can be marked confirm-before: the run pauses until a human approves. In Dify, pausing is a workflow-canvas node, and per-tool confirmation was closed “not planned”.',
+    why: '“Delete 500 devices — are you sure?” has to happen at the tool boundary, not somewhere upstream in a canvas. Per-tool gates are what let you give an agent real write access to production systems and still sleep.',
+  },
+];
+const enterprise = [
+  'Runs entirely inside your perimeter: engine + PostgreSQL, air-gap friendly, bring your own model keys.',
+  'Ed25519-signed JWTs, scoped API tokens, immutable audit log of every action and tool call.',
+  'Optional two-port deployment separates the customer-facing data plane from the admin control plane behind your VPN.',
+  'Standard BSL 1.1 license with a fixed Apache 2.0 conversion date — no custom clauses to negotiate around multi-tenancy.',
+  'The engine is open source: your team can read the code before a production decision, not after.',
+];
+const faqs = [
+  { q: 'Is SyntheticBrew an open-source Dify alternative?', a: 'Yes — if what you need is a production runtime to embed AI agents into your own product: dynamic multi-agent orchestration, forwarded tenant context, per-tool confirmation, typed knowledge graphs, and standard REST + SSE integration. If you want a visual studio for building standalone AI apps, Dify is genuinely strong at that.' },
+  { q: 'How is SyntheticBrew different from Dify?', a: 'Think WordPress vs Strapi. Dify is an application builder — your team works inside Dify’s UI. SyntheticBrew is headless infrastructure — your product talks to it over REST and SSE and your users never see it. Under the hood: Go single binary vs a 13-container Python stack, runtime agent spawning vs workflow Agent nodes, forwarded auth context vs static headers, per-tool confirmation vs canvas-level human input.' },
+  { q: 'Can I run either one multi-tenant?', a: 'SyntheticBrew Community Edition permits multi-tenant self-hosting under standard BSL 1.1 (only offering it as a managed service is restricted). Dify’s license prohibits operating a multi-tenant environment without written authorization from Dify — for a SaaS embedding scenario that means negotiating an enterprise license first.' },
+  { q: 'When is Dify the better fit?', a: 'When your team wants to build and iterate AI applications in a mature visual studio with a large template and plugin ecosystem, real-time collaborative editing, and you do not need runtime sub-agent delegation, per-request tenant forwarding, or per-tool confirmation. Test both against the workflow your product actually requires.' },
+  { q: 'What does each cost to run?', a: 'SyntheticBrew Community Edition is free to self-host with no runtime metering; you pay only your LLM provider. Dify Cloud tiers are usage-based (message credits and trigger events per workspace) with a free sandbox; self-hosted Dify is free under its license conditions. For embedding into a commercial product, compare license terms as carefully as infrastructure cost.' },
+];
+const related = [
+  { label: 'SyntheticBrew vs LangChain', href: '/compare/langchain/' },
+  { label: 'SyntheticBrew vs n8n', href: '/compare/n8n/' },
+  { label: 'SyntheticBrew vs CrewAI', href: '/compare/crewai/' },
+  { label: 'SyntheticBrew vs Flowise', href: '/compare/flowise/' },
+  { label: 'Dify alternative — the full breakdown', href: '/blog/dify-alternative-open-source-ai-agents/' },
+];
+---
+<ComparePage
+  competitor="Dify"
+  title="SyntheticBrew vs Dify: Which Runs AI Agents in Production?"
+  description="SyntheticBrew vs Dify compared on architecture, multi-agent orchestration, tenant isolation, per-tool confirmation, MCP, licensing, and total cost to operate."
+  h1="SyntheticBrew vs Dify: app studio or production agent runtime?"
+  lede="Dify is a visual studio for building AI applications — and a good one. SyntheticBrew is the infrastructure you embed in your own product: one Go binary that orchestrates agents, executes scoped tools with your users’ real identity, and streams every step back to your frontend."
+  rows={rows}
+  differs={differs}
+  enterprise={enterprise}
+  fitTitle="Pick by what you are building"
+  fitText="Building a standalone AI app your team operates by hand? Dify’s studio and ecosystem serve that well. Embedding AI agents into a product your customers use — with tenant isolation, approval gates, and an audit trail? That is exactly the job SyntheticBrew was built for, and you can verify every claim in the open-source code before committing."
+  faqs={faqs}
+  related={related}
+/>

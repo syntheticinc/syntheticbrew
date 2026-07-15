@@ -1,0 +1,80 @@
+# Production-like LOCAL preview for the new landing site.
+#
+# Mirrors deploy/Caddyfile routing so every link works locally — including
+# /docs, /login, /register, /dashboard, and /examples/* — instead of hitting
+# the 404 page like a bare `astro preview` does.
+#
+# Serves three static builds (no dev servers needed):
+#   /                → this project's dist/
+#   /docs, /docs/*   → ../syntheticbrew-cloud-web/docs-site/dist
+#   SPA auth routes  → ../syntheticbrew-cloud-web/cloud-web-spa/dist
+#
+# Usage (from "landing page new/"):
+#   npm run build
+#   docker compose -f deploy/docker-compose.preview.yml up -d
+#   open http://localhost:4330
+#
+# Stop: docker compose -f deploy/docker-compose.preview.yml down
+#
+# /api/* proxies to a locally running engine on :8080 if you have one; the
+# static pages work without it.
+
+:4330 {
+	redir /discord https://discord.gg/9yDduSsVWg 302
+	redir /sitemap.xml /sitemap-index.xml 301
+
+	@docs path /docs /docs/*
+	handle @docs {
+		uri strip_prefix /docs
+		root * /srv/docs
+		try_files {path} {path}/index.html /index.html
+		file_server
+	}
+
+	handle /api/* {
+		reverse_proxy host.docker.internal:8080
+	}
+
+	handle /assets/* {
+		root * /srv/spa
+		file_server
+	}
+
+	@reactApp path /dashboard /dashboard/* /login /register /forgot-password /reset-password /verify-email /billing /billing/* /settings /team /examples/*
+	handle @reactApp {
+		root * /srv/spa
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle {
+		root * /srv/landing
+
+		# Keep in sync with the markdown-negotiation stanza in deploy/Caddyfile
+		# (enforced by scripts/audit-build.mjs).
+		@markdown {
+			header Accept *text/markdown*
+			file {
+				try_files {path}index.md {path}/index.md
+			}
+		}
+		rewrite @markdown {http.matchers.file.relative}
+		header @markdown Content-Type "text/markdown; charset=utf-8"
+		header @markdown Vary "Accept"
+
+		@skillDocs path /.well-known/agent-skills/*/SKILL.md
+		header @skillDocs Content-Type "text/markdown; charset=utf-8"
+		@authMd path /auth.md
+		header @authMd Content-Type "text/markdown; charset=utf-8"
+
+		try_files {path} {path}/index.html {path}.html
+		file_server
+	}
+
+	handle_errors {
+		@notFound expression {http.error.status_code} == 404
+		root * /srv/landing
+		rewrite @notFound /404.html
+		file_server
+	}
+}
