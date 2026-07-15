@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.15.0] — 2026-07-15
+
+### Added
+
+- **Knowledge-base MCP tools.** `create_knowledge_base`, `add_document`,
+  `delete_document`, `link_knowledge_base`, and `list_documents` let an agent
+  build a grounded knowledge base entirely over OAuth/MCP. Linking a base also
+  enables the knowledge capability on the target agent, and the document limit
+  is enforced on the MCP path.
+- **Config schemas round-trip.** `/config/export` and `/config/import` now carry
+  a `schemas:` section that round-trips the delegation graph (entry agent +
+  agent relations by name).
+
+### Changed
+
+- **Delegation targets are declared through agent relations, not can_spawn.**
+  The agent create/update API now rejects a non-empty `can_spawn` with 400,
+  pointing at the schema agent-relations API; the per-agent field was accepted
+  and silently dropped before.
+- Config export/import are strictly tenant-scoped; schema creation on import is
+  gated by the plan quota seam.
+
+### Fixed
+
+- **Multi-agent delegation.** Streaming tool-call fragments are merged by index
+  (no more empty tool_call_id / malformed spawn_agent), the generic spawn_agent
+  tool is offered only to agents that declare spawn targets, and the agent pool
+  scopes list/status/stop to the caller's session.
+- The post-CRUD MCP reconnect runs asynchronously, so an unreachable upstream no
+  longer blocks the CRUD response.
+- The admin agent drill-in shows delegation targets read-only and loads the
+  agent on the schema-scoped route.
+
 ## [1.14.2] — 2026-07-12
 
 ### Fixed
