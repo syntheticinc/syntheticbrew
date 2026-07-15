@@ -35,10 +35,10 @@ type mcpServiceHTTPAdapter struct {
 	mcpManager *mcp.Manager
 }
 
-// mcpSyncTenant resolves the tenant for an MCP client-sync operation, falling
-// back to the CE sentinel. Single source of tenant derivation for both the
-// REST CRUD hooks and the admin-tool sync adapter.
-func mcpSyncTenant(ctx context.Context) string {
+// requestTenant resolves the calling tenant from the request context, falling
+// back to the CE sentinel. Single source of tenant derivation for the app-layer
+// HTTP adapters (MCP client sync, config import/export).
+func requestTenant(ctx context.Context) string {
 	tenantID := domain.TenantIDFromContext(ctx)
 	if tenantID == "" {
 		tenantID = domain.CETenantID
@@ -60,37 +60,53 @@ func newMCPClientSyncAdapter(m *mcp.Manager) *mcpClientSyncAdapter {
 }
 
 func (a *mcpClientSyncAdapter) ReconnectServer(ctx context.Context, name string) error {
-	return a.mcpManager.ReconnectServer(ctx, mcpSyncTenant(ctx), name)
+	return a.mcpManager.ReconnectServer(ctx, requestTenant(ctx), name)
 }
 
 func (a *mcpClientSyncAdapter) DisconnectServer(ctx context.Context, name string) error {
-	return a.mcpManager.DisconnectServer(ctx, mcpSyncTenant(ctx), name)
+	return a.mcpManager.DisconnectServer(ctx, requestTenant(ctx), name)
 }
 
-// reconnectAfterCRUD is the post-write hook for Create/Update/Patch. Failure
-// is logged at warn level — we never fail the CRUD response because the DB
-// has already committed and is the source of truth; the client catches up
-// at the next reload or restart.
+// mcpSyncTimeout bounds the detached post-CRUD sync goroutine so an upstream
+// that neither answers nor refuses cannot leak goroutines indefinitely.
+const mcpSyncTimeout = 30 * time.Second
+
+// reconnectAfterCRUD is the post-write hook for Create/Update/Patch. The
+// reconnect runs in a detached goroutine: it is best-effort convenience (tools
+// appear without a restart), and an unreachable upstream must not block the
+// CRUD response — a slow DNS lookup alone can take 10-20s. Failure is logged
+// at warn level; the DB has already committed and is the source of truth, so
+// the client catches up at the next reload or restart.
 func (a *mcpServiceHTTPAdapter) reconnectAfterCRUD(ctx context.Context, name string) {
 	if a.mcpManager == nil {
 		return
 	}
-	if err := newMCPClientSyncAdapter(a.mcpManager).ReconnectServer(ctx, name); err != nil {
-		slog.WarnContext(ctx, "mcp auto-reconnect after CRUD failed",
-			"name", name, "tenant_id", mcpSyncTenant(ctx), "error", err)
-	}
+	// WithoutCancel keeps ctx values (tenant) but detaches from the request
+	// lifetime — the handler returns before the reconnect finishes.
+	syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mcpSyncTimeout)
+	go func() {
+		defer cancel()
+		if err := newMCPClientSyncAdapter(a.mcpManager).ReconnectServer(syncCtx, name); err != nil {
+			slog.WarnContext(syncCtx, "mcp auto-reconnect after CRUD failed",
+				"name", name, "tenant_id", requestTenant(syncCtx), "error", err)
+		}
+	}()
 }
 
-// disconnectAfterDelete is the post-write hook for Delete. Same fail-soft
-// rationale as reconnectAfterCRUD — DB is source of truth.
+// disconnectAfterDelete is the post-write hook for Delete. Same fail-soft,
+// detached rationale as reconnectAfterCRUD — DB is source of truth.
 func (a *mcpServiceHTTPAdapter) disconnectAfterDelete(ctx context.Context, name string) {
 	if a.mcpManager == nil {
 		return
 	}
-	if err := newMCPClientSyncAdapter(a.mcpManager).DisconnectServer(ctx, name); err != nil {
-		slog.WarnContext(ctx, "mcp auto-disconnect after DELETE failed",
-			"name", name, "tenant_id", mcpSyncTenant(ctx), "error", err)
-	}
+	syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mcpSyncTimeout)
+	go func() {
+		defer cancel()
+		if err := newMCPClientSyncAdapter(a.mcpManager).DisconnectServer(syncCtx, name); err != nil {
+			slog.WarnContext(syncCtx, "mcp auto-disconnect after DELETE failed",
+				"name", name, "tenant_id", requestTenant(syncCtx), "error", err)
+		}
+	}()
 }
 
 func (a *mcpServiceHTTPAdapter) ListMCPServers(ctx context.Context) ([]deliveryhttp.MCPServerResponse, error) {
@@ -422,7 +438,7 @@ func (a *mcpServiceHTTPAdapter) RefreshMCPServer(ctx context.Context, name strin
 	if a.mcpManager == nil {
 		return 0, pkgerrors.NotFound(fmt.Sprintf("mcp server not registered: %s", name))
 	}
-	count, err := a.mcpManager.RefreshServer(ctx, mcpSyncTenant(ctx), name)
+	count, err := a.mcpManager.RefreshServer(ctx, requestTenant(ctx), name)
 	if err != nil {
 		return 0, pkgerrors.NotFound(fmt.Sprintf("mcp server not registered: %s", name))
 	}
