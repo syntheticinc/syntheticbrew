@@ -18,13 +18,15 @@ type GenericAgentSpawner interface {
 	WaitForAllSessionAgents(ctx context.Context, sessionID string) (WaitResult, error)
 	HasBlockingWait(sessionID string) bool
 	NotifyUserMessage(sessionID, message string)
-	StopAgent(agentID string) error
+	StopAgent(sessionID, agentID string) error
 }
 
-// GenericAgentInspector is a consumer-side interface for agent status/list queries.
+// GenericAgentInspector is a consumer-side interface for agent status/list
+// queries. All methods are session-scoped: the underlying pool is process-global
+// across tenants, so a tool must only ever see agents from its own session.
 type GenericAgentInspector interface {
-	GetStatusInfo(agentID string) (*AgentInfo, bool)
-	GetAllAgentInfos() []AgentInfo
+	GetStatusInfo(sessionID, agentID string) (*AgentInfo, bool)
+	GetAllAgentInfos(sessionID string) []AgentInfo
 }
 
 // SpawnParams describes parameters for spawning an agent.
@@ -175,7 +177,7 @@ func (t *spawnTool) handleStatus(args spawnToolArgs) (string, error) {
 		return "[ERROR] agent_id required for status action", nil
 	}
 
-	info, ok := t.inspector.GetStatusInfo(args.AgentID)
+	info, ok := t.inspector.GetStatusInfo(t.sessionID, args.AgentID)
 	if !ok {
 		return fmt.Sprintf("Agent %s not found", args.AgentID), nil
 	}
@@ -189,7 +191,7 @@ func (t *spawnTool) handleStatus(args spawnToolArgs) (string, error) {
 }
 
 func (t *spawnTool) handleList() (string, error) {
-	infos := t.inspector.GetAllAgentInfos()
+	infos := t.inspector.GetAllAgentInfos(t.sessionID)
 
 	data, err := json.Marshal(infos)
 	if err != nil {
@@ -205,7 +207,7 @@ func (t *spawnTool) handleStop(args spawnToolArgs) (string, error) {
 		return "[ERROR] agent_id required for stop action", nil
 	}
 
-	if err := t.spawner.StopAgent(args.AgentID); err != nil {
+	if err := t.spawner.StopAgent(t.sessionID, args.AgentID); err != nil {
 		return "", fmt.Errorf("stop agent: %w", err)
 	}
 

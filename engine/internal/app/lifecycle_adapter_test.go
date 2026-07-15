@@ -19,11 +19,11 @@ func newTestManager(pool *mockAgentSpawner) *lifecycle.Manager {
 
 // mockAgentSpawner implements agentSpawnerWaiter for testing.
 type mockAgentSpawner struct {
-	spawnCalls  []tools.SpawnParams
-	spawnErr    error
-	spawnID     string
-	waitResult  string
-	waitErr     error
+	spawnCalls []tools.SpawnParams
+	spawnErr   error
+	spawnID    string
+	waitResult string
+	waitErr    error
 }
 
 func (m *mockAgentSpawner) SpawnAgent(_ context.Context, params tools.SpawnParams) (string, error) {
@@ -44,7 +44,7 @@ func (m *mockAgentSpawner) WaitForAllSessionAgents(_ context.Context, _ string) 
 
 func (m *mockAgentSpawner) HasBlockingWait(_ string) bool { return false }
 func (m *mockAgentSpawner) NotifyUserMessage(_, _ string) {}
-func (m *mockAgentSpawner) StopAgent(_ string) error       { return nil }
+func (m *mockAgentSpawner) StopAgent(_, _ string) error   { return nil }
 
 // mockLifecycleReader implements AgentLifecycleReader for testing.
 type mockLifecycleReader struct {
@@ -115,9 +115,13 @@ func TestCompositeAgentSpawner_UnknownChatAgent_UsesManager(t *testing.T) {
 
 	result, err := spawner.SpawnAgent(ctx, params)
 	require.NoError(t, err)
-	// Chat agents go through lifecycle.Manager → poolBasedRunner.runCodeAgent (no chatFactory wired).
-	// runCodeAgent: SpawnAgent (returns spawnID) + WaitForAgent (returns waitResult).
-	assert.Equal(t, "chat-output", result)
+	// Chat agents run synchronously through lifecycle.Manager; the spawner returns
+	// a retrieval ID (not the answer text) and stashes the output for WaitForAgent,
+	// honoring the async spawn contract the spawn tools depend on.
+	assert.NotEqual(t, "chat-output", result)
+	info, err := spawner.WaitForAgent(ctx, "sess-1", result)
+	require.NoError(t, err)
+	assert.Equal(t, "chat-output", info.Result)
 	assert.Len(t, pool.spawnCalls, 1)
 }
 
@@ -144,7 +148,9 @@ func TestCompositeAgentSpawner_PersistentMode_UsesManager(t *testing.T) {
 
 	result, err := spawner.SpawnAgent(ctx, params)
 	require.NoError(t, err)
-	assert.Equal(t, "agent-789-output", result)
+	info, err := spawner.WaitForAgent(ctx, "sess-2", result)
+	require.NoError(t, err)
+	assert.Equal(t, "agent-789-output", info.Result)
 
 	// Verify the manager tracked the instance
 	instance, ok := manager.GetInstance(ctx, "persistent-agent", "sess-2")
@@ -202,7 +208,7 @@ func TestCompositeAgentSpawner_DelegateMethods(t *testing.T) {
 	assert.False(t, spawner.HasBlockingWait("sess-1"))
 
 	// StopAgent
-	assert.NoError(t, spawner.StopAgent("agent-1"))
+	assert.NoError(t, spawner.StopAgent("sess-1", "agent-1"))
 }
 
 func TestPoolBasedRunner_RunAgent(t *testing.T) {

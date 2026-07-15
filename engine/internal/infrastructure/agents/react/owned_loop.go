@@ -2,7 +2,9 @@ package react
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -10,6 +12,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/agents/callbacks"
 )
@@ -51,6 +54,10 @@ type ownedState struct {
 	// anchors the wall-clock budget. Both drive soft-landing / finalize routing.
 	step      int
 	turnStart time.Time
+
+	// callIDNonce makes backfilled tool-call ids unique across turns of one
+	// session (step resets every turn; the history is conversation-wide).
+	callIDNonce string
 
 	// terminalReason records why the turn is being force-finalized (budget wall,
 	// or an escalated loop). TerminalNone means the turn is proceeding normally.
@@ -192,8 +199,9 @@ func buildOwnedGraph(ctx context.Context, cfg ownedGraphConfig) (compose.Runnabl
 	graph := compose.NewGraph[[]*schema.Message, *schema.Message](
 		compose.WithGenLocalState(func(ctx context.Context) *ownedState {
 			return &ownedState{
-				Messages:  make([]*schema.Message, 0, cfg.maxStep+1),
-				turnStart: time.Now(),
+				Messages:    make([]*schema.Message, 0, cfg.maxStep+1),
+				turnStart:   time.Now(),
+				callIDNonce: uuid.New().String()[:8],
 			}
 		}),
 	)
@@ -231,6 +239,11 @@ func buildOwnedGraph(ctx context.Context, cfg ownedGraphConfig) (compose.Runnabl
 		if input == nil {
 			return state.Messages[len(state.Messages)-1], nil
 		}
+		// Some OpenAI-compatible providers stream tool calls with an empty id.
+		// Backfill BEFORE recording: the ToolsNode copies this id onto the tool
+		// result message, and strict providers reject a follow-up request whose
+		// tool message has no tool_call_id.
+		normalizeToolCallIDs(input, state.callIDNonce, state.step)
 		state.Messages = append(state.Messages, input)
 		state.ReturnDirectlyToolCallID = ownedReturnDirectlyID(input, cfg.toolReturnDirectly)
 		state.step++ // one tool round about to run — count it toward the step budget
@@ -439,6 +452,43 @@ func appendFinalizeDirective(msgs []*schema.Message) []*schema.Message {
 
 // ownedReturnDirectlyID returns the call ID of the first return-directly tool in
 // the assistant message, or "".
+// normalizeToolCallIDs backfills an id on every tool call that arrived without
+// one (some OpenAI-compatible providers stream empty ids). Runs on the
+// concatenated assistant message before it is recorded, so the assistant
+// tool_calls[].id and the ToolsNode-produced tool message tool_call_id carry
+// the same non-empty value — the invariant strict providers enforce on the
+// next request. The per-turn nonce keeps ids unique across turns in one
+// session history (step resets every turn); the tool name is sanitized because
+// it is model-controlled and the id is echoed back to providers.
+// Provider-issued ids are never touched.
+func normalizeToolCallIDs(msg *schema.Message, nonce string, step int) {
+	if msg == nil {
+		return
+	}
+	for i := range msg.ToolCalls {
+		if msg.ToolCalls[i].ID != "" {
+			continue
+		}
+		msg.ToolCalls[i].ID = fmt.Sprintf("call-%s-s%d-%d-%s", nonce, step, i, sanitizeIDPart(msg.ToolCalls[i].Function.Name))
+	}
+}
+
+// sanitizeIDPart reduces a model-controlled string to a short [A-Za-z0-9_-]
+// token safe to embed in a tool-call id.
+func sanitizeIDPart(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len() >= 40 {
+			break
+		}
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func ownedReturnDirectlyID(input *schema.Message, returnDirectly map[string]struct{}) string {
 	if len(returnDirectly) == 0 {
 		return ""

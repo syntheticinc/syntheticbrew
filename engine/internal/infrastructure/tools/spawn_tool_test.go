@@ -22,9 +22,10 @@ type mockGenericSpawner struct {
 	waitForAgentResult AgentCompletionInfo
 	waitForAgentErr    error
 
-	stopErr     error
-	stoppedID   string
-	hasBlocking bool
+	stopErr          error
+	stoppedID        string
+	stoppedSessionID string
+	hasBlocking      bool
 }
 
 func (m *mockGenericSpawner) SpawnAgent(ctx context.Context, params SpawnParams) (string, error) {
@@ -49,23 +50,27 @@ func (m *mockGenericSpawner) HasBlockingWait(sessionID string) bool {
 
 func (m *mockGenericSpawner) NotifyUserMessage(sessionID, message string) {}
 
-func (m *mockGenericSpawner) StopAgent(agentID string) error {
+func (m *mockGenericSpawner) StopAgent(sessionID, agentID string) error {
+	m.stoppedSessionID = sessionID
 	m.stoppedID = agentID
 	return m.stopErr
 }
 
 // mockGenericInspector implements GenericAgentInspector for testing.
 type mockGenericInspector struct {
-	statusInfo *AgentInfo
-	statusOK   bool
-	allInfos   []AgentInfo
+	statusInfo   *AgentInfo
+	statusOK     bool
+	allInfos     []AgentInfo
+	gotSessionID string
 }
 
-func (m *mockGenericInspector) GetStatusInfo(agentID string) (*AgentInfo, bool) {
+func (m *mockGenericInspector) GetStatusInfo(sessionID, agentID string) (*AgentInfo, bool) {
+	m.gotSessionID = sessionID
 	return m.statusInfo, m.statusOK
 }
 
-func (m *mockGenericInspector) GetAllAgentInfos() []AgentInfo {
+func (m *mockGenericInspector) GetAllAgentInfos(sessionID string) []AgentInfo {
+	m.gotSessionID = sessionID
 	return m.allInfos
 }
 
