@@ -49,7 +49,13 @@ const TOOL_TIERS: Record<ToolTier, { label: string; description: string; tools: 
 
 function AgentDrillInInner() {
   const { addToast } = useToast();
-  const { schema, agent: agentName } = useParams<{ schema: string; agent: string }>();
+  // This page is mounted on two routes with different param names:
+  //   /agents/:agent                       and
+  //   /schemas/:schemaName/:agentName
+  // Read both so the agent (and its delegation display) loads on either path.
+  const params = useParams<{ schema?: string; schemaName?: string; agent?: string; agentName?: string }>();
+  const schema = params.schema ?? params.schemaName;
+  const agentName = params.agent ?? params.agentName;
   const navigate = useNavigate();
   const { isPrototype } = usePrototype();
 
@@ -60,7 +66,6 @@ function AgentDrillInInner() {
   const [showCapDropdown, setShowCapDropdown] = useState(false);
   const [enabledTools, setEnabledTools] = useState<string[]>([]);
   const [canSpawn, setCanSpawn] = useState<string[]>([]);
-  const [allAgentNames, setAllAgentNames] = useState<string[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [confirmInput, setConfirmInput] = useState('');
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
@@ -85,7 +90,6 @@ function AgentDrillInInner() {
       setCapabilities(protoCaps);
       setInitialCapabilities(protoCaps.map((c) => ({ ...c })));
       setModels(MOCK_MODELS as Model[]);
-      setAllAgentNames(Object.keys(MOCK_AGENTS));
       setLoading(false);
       return;
     }
@@ -123,7 +127,6 @@ function AgentDrillInInner() {
     // Wave 5: agents require a chat-kind model (backend enforces
     // `model_id must reference a chat model`). Filter server-side.
     api.listModels({ kind: 'chat' }).then(setModels).catch(() => {});
-    api.listAgents().then((agents: Array<{ name: string }>) => setAllAgentNames(agents.map((a) => a.name))).catch(() => {});
     api.listMCPServers().then(setMcpServers).catch(() => {});
   }, [isPrototype]);
 
@@ -181,7 +184,6 @@ function AgentDrillInInner() {
         stop_sequences: agent.stop_sequences,
         confirm_before: agent.confirm_before,
         tools: enabledTools,
-        can_spawn: canSpawn,
         mcp_servers: enabledMCP,
       });
 
@@ -714,27 +716,18 @@ function AgentDrillInInner() {
             </div>
             <div className="border border-brand-shade3/10 rounded-card p-3">
               <p className="text-xs text-brand-shade3 font-mono mb-2">Can spawn</p>
-              {allAgentNames.filter((n) => n !== agentName).length === 0 ? (
-                <p className="text-xs text-brand-shade3/50 font-mono">No other agents available</p>
+              {canSpawn.length === 0 ? (
+                <p className="text-xs text-brand-shade3/50 font-mono">No delegation targets</p>
               ) : (
-                <div className="space-y-1">
-                  {allAgentNames.filter((n) => n !== agentName).map((name) => (
-                    <label key={name} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={canSpawn.includes(name)}
-                        onChange={() =>
-                          setCanSpawn((prev) =>
-                            prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
-                          )
-                        }
-                        className="accent-brand-accent"
-                      />
-                      <span className="text-xs text-brand-shade2 font-mono">{name}</span>
-                    </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {canSpawn.map((name) => (
+                    <span key={name} className="inline-flex items-center px-2 py-1 bg-brand-shade3/10 border border-brand-shade3/30 rounded-btn text-xs text-brand-shade2 font-mono">
+                      {name}
+                    </span>
                   ))}
                 </div>
               )}
+              <p className="mt-2 text-[11px] text-brand-shade3/50 font-mono">Managed via the schema canvas (agent relations)</p>
             </div>
           </div>
         </div>
