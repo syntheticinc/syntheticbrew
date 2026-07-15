@@ -12,7 +12,7 @@ replicaCount: 1
 
 image:
   repository: syntheticinc/syntheticbrew
-  tag: "1.11.0"
+  tag: "1.15.0"
   pullPolicy: IfNotPresent
 
 postgresql:
@@ -38,7 +38,7 @@ migrations:
   enabled: true
   image:
     repository: syntheticinc/syntheticbrew-migrations
-    tag: "1.11.0"
+    tag: "1.15.0"
 
 bootstrapAdminToken:
   enabled: true
@@ -47,7 +47,7 @@ bootstrapAdminToken:
 
 configApply:
   enabled: true
-  # Pinned to the current published pair: engine 1.6.0 + brewctl 0.5.0.
+  # Pinned to the current published pair: engine 1.15.0 + brewctl 0.5.0.
   image:
     tag: "0.5.0"
   tokenSecret: postgres-credentials
