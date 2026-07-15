@@ -232,8 +232,9 @@ func registerHTTPRoutes(deps routesDeps) {
 			})
 		}
 
-		// Config
-		configImportExport := &configImportExportHTTPAdapter{db: pgDB}
+		// Config. schemaGuard = the plugin quota seam so /config/import gates
+		// schema creation like every other create path (CE Noop = no limit).
+		configImportExport := &configImportExportHTTPAdapter{db: pgDB, schemaGuard: plugin}
 		configHandler := deliveryhttp.NewConfigHandler(
 			&configReloaderHTTPAdapter{registry: agentRegistry, registryMgr: registryMgr, mcpManager: mcpManager, db: pgDB, transportPolicy: transportPolicy},
 			configImportExport,

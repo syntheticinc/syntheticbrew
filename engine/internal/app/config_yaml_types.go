@@ -11,7 +11,26 @@ type configYAML struct {
 	Agents          flexList[agentYAML]     `yaml:"agents,omitempty"`
 	Models          flexList[modelYAML]     `yaml:"models,omitempty"`
 	MCPServers      flexList[mcpServerYAML] `yaml:"mcp_servers,omitempty"`
+	Schemas         []schemaYAML            `yaml:"schemas,omitempty"`
 	KnowledgeGraphs []knowledgeGraphYAML    `yaml:"knowledge_graphs,omitempty"`
+}
+
+// schemaYAML round-trips a multi-agent schema: its identity, entry point and
+// the delegation graph (agent_relations). Relations are the single source of
+// truth for who may delegate to whom — the per-agent `can_spawn` field is
+// derived, never imported.
+type schemaYAML struct {
+	Name        string         `yaml:"name"`
+	Description string         `yaml:"description,omitempty"`
+	ChatEnabled bool           `yaml:"chat_enabled,omitempty"`
+	EntryAgent  string         `yaml:"entry_agent,omitempty"`
+	Relations   []relationYAML `yaml:"relations,omitempty"`
+}
+
+// relationYAML is one delegation arrow inside a schema: From may spawn To.
+type relationYAML struct {
+	From string `yaml:"from"`
+	To   string `yaml:"to"`
 }
 
 // knowledgeGraphYAML is the bundle shape inside /config/import + /config/export
@@ -111,20 +130,20 @@ func setNameFromKey(item interface{}, key string) {
 }
 
 type agentYAML struct {
-	Name            string          `yaml:"name"`
-	SystemPrompt    string          `yaml:"system_prompt"`
-	ModelName       string          `yaml:"model_name,omitempty"`
-	Lifecycle       string          `yaml:"lifecycle"`
-	ToolExecution   string          `yaml:"tool_execution"`
-	MaxSteps        int             `yaml:"max_steps"`
-	MaxContextSize  int             `yaml:"max_context_size"`
-	MaxTurnDuration int             `yaml:"max_turn_duration"`
-	MaxStepDuration int             `yaml:"max_step_duration"`
-	Temperature     *float64        `yaml:"temperature,omitempty"`
-	TopP            *float64        `yaml:"top_p,omitempty"`
-	MaxTokens       *int            `yaml:"max_tokens,omitempty"`
-	StopSequences   []string        `yaml:"stop_sequences,omitempty"`
-	ConfirmBefore   []string        `yaml:"confirm_before,omitempty"`
+	Name            string   `yaml:"name"`
+	SystemPrompt    string   `yaml:"system_prompt"`
+	ModelName       string   `yaml:"model_name,omitempty"`
+	Lifecycle       string   `yaml:"lifecycle"`
+	ToolExecution   string   `yaml:"tool_execution"`
+	MaxSteps        int      `yaml:"max_steps"`
+	MaxContextSize  int      `yaml:"max_context_size"`
+	MaxTurnDuration int      `yaml:"max_turn_duration"`
+	MaxStepDuration int      `yaml:"max_step_duration"`
+	Temperature     *float64 `yaml:"temperature,omitempty"`
+	TopP            *float64 `yaml:"top_p,omitempty"`
+	MaxTokens       *int     `yaml:"max_tokens,omitempty"`
+	StopSequences   []string `yaml:"stop_sequences,omitempty"`
+	ConfirmBefore   []string `yaml:"confirm_before,omitempty"`
 	Tools           []string `yaml:"tools,omitempty"`
 	CanSpawn        []string `yaml:"can_spawn,omitempty"`
 	MCPServers      []string `yaml:"mcp_servers,omitempty"`
@@ -182,4 +201,3 @@ type mcpServerYAML struct {
 	EnvVars        map[string]string `yaml:"env_vars,omitempty"`
 	ForwardHeaders []string          `yaml:"forward_headers,omitempty"`
 }
-
