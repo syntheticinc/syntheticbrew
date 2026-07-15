@@ -15,57 +15,57 @@ const agentNameMaxLen = 255
 
 // AgentInfo is a summary of an agent returned in list responses.
 type AgentInfo struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Description    string   `json:"description,omitempty"`
-	ToolsCount     int      `json:"tools_count"`
-	HasKnowledge   bool     `json:"has_knowledge"`
-	IsSystem       bool     `json:"is_system,omitempty"`
-	UsedInSchemas  []string `json:"used_in_schemas,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description,omitempty"`
+	ToolsCount    int      `json:"tools_count"`
+	HasKnowledge  bool     `json:"has_knowledge"`
+	IsSystem      bool     `json:"is_system,omitempty"`
+	UsedInSchemas []string `json:"used_in_schemas,omitempty"`
 }
 
 // AgentDetail is the full agent information returned by the detail endpoint.
 type AgentDetail struct {
 	AgentInfo
-	ModelID        *string          `json:"model_id,omitempty"`
-	SystemPrompt   string           `json:"system_prompt"`
-	Tools          []string         `json:"tools"`
-	CanSpawn       []string         `json:"can_spawn,omitempty"`
-	Lifecycle      string           `json:"lifecycle"`
-	ToolExecution  string           `json:"tool_execution"`
-	MaxSteps        int              `json:"max_steps"`
-	MaxContextSize  int              `json:"max_context_size"`
-	MaxTurnDuration int              `json:"max_turn_duration"`
-	MaxStepDuration int              `json:"max_step_duration"`
-	Temperature     *float64         `json:"temperature,omitempty"`
-	TopP            *float64         `json:"top_p,omitempty"`
-	MaxTokens       *int             `json:"max_tokens,omitempty"`
-	StopSequences   []string         `json:"stop_sequences,omitempty"`
-	ConfirmBefore []string `json:"confirm_before,omitempty"`
-	MCPServers    []string `json:"mcp_servers,omitempty"`
+	ModelID         *string  `json:"model_id,omitempty"`
+	SystemPrompt    string   `json:"system_prompt"`
+	Tools           []string `json:"tools"`
+	CanSpawn        []string `json:"can_spawn,omitempty"`
+	Lifecycle       string   `json:"lifecycle"`
+	ToolExecution   string   `json:"tool_execution"`
+	MaxSteps        int      `json:"max_steps"`
+	MaxContextSize  int      `json:"max_context_size"`
+	MaxTurnDuration int      `json:"max_turn_duration"`
+	MaxStepDuration int      `json:"max_step_duration"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	TopP            *float64 `json:"top_p,omitempty"`
+	MaxTokens       *int     `json:"max_tokens,omitempty"`
+	StopSequences   []string `json:"stop_sequences,omitempty"`
+	ConfirmBefore   []string `json:"confirm_before,omitempty"`
+	MCPServers      []string `json:"mcp_servers,omitempty"`
 }
 
 // CreateAgentRequest is the body for POST /api/v1/agents.
 // Accepts both "system_prompt" and "system" for the system prompt field.
 type CreateAgentRequest struct {
-	Name           string           `json:"name"`
-	Model          string           `json:"model,omitempty"`
-	ModelID        *string          `json:"model_id,omitempty"`
-	SystemPrompt   string           `json:"system_prompt"`
-	Lifecycle      string           `json:"lifecycle,omitempty"`
-	ToolExecution  string           `json:"tool_execution,omitempty"`
-	MaxSteps        int              `json:"max_steps,omitempty"`
-	MaxContextSize  int              `json:"max_context_size,omitempty"`
-	MaxTurnDuration int              `json:"max_turn_duration,omitempty"`
-	MaxStepDuration int              `json:"max_step_duration,omitempty"`
-	Temperature     *float64         `json:"temperature,omitempty"`
-	TopP            *float64         `json:"top_p,omitempty"`
-	MaxTokens       *int             `json:"max_tokens,omitempty"`
-	StopSequences   []string         `json:"stop_sequences,omitempty"`
-	ConfirmBefore   []string         `json:"confirm_before,omitempty"`
-	Tools      []string `json:"tools,omitempty"`
-	CanSpawn   []string `json:"can_spawn,omitempty"`
-	MCPServers []string `json:"mcp_servers,omitempty"`
+	Name            string   `json:"name"`
+	Model           string   `json:"model,omitempty"`
+	ModelID         *string  `json:"model_id,omitempty"`
+	SystemPrompt    string   `json:"system_prompt"`
+	Lifecycle       string   `json:"lifecycle,omitempty"`
+	ToolExecution   string   `json:"tool_execution,omitempty"`
+	MaxSteps        int      `json:"max_steps,omitempty"`
+	MaxContextSize  int      `json:"max_context_size,omitempty"`
+	MaxTurnDuration int      `json:"max_turn_duration,omitempty"`
+	MaxStepDuration int      `json:"max_step_duration,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	TopP            *float64 `json:"top_p,omitempty"`
+	MaxTokens       *int     `json:"max_tokens,omitempty"`
+	StopSequences   []string `json:"stop_sequences,omitempty"`
+	ConfirmBefore   []string `json:"confirm_before,omitempty"`
+	Tools           []string `json:"tools,omitempty"`
+	CanSpawn        []string `json:"can_spawn,omitempty"`
+	MCPServers      []string `json:"mcp_servers,omitempty"`
 	// KnowledgeBaseIDs is the set of KB UUIDs linked to this agent via the
 	// knowledge_base_agents M2M. A nil slice means "do not change" on
 	// update; an empty slice means "unlink all". Bug 7: the field was
@@ -189,6 +189,13 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/agents.
+// canSpawnRejectionMsg explains why can_spawn writes are refused: the field
+// used to be accepted and silently dropped (delegation targets live in
+// agent_relations, which agent upserts never write), so callers believed
+// they had configured delegation when they had not.
+const canSpawnRejectionMsg = "can_spawn is read-only: delegation targets are defined by agent relations. " +
+	"Use POST /api/v1/schemas/{schema}/agent-relations (or the schema canvas) to declare who this agent may delegate to."
+
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
 		writeJSONError(w, http.StatusNotImplemented, "agent creation not supported")
@@ -221,6 +228,10 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "admin tools are reserved for system agents")
 			return
 		}
+	}
+	if len(req.CanSpawn) > 0 {
+		writeJSONError(w, http.StatusBadRequest, canSpawnRejectionMsg)
+		return
 	}
 
 	agent, err := h.manager.CreateAgent(r.Context(), req)
@@ -271,6 +282,10 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if len(req.CanSpawn) > 0 {
+		writeJSONError(w, http.StatusBadRequest, canSpawnRejectionMsg)
+		return
+	}
 
 	agent, err := h.manager.UpdateAgent(r.Context(), name, req)
 	if err != nil {
@@ -309,6 +324,10 @@ func (h *AgentHandler) Patch(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+	if req.CanSpawn != nil && len(*req.CanSpawn) > 0 {
+		writeJSONError(w, http.StatusBadRequest, canSpawnRejectionMsg)
+		return
 	}
 
 	agent, err := h.manager.PatchAgent(r.Context(), name, req)

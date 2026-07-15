@@ -88,9 +88,10 @@ func TestBootstrap_FullStack(t *testing.T) {
 			"model":         "test-chat-model",
 			"system_prompt": "You route requests.",
 			"lifecycle":     "persistent",
-			"tools":         []string{"spawn_agent", "show_structured_output"},
-			"can_spawn":     []string{"test-worker"},
-			"mcp_servers":   []string{"test-mcp"},
+			// can_spawn is rejected by the agent API (delegation lives in
+			// agent_relations) — the router→worker arrow is created in step 10.
+			"tools":       []string{"spawn_agent", "show_structured_output"},
+			"mcp_servers": []string{"test-mcp"},
 		}), adminToken)
 	routerBody := readBody(t, routerResp)
 	assertStatusAny(t, routerResp, http.StatusOK, http.StatusCreated)
