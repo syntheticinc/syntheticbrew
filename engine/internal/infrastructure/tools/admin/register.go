@@ -157,7 +157,11 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 			return NewDeleteDocumentTool(kb, kb)
 		})
 		store.Register("admin_link_knowledge_base", func(_ tools.ToolDependencies) tool.InvokableTool {
-			return NewLinkKnowledgeBaseTool(kb, kb)
+			var capEnsurer KnowledgeCapabilityEnsurer
+			if deps.CapabilityRepo != nil {
+				capEnsurer = NewCapabilityEnsurer(deps.CapabilityRepo, reloader)
+			}
+			return NewLinkKnowledgeBaseTool(kb, kb, capEnsurer)
 		})
 		store.Register("admin_list_documents", func(_ tools.ToolDependencies) tool.InvokableTool {
 			return NewListDocumentsTool(kb, kb)

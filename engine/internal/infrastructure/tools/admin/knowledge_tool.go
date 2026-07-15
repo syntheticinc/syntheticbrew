@@ -255,15 +255,18 @@ func (t *deleteDocumentTool) InvokableRun(ctx context.Context, argsJSON string, 
 // --- admin_link_knowledge_base ---
 
 type linkKnowledgeBaseTool struct {
-	resolver KBRefResolver
-	linker   KBAgentLinker
+	resolver   KBRefResolver
+	linker     KBAgentLinker
+	capEnsurer KnowledgeCapabilityEnsurer // optional; nil = no auto-enable
 }
 
 // NewLinkKnowledgeBaseTool wires the KB↔agent link tool. Both sides are
 // tenant-scoped: the KB is resolved by name in-tenant and the link write
-// re-verifies both KB and agent belong to the caller's tenant.
-func NewLinkKnowledgeBaseTool(resolver KBRefResolver, linker KBAgentLinker) tool.InvokableTool {
-	return &linkKnowledgeBaseTool{resolver: resolver, linker: linker}
+// re-verifies both KB and agent belong to the caller's tenant. capEnsurer (may
+// be nil) idempotently enables the knowledge capability so the linked KB is
+// actually searchable.
+func NewLinkKnowledgeBaseTool(resolver KBRefResolver, linker KBAgentLinker, capEnsurer KnowledgeCapabilityEnsurer) tool.InvokableTool {
+	return &linkKnowledgeBaseTool{resolver: resolver, linker: linker, capEnsurer: capEnsurer}
 }
 
 func (t *linkKnowledgeBaseTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -302,11 +305,29 @@ func (t *linkKnowledgeBaseTool) InvokableRun(ctx context.Context, argsJSON strin
 	}
 
 	slog.InfoContext(ctx, "[Knowledge] linked knowledge base to agent", "kb", args.KBName, "agent", args.AgentName)
-	return renderJSON(map[string]any{
-		"linked":     true,
-		"kb_name":    args.KBName,
-		"agent_name": args.AgentName,
-	})
+
+	// A linked KB is only searchable if the agent has the knowledge capability
+	// enabled (knowledge_search is capability-injected). Enable it idempotently so
+	// the one-prompt flow doesn't leave a silently inert KB.
+	capEnabled := true
+	if t.capEnsurer != nil {
+		if err := t.capEnsurer.EnsureKnowledgeEnabled(ctx, args.AgentName); err != nil {
+			capEnabled = false
+			slog.WarnContext(ctx, "[Knowledge] linked KB but could not auto-enable knowledge capability",
+				"agent", args.AgentName, "error", err)
+		}
+	}
+
+	result := map[string]any{
+		"linked":                       true,
+		"kb_name":                      args.KBName,
+		"agent_name":                   args.AgentName,
+		"knowledge_capability_enabled": capEnabled,
+	}
+	if !capEnabled {
+		result["warning"] = "Knowledge base linked, but the knowledge capability could not be auto-enabled. Call admin_add_capability(agent_name, \"knowledge\") so the agent can search it."
+	}
+	return renderJSON(result)
 }
 
 // --- admin_list_documents ---

@@ -92,6 +92,16 @@ func (f *fakeLinker) LinkAgent(_ context.Context, _, _ string) error {
 	return f.err
 }
 
+type fakeCapEnsurer struct {
+	err       error
+	agentName string
+}
+
+func (f *fakeCapEnsurer) EnsureKnowledgeEnabled(_ context.Context, agentName string) error {
+	f.agentName = agentName
+	return f.err
+}
+
 type fakeLister struct {
 	docs []DocumentInfo
 	err  error
@@ -373,7 +383,8 @@ func TestDeleteDocument_KBNotFound(t *testing.T) {
 func TestLinkKnowledgeBase_HappyPath(t *testing.T) {
 	resolver := &fakeKBResolver{idByName: map[string]string{"kb": "kb-1"}}
 	linker := &fakeLinker{}
-	tool := NewLinkKnowledgeBaseTool(resolver, linker)
+	ensurer := &fakeCapEnsurer{}
+	tool := NewLinkKnowledgeBaseTool(resolver, linker, ensurer)
 
 	out, err := tool.InvokableRun(context.Background(), `{"kb_name":"kb","agent_name":"support"}`)
 	if err != nil {
@@ -388,11 +399,55 @@ func TestLinkKnowledgeBase_HappyPath(t *testing.T) {
 	if !linker.called {
 		t.Fatal("linker must run on the happy path")
 	}
+	// A linked KB is inert without the knowledge capability — linking must
+	// auto-enable it so the one-prompt grounded flow works.
+	if ensurer.agentName != "support" {
+		t.Fatalf("expected knowledge capability auto-enabled for agent %q, got %q", "support", ensurer.agentName)
+	}
+	if !strings.Contains(out, `"knowledge_capability_enabled": true`) {
+		t.Fatalf("expected knowledge_capability_enabled:true, got: %s", out)
+	}
+}
+
+func TestLinkKnowledgeBase_CapabilityEnsureFailureIsNonFatal(t *testing.T) {
+	resolver := &fakeKBResolver{idByName: map[string]string{"kb": "kb-1"}}
+	linker := &fakeLinker{}
+	ensurer := &fakeCapEnsurer{err: errors.New("db down")}
+	tool := NewLinkKnowledgeBaseTool(resolver, linker, ensurer)
+
+	out, err := tool.InvokableRun(context.Background(), `{"kb_name":"kb","agent_name":"support"}`)
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	// The link itself succeeded; the capability failure is surfaced, not fatal.
+	if !strings.Contains(out, `"linked": true`) {
+		t.Fatalf("expected linked:true despite capability failure, got: %s", out)
+	}
+	if !strings.Contains(out, `"knowledge_capability_enabled": false`) {
+		t.Fatalf("expected knowledge_capability_enabled:false, got: %s", out)
+	}
+	if !strings.Contains(out, "warning") {
+		t.Fatalf("expected a warning telling the caller to enable the capability, got: %s", out)
+	}
+}
+
+func TestLinkKnowledgeBase_NilEnsurerStillLinks(t *testing.T) {
+	resolver := &fakeKBResolver{idByName: map[string]string{"kb": "kb-1"}}
+	linker := &fakeLinker{}
+	tool := NewLinkKnowledgeBaseTool(resolver, linker, nil)
+
+	out, err := tool.InvokableRun(context.Background(), `{"kb_name":"kb","agent_name":"support"}`)
+	if err != nil {
+		t.Fatalf("unexpected Go error: %v", err)
+	}
+	if !strings.Contains(out, `"linked": true`) {
+		t.Fatalf("expected linked:true with a nil ensurer, got: %s", out)
+	}
 }
 
 func TestLinkKnowledgeBase_MissingAgentName(t *testing.T) {
 	linker := &fakeLinker{}
-	tool := NewLinkKnowledgeBaseTool(&fakeKBResolver{}, linker)
+	tool := NewLinkKnowledgeBaseTool(&fakeKBResolver{}, linker, nil)
 	out, _ := tool.InvokableRun(context.Background(), `{"kb_name":"kb"}`)
 	if !strings.Contains(out, "[ERROR]") || !strings.Contains(out, "agent_name is required") {
 		t.Fatalf("expected agent_name-required [ERROR], got: %s", out)
@@ -404,7 +459,7 @@ func TestLinkKnowledgeBase_MissingAgentName(t *testing.T) {
 
 func TestLinkKnowledgeBase_KBNotFound(t *testing.T) {
 	linker := &fakeLinker{}
-	tool := NewLinkKnowledgeBaseTool(&fakeKBResolver{}, linker)
+	tool := NewLinkKnowledgeBaseTool(&fakeKBResolver{}, linker, nil)
 	out, err := tool.InvokableRun(context.Background(), `{"kb_name":"ghost","agent_name":"support"}`)
 	if err != nil {
 		t.Fatalf("unexpected Go error: %v", err)
@@ -479,7 +534,7 @@ func TestKnowledgeTools_Info(t *testing.T) {
 		},
 		{
 			"link_knowledge_base",
-			NewLinkKnowledgeBaseTool(&fakeKBResolver{}, &fakeLinker{}),
+			NewLinkKnowledgeBaseTool(&fakeKBResolver{}, &fakeLinker{}, nil),
 			"admin_link_knowledge_base",
 			[]string{"kb_name", "agent_name"},
 		},
