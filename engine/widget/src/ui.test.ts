@@ -58,7 +58,7 @@ describe('WidgetUI — attribution badge', () => {
     expect(badge).not.toBeNull();
     expect(badge!.getAttribute('href')).toBe('https://syntheticbrew.ai?utm_source=widget');
     expect(badge!.getAttribute('target')).toBe('_blank');
-    expect(badge!.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(badge!.getAttribute('rel')).toBe('nofollow noopener noreferrer');
     expect(badge!.textContent).toBe('Powered by SyntheticBrew');
     // Sits inside the header, right after the title.
     expect(badge!.parentElement?.className).toBe('bb-header');

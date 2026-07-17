@@ -160,7 +160,7 @@ export class WidgetUI {
     badge.className = 'bb-attribution';
     badge.href = 'https://syntheticbrew.ai?utm_source=widget';
     badge.target = '_blank';
-    badge.rel = 'noopener noreferrer';
+    badge.rel = 'nofollow noopener noreferrer';
     badge.textContent = 'Powered by SyntheticBrew';
     title.insertAdjacentElement('afterend', badge);
   }
