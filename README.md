@@ -64,7 +64,7 @@ Try it hosted on SyntheticBrew Cloud (OAuth sign-in, no token to paste):
 
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=SyntheticBrew&config=eyJ1cmwiOiJodHRwczovL2FwcC5zeW50aGV0aWNicmV3LmFpL2FwaS92MS9tY3AvcnBjIn0=)
 
-Or connect any MCP client (Claude Code, Cursor, VS Code, Cline) to `https://app.syntheticbrew.ai/api/v1/mcp/rpc`. Self-hosting? Point it at `<ENGINE_URL>/api/v1/mcp/rpc` instead. See [llms-install.md](llms-install.md) and the [connect-a-coding-agent guide](https://syntheticbrew.ai/docs/integration/connect-coding-agent/).
+Or connect any MCP client (Claude Code, Cursor, VS Code, Cline) to `https://app.syntheticbrew.ai/api/v1/mcp/rpc`. Self-hosting? Point it at `<ENGINE_URL>/api/v1/mcp/rpc` instead. See the [connect-a-coding-agent guide](https://syntheticbrew.ai/docs/integration/connect-coding-agent/).
 
 ## Configuration
 
