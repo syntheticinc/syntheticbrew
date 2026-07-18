@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.1] — 2026-07-18
+
+### Fixed
+
+- **Agent-relation cycle guard now applies on the MCP path.** `admin_create_agent_relation` previously wrote straight to the repository, bypassing the self-loop / acyclicity checks the REST path enforces (it accepted self-loops and cycles). Both facades now route through a shared `agentrelationcreate` create seam.
+- **Model config validation on the MCP path.** `admin_create_model` / `admin_update_model` now apply the same type-enum validation, `openrouter`→`openai_compatible` canonicalization, and base_url format check as the REST handler (an MCP-created `openrouter` model previously tripped the `chk_models_type` constraint).
+- **Free-tier active-user (MAU) cap no longer fails open.** A missing or malformed `active_users_limit` policy is now floored to the plan default via a nullable plugin seam instead of running unlimited; an unlimited plan still stays unlimited.
+- **Operator (builder-assistant) HITL resume no longer counts toward a tenant's active users.**
+- **Embed snippet emits a real widget URL** when the deployment's public origin is configured (see Added).
+
+### Added
+
+- **`SYNTHETICBREW_PUBLIC_BASE_URL`** — the deployment's public origin, used to build absolute URLs the engine cannot infer behind a reverse proxy (currently the `get_embed_snippet` widget URL). Empty keeps the previous placeholder for self-hosted deployments with no configured origin.
+
 ## [1.15.0] — 2026-07-15
 
 ### Added

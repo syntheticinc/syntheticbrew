@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.8] — 2026-07-18
+
+### Changed
+
+- Track engine `1.15.1` (`appVersion`). Bug-fix release; no template changes.
+
 ## [0.12.7] — 2026-07-15
 
 ### Changed
