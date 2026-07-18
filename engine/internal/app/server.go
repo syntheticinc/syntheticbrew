@@ -471,6 +471,14 @@ func Run(sc ServerConfig) error {
 				pgDB,
 			)
 
+			publicBaseURL := ""
+			if bootstrapCfg != nil {
+				publicBaseURL = bootstrapCfg.Engine.PublicBaseURL
+			}
+			// One agent-relation repo instance feeds both the MCP adapter (List/
+			// Delete) and the shared create-seam usecase (cycle guard), so the MCP
+			// admin tool inherits the same acyclicity guard as the REST path.
+			adminRelRepo := configrepo.NewGORMAgentRelationRepository(pgDB)
 			admintools.RegisterAdminTools(components.AgentToolResolver.BuiltinStore(), admintools.AdminToolDependencies{
 				AgentRepo:  newAdminAgentRepoAdapter(configrepo.NewGORMAgentRepository(pgDB)),
 				SchemaRepo: newAdminSchemaRepoAdapter(configrepo.NewGORMSchemaRepository(pgDB)),
@@ -479,7 +487,7 @@ func Run(sc ServerConfig) error {
 				SchemaCreator:     newAdminSchemaCreatorAdapter(newSchemaCreateUsecase(configrepo.NewGORMSchemaRepository(pgDB), sc.Plugin)),
 				MCPServerRepo:     newAdminMCPServerRepoAdapter(configrepo.NewGORMMCPServerRepository(pgDB)),
 				ModelRepo:         newAdminModelRepoAdapter(configrepo.NewGORMLLMProviderRepository(pgDB)),
-				AgentRelationRepo: newAdminAgentRelationRepoAdapter(configrepo.NewGORMAgentRelationRepository(pgDB), configrepo.NewGORMAgentRepository(pgDB)),
+				AgentRelationRepo: newAdminAgentRelationRepoAdapter(adminRelRepo, configrepo.NewGORMAgentRepository(pgDB), newAgentRelationCreateUsecase(adminRelRepo)),
 				SessionRepo:       newAdminSessionRepoAdapter(configrepo.NewGORMSessionRepository(pgDB)),
 				CapabilityRepo:    newAdminCapabilityRepoAdapter(configrepo.NewGORMCapabilityRepository(pgDB)),
 				Reloader: func(ctx context.Context) {
@@ -498,6 +506,7 @@ func Run(sc ServerConfig) error {
 				},
 				TransportPolicy:   sc.Plugin.TransportPolicy(),
 				WidgetTokenMinter: &widgetTokenMinterAdapter{repo: apiTokenRepo},
+				PublicBaseURL:     publicBaseURL,
 				MCPSyncer:         mcpSyncer,
 				KnowledgeBase:     knowledgeToolDeps,
 			})
@@ -982,10 +991,15 @@ func Run(sc ServerConfig) error {
 			// Active-users gate: caps DISTINCT end users per rolling window
 			// (policy-driven, plugin seam writes only). Applies to BYOK turns
 			// too — it limits platform activity, not model spend.
+			var activeUsersFloor activeusers.FloorProvider
+			if f := sc.Plugin.ActiveUsersFloor(); f != nil {
+				activeUsersFloor = f
+			}
 			chatService.activeUsers = activeusers.New(
 				configrepo.NewGORMTenantPolicyRepository(pgDB),
 				configrepo.NewGORMActiveUserRepository(pgDB),
 				nil,
+				activeUsersFloor,
 			)
 		}
 		chatHandler := deliveryhttp.NewChatHandler(chatService, schemaRepoForChat, forwardHeadersStore.GetForContext)

@@ -243,6 +243,44 @@ func TestGetEmbedSnippet_RejectsBadEndpoint(t *testing.T) {
 	}
 }
 
+func TestGetEmbedSnippet_DefaultsToConfiguredOrigin(t *testing.T) {
+	sr := &stubSchemaRepo{schemas: []SchemaRecord{{ID: "s1", Name: "support"}}}
+	tool := &getEmbedSnippetTool{schemaRepo: sr, minter: &stubMinter{token: "bb_widgetkey"}, publicBaseURL: "https://app.syntheticbrew.ai"}
+
+	out, err := tool.InvokableRun(context.Background(), `{"schema_name":"support"}`) // endpoint omitted
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.Contains(out, "https://app.syntheticbrew.ai/widget.js") {
+		t.Fatalf("omitted endpoint must default to the configured origin; got: %s", out)
+	}
+	if strings.Contains(out, "YOUR-ENGINE-URL") {
+		t.Fatalf("configured origin must replace the placeholder; got: %s", out)
+	}
+}
+
+func TestGetEmbedSnippet_NoOriginKeepsPlaceholder(t *testing.T) {
+	sr := &stubSchemaRepo{schemas: []SchemaRecord{{ID: "s1", Name: "support"}}}
+	tool := &getEmbedSnippetTool{schemaRepo: sr, minter: &stubMinter{token: "bb_widgetkey"}} // no publicBaseURL
+
+	out, _ := tool.InvokableRun(context.Background(), `{"schema_name":"support"}`)
+	if !strings.Contains(out, "YOUR-ENGINE-URL") {
+		t.Fatalf("no configured origin must keep the placeholder; got: %s", out)
+	}
+	if !strings.Contains(out, "Replace https://YOUR-ENGINE-URL") {
+		t.Fatalf("placeholder path must keep the replace hint; got: %s", out)
+	}
+}
+
+func TestGetEmbedSnippet_ExplicitEndpointOverridesConfiguredOrigin(t *testing.T) {
+	sr := &stubSchemaRepo{schemas: []SchemaRecord{{ID: "s1", Name: "support"}}}
+	tool := &getEmbedSnippetTool{schemaRepo: sr, minter: &stubMinter{token: "k"}, publicBaseURL: "https://configured.example.com"}
+	out, _ := tool.InvokableRun(context.Background(), `{"schema_name":"support","endpoint":"https://explicit.example.com"}`)
+	if !strings.Contains(out, "https://explicit.example.com/widget.js") || strings.Contains(out, "configured.example.com") {
+		t.Fatalf("explicit endpoint must win over configured origin; got: %s", out)
+	}
+}
+
 func TestValidateEndpoint(t *testing.T) {
 	ok := []string{"https://a.com", "http://localhost:9555", "https://x.example.com/"}
 	for _, e := range ok {

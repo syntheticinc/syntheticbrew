@@ -14,6 +14,7 @@ const (
 	EnvEnginePort           = "ENGINE_PORT"
 	EnvInternalPort         = "SYNTHETICBREW_INTERNAL_PORT"
 	EnvCORSOrigins          = "SYNTHETICBREW_CORS_ORIGINS"
+	EnvPublicBaseURL        = "SYNTHETICBREW_PUBLIC_BASE_URL"
 	EnvAuthMode             = "SYNTHETICBREW_AUTH_MODE"
 	EnvJWTKeysDir           = "SYNTHETICBREW_JWT_KEYS_DIR"
 	EnvJWTPublicKeyPath     = "SYNTHETICBREW_JWT_PUBLIC_KEY_PATH"

@@ -138,7 +138,7 @@ func RegisterAdminTools(store *tools.BuiltinToolStore, deps AdminToolDependencie
 	// the tool never surfaces without the ability to mint a key.
 	if deps.WidgetTokenMinter != nil {
 		store.Register("get_embed_snippet", func(_ tools.ToolDependencies) tool.InvokableTool {
-			return NewGetEmbedSnippetTool(deps.SchemaRepo, deps.WidgetTokenMinter)
+			return NewGetEmbedSnippetTool(deps.SchemaRepo, deps.WidgetTokenMinter, deps.PublicBaseURL)
 		})
 	}
 

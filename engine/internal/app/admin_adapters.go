@@ -10,6 +10,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 	admintools "github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools/admin"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/agentrelationcreate"
 	"gorm.io/gorm"
 )
 
@@ -394,13 +395,25 @@ func toAdminModelRecord(p models.LLMProviderModel) admintools.ModelRecord {
 
 // --- AgentRelation adapter ---
 
-type adminAgentRelationRepoAdapter struct {
-	repo      *configrepo.GORMAgentRelationRepository
-	agentRepo *configrepo.GORMAgentRepository
+// adminAgentNameResolver narrows the agent repository to the two lookups the
+// relation adapter uses (name→UUID resolution and UUID→name display).
+// Consumer-side interface so the adapter can be exercised with fakes.
+type adminAgentNameResolver interface {
+	GetByName(ctx context.Context, name string) (*configrepo.AgentRecord, error)
+	List(ctx context.Context) ([]configrepo.AgentRecord, error)
 }
 
-func newAdminAgentRelationRepoAdapter(repo *configrepo.GORMAgentRelationRepository, agentRepo *configrepo.GORMAgentRepository) *adminAgentRelationRepoAdapter {
-	return &adminAgentRelationRepoAdapter{repo: repo, agentRepo: agentRepo}
+type adminAgentRelationRepoAdapter struct {
+	repo      agentRelationLister
+	agentRepo adminAgentNameResolver
+	// creator is the shared relation-create seam. Routing Create through it (as
+	// the REST facade does) makes the self-loop / acyclicity invariant impossible
+	// to skip on the MCP admin-tool path.
+	creator *agentrelationcreate.Usecase
+}
+
+func newAdminAgentRelationRepoAdapter(repo agentRelationLister, agentRepo adminAgentNameResolver, creator *agentrelationcreate.Usecase) *adminAgentRelationRepoAdapter {
+	return &adminAgentRelationRepoAdapter{repo: repo, agentRepo: agentRepo, creator: creator}
 }
 
 // resolveAgentRef accepts either an agent UUID or an agent name and returns
@@ -475,16 +488,18 @@ func (a *adminAgentRelationRepoAdapter) Create(ctx context.Context, record *admi
 	if record.Label != "" {
 		config["label"] = record.Label
 	}
-	cr := &configrepo.AgentRelationRecord{
+	// Route through the shared create seam so the self-loop / acyclicity guard
+	// runs on the MCP path exactly as it does for REST (BUG-01).
+	rel, err := a.creator.Execute(ctx, agentrelationcreate.Input{
 		SchemaID:      record.SchemaID,
 		SourceAgentID: sourceID,
 		TargetAgentID: targetID,
 		Config:        config,
-	}
-	if err := a.repo.Create(ctx, cr); err != nil {
+	})
+	if err != nil {
 		return err
 	}
-	record.ID = cr.ID
+	record.ID = rel.ID
 	return nil
 }
 

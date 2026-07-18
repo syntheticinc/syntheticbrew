@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/syntheticinc/syntheticbrew/internal/domain/modelcfg"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
 )
 
@@ -107,12 +108,24 @@ func (t *adminCreateModelTool) InvokableRun(ctx context.Context, argsJSON string
 	if args.ModelName == "" {
 		return "[ERROR] model_name is required", nil
 	}
+	// Same type-enum + openrouter canonicalization + base_url validation the
+	// REST handler applies, so an MCP-created model can't diverge (e.g. a raw
+	// "openrouter" type tripping the DB chk_models_type constraint).
+	if !modelcfg.IsValidType(args.Type) {
+		return "[ERROR] " + modelcfg.TypeError, nil
+	}
+	canonType, canonBaseURL := modelcfg.Canonicalize(args.Type, args.BaseURL)
+	if canonBaseURL != "" {
+		if msg := modelcfg.ValidateBaseURL(canonBaseURL); msg != "" {
+			return "[ERROR] " + msg, nil
+		}
+	}
 
 	record := &ModelRecord{
 		Name:      args.Name,
-		Type:      args.Type,
+		Type:      canonType,
 		ModelName: args.ModelName,
-		BaseURL:   args.BaseURL,
+		BaseURL:   canonBaseURL,
 		APIKey:    args.APIKey,
 		IsDefault: args.IsDefault,
 	}
@@ -128,12 +141,12 @@ func (t *adminCreateModelTool) InvokableRun(ctx context.Context, argsJSON string
 		t.reloader(ctx)
 	}
 
-	slog.InfoContext(ctx, "[AdminCreateModel] created", "name", args.Name, "type", args.Type, "model", args.ModelName, "is_default", args.IsDefault)
+	slog.InfoContext(ctx, "[AdminCreateModel] created", "name", args.Name, "type", canonType, "model", args.ModelName, "is_default", args.IsDefault)
 	defaultNote := ""
 	if args.IsDefault {
 		defaultNote = " [default]"
 	}
-	return fmt.Sprintf("Model %q created (id=%s, type=%s, model=%s)%s.", args.Name, record.ID, args.Type, args.ModelName, defaultNote), nil
+	return fmt.Sprintf("Model %q created (id=%s, type=%s, model=%s)%s.", args.Name, record.ID, canonType, args.ModelName, defaultNote), nil
 }
 
 // --- admin_update_model ---
@@ -199,6 +212,17 @@ func (t *adminUpdateModelTool) InvokableRun(ctx context.Context, argsJSON string
 		// Don't pass IsDefault through the generic Update path — promotion
 		// must go through SetDefault to maintain the atomic-swap invariant.
 		IsDefault: existing.IsDefault,
+	}
+	// Validate/canonicalize the resolved type + base_url on the same seam as
+	// create and REST (a PATCH-style update can still introduce a bad type).
+	if !modelcfg.IsValidType(record.Type) {
+		return "[ERROR] " + modelcfg.TypeError, nil
+	}
+	record.Type, record.BaseURL = modelcfg.Canonicalize(record.Type, record.BaseURL)
+	if record.BaseURL != "" {
+		if msg := modelcfg.ValidateBaseURL(record.BaseURL); msg != "" {
+			return "[ERROR] " + msg, nil
+		}
 	}
 
 	if err := t.repo.Update(ctx, args.ModelID, record); err != nil {

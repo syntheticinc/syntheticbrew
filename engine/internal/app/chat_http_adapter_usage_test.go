@@ -356,3 +356,16 @@ func TestSettleResumeSteps_BYOKStillRecordsActivity(t *testing.T) {
 		t.Fatalf("BYOK resume step settle must stay skipped, got %d", g.recordStepsCalls)
 	}
 }
+
+func TestSettleResumeSteps_ActiveUsersSkippedForOperatorChat(t *testing.T) {
+	// The admin builder-assistant resumes a HITL interrupt through this same
+	// service; the operator is not one of the deployment's end users and must
+	// not be minted as an active user (mirror of gateTurn/settleTurn).
+	au := &fakeActiveUsersGate{}
+	a := &chatServiceHTTPAdapter{activeUsers: au}
+	ctx := deliveryhttp.WithOperatorChat(context.Background())
+	a.settleResumeSteps(ctx, "sess-1", "operator-sub", false)
+	if au.recordCalls != 0 {
+		t.Fatalf("operator resume must not mint an active user, got %d records", au.recordCalls)
+	}
+}

@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/syntheticinc/syntheticbrew/internal/domain/modelcfg"
 )
 
 // CacheControlPayload is the API representation of a model's prompt-cache config.
@@ -22,9 +23,9 @@ type CacheControlPayload struct {
 
 // ModelResponse is the API representation of an LLM provider model.
 type ModelResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 	// Kind is "chat" or "embedding". Must be one of: chat, embedding.
 	Kind         string `json:"kind"`
 	BaseURL      string `json:"base_url,omitempty"`
@@ -46,15 +47,15 @@ type ModelResponse struct {
 
 // CreateModelRequest is the body for POST /api/v1/models.
 type CreateModelRequest struct {
-	Name         string `json:"name"`
-	Type         string `json:"type"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 	// Kind is "chat" or "embedding". Must be one of: chat, embedding.
 	Kind         string `json:"kind,omitempty"`
 	BaseURL      string `json:"base_url,omitempty"`
 	ModelName    string `json:"model_name"`
 	APIKey       string `json:"api_key,omitempty"`
 	APIVersion   string `json:"api_version,omitempty"`
-	EmbeddingDim int `json:"embedding_dim,omitempty"` // required when kind=embedding
+	EmbeddingDim int    `json:"embedding_dim,omitempty"` // required when kind=embedding
 	// IsDefault, when true on a chat model, promotes it to tenant default
 	// (atomic swap). When not set on the first chat model created for a
 	// tenant, the server auto-promotes it (natural bootstrap).
@@ -77,8 +78,8 @@ type ModelVerifyResult struct {
 // UpdateModelRequest is the body for PATCH /api/v1/models/{name}.
 // All fields are pointers: nil means "preserve existing value".
 type UpdateModelRequest struct {
-	Name         *string `json:"name,omitempty"`
-	Type         *string `json:"type,omitempty"`
+	Name *string `json:"name,omitempty"`
+	Type *string `json:"type,omitempty"`
 	// Kind is "chat" or "embedding". Nil preserves existing value.
 	Kind         *string `json:"kind,omitempty"`
 	BaseURL      *string `json:"base_url,omitempty"`
@@ -170,27 +171,6 @@ func (h *ModelHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/models.
-// validateModelBaseURL rejects a malformed base_url so bad input returns 400
-// rather than a deferred 500 or an outbound request to a garbage target
-// (SCC-03). It enforces a well-formed absolute http/https URL; it intentionally
-// does NOT block private/localhost hosts — self-hosted CE legitimately points
-// at ollama on localhost, on-prem gateways, and Azure private endpoints.
-// Destination/egress policy for multi-tenant deployments belongs in the plugin layer,
-// not in the CE engine.
-func validateModelBaseURL(raw string) string {
-	u, err := url.ParseRequestURI(raw)
-	if err != nil {
-		return "base_url must be a valid absolute URL (http:// or https://)"
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return "base_url scheme must be http or https"
-	}
-	if u.Host == "" {
-		return "base_url must include a host"
-	}
-	return ""
-}
-
 func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateModelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -217,9 +197,8 @@ func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "model_name is required")
 		return
 	}
-	validTypes := map[string]bool{"ollama": true, "openai_compatible": true, "anthropic": true, "azure_openai": true, "openrouter": true}
-	if !validTypes[req.Type] {
-		writeJSONError(w, http.StatusBadRequest, "type must be one of: ollama, openai_compatible, anthropic, azure_openai, openrouter")
+	if !modelcfg.IsValidType(req.Type) {
+		writeJSONError(w, http.StatusBadRequest, modelcfg.TypeError)
 		return
 	}
 	if req.Kind == "" {
@@ -241,10 +220,7 @@ func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "api_key is required for openrouter")
 			return
 		}
-		req.Type = "openai_compatible"
-		if req.BaseURL == "" {
-			req.BaseURL = "https://openrouter.ai/api/v1"
-		}
+		req.Type, req.BaseURL = modelcfg.Canonicalize(req.Type, req.BaseURL)
 	}
 
 	// Azure OpenAI: require base_url and api_key, default api_version.
@@ -279,7 +255,7 @@ func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.BaseURL != "" {
-		if msg := validateModelBaseURL(req.BaseURL); msg != "" {
+		if msg := modelcfg.ValidateBaseURL(req.BaseURL); msg != "" {
 			writeJSONError(w, http.StatusBadRequest, msg)
 			return
 		}
@@ -344,7 +320,7 @@ func (h *ModelHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.BaseURL != "" {
-		if msg := validateModelBaseURL(req.BaseURL); msg != "" {
+		if msg := modelcfg.ValidateBaseURL(req.BaseURL); msg != "" {
 			writeJSONError(w, http.StatusBadRequest, msg)
 			return
 		}
@@ -386,19 +362,20 @@ func (h *ModelHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	// {ollama, openai_compatible, anthropic, azure_openai}. brewctl reconcile
 	// then fails with API 500 on the second sync.
 	if req.Type != nil {
-		validTypes := map[string]bool{"ollama": true, "openai_compatible": true, "anthropic": true, "azure_openai": true, "openrouter": true}
-		if !validTypes[*req.Type] {
-			writeJSONError(w, http.StatusBadRequest, "type must be one of: ollama, openai_compatible, anthropic, azure_openai, openrouter")
+		if !modelcfg.IsValidType(*req.Type) {
+			writeJSONError(w, http.StatusBadRequest, modelcfg.TypeError)
 			return
 		}
-		if *req.Type == "openrouter" {
-			canonical := "openai_compatible"
-			req.Type = &canonical
-			// Default base URL only when caller did not pin one.
-			if req.BaseURL == nil || *req.BaseURL == "" {
-				defaultURL := "https://openrouter.ai/api/v1"
-				req.BaseURL = &defaultURL
-			}
+		base := ""
+		if req.BaseURL != nil {
+			base = *req.BaseURL
+		}
+		canonType, canonURL := modelcfg.Canonicalize(*req.Type, base)
+		req.Type = &canonType
+		// Canonicalize fills the default base URL only when none was pinned;
+		// reassign the pointer only when it actually changed.
+		if canonURL != base {
+			req.BaseURL = &canonURL
 		}
 	}
 	// Invariant: at most one default chat model per tenant. Clearing a default
@@ -411,7 +388,7 @@ func (h *ModelHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.BaseURL != nil && *req.BaseURL != "" {
-		if msg := validateModelBaseURL(*req.BaseURL); msg != "" {
+		if msg := modelcfg.ValidateBaseURL(*req.BaseURL); msg != "" {
 			writeJSONError(w, http.StatusBadRequest, msg)
 			return
 		}
