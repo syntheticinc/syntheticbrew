@@ -86,6 +86,10 @@ func (Noop) KGEnforcer() KGEnforcer { return nil }
 // KGCounter returns nil — CE reads counts directly from the database.
 func (Noop) KGCounter() KGCounter { return nil }
 
+// ActiveUsersFloor returns nil — CE applies no floor, so a missing
+// active_users_limit policy leaves the distinct-user gate unlimited.
+func (Noop) ActiveUsersFloor() ActiveUsersFloor { return nil }
+
 // EmbedderFor returns (nil, false) — CE routes every embedding through the
 // engine's built-in OpenAI-compatible client. A plugin overrides this to serve
 // a model over its own channel.

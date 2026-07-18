@@ -388,8 +388,9 @@ func (a *chatServiceHTTPAdapter) settleTurn(ctx context.Context, sessionID, user
 func (a *chatServiceHTTPAdapter) settleResumeSteps(ctx context.Context, sessionID, userSub string, byok bool) {
 	// A resume implies the user already received an interrupt (real output in
 	// a prior settle), so refresh their activity unconditionally — BYOK too,
-	// mirroring gateTurn/settleTurn.
-	if a.activeUsers != nil {
+	// mirroring gateTurn/settleTurn. Operator traffic (admin builder-assistant)
+	// is exempt: the operator is not a deployment end user.
+	if a.activeUsers != nil && !isOperatorChat(ctx) {
 		if err := a.activeUsers.RecordActivity(context.WithoutCancel(ctx), userSub); err != nil {
 			slog.WarnContext(ctx, "record user activity failed", "session_id", sessionID, "error", err)
 		}

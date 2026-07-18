@@ -11,6 +11,7 @@ import (
 
 	deliveryhttp "github.com/syntheticinc/syntheticbrew/internal/delivery/http"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/agentrelationcreate"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/schemacreate"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 	"gorm.io/gorm"
@@ -321,6 +322,10 @@ type agentRelationServiceHTTPAdapter struct {
 	agentRepo  agentResolver
 	schemaRepo schemaTenantChecker
 	db         *gorm.DB
+	// creator is the shared relation-create seam (self-loop + acyclicity +
+	// persist) that the MCP admin tool routes through too, so the invariant
+	// cannot diverge between facades.
+	creator *agentrelationcreate.Usecase
 }
 
 // resolveNameByID resolves an agent UUID to its name via a raw DB query.
@@ -437,28 +442,16 @@ func (a *agentRelationServiceHTTPAdapter) CreateAgentRelation(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	if sourceID == targetID {
-		return nil, pkgerrors.InvalidInput("source and target must be different agents")
-	}
-
-	if err := a.checkNoCycle(ctx, schemaID, sourceID, targetID); err != nil {
-		return nil, err
-	}
-
-	record := &configrepo.AgentRelationRecord{
+	// Self-loop + acyclicity + persist run through the shared create seam so
+	// the invariant is identical to the MCP admin-tool path.
+	rel, err := a.creator.Execute(ctx, agentrelationcreate.Input{
 		SchemaID:      schemaID,
 		SourceAgentID: sourceID,
 		TargetAgentID: targetID,
 		Config:        req.Config,
-	}
-	if err := a.repo.Create(ctx, record); err != nil {
-		if isAgentRelationFKViolation(err) {
-			return nil, pkgerrors.NotFound("source or target agent no longer exists (deleted concurrently)")
-		}
-		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") || strings.Contains(err.Error(), "UNIQUE constraint") {
-			return nil, pkgerrors.AlreadyExists("agent relation between these agents already exists in this schema")
-		}
-		return nil, fmt.Errorf("create agent relation: %w", err)
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Auto-set entry_agent_id to the source agent when the schema has none.
@@ -474,11 +467,11 @@ func (a *agentRelationServiceHTTPAdapter) CreateAgentRelation(ctx context.Contex
 	}
 
 	return &deliveryhttp.AgentRelationInfo{
-		ID:            record.ID,
-		SchemaID:      record.SchemaID,
-		SourceAgentID: a.resolveNameByID(ctx, record.SourceAgentID),
-		TargetAgentID: a.resolveNameByID(ctx, record.TargetAgentID),
-		Config:        record.Config,
+		ID:            rel.ID,
+		SchemaID:      rel.SchemaID,
+		SourceAgentID: a.resolveNameByID(ctx, rel.SourceAgentID),
+		TargetAgentID: a.resolveNameByID(ctx, rel.TargetAgentID),
+		Config:        rel.Config,
 	}, nil
 }
 
@@ -504,7 +497,7 @@ func (a *agentRelationServiceHTTPAdapter) UpdateAgentRelation(ctx context.Contex
 		}
 		return fmt.Errorf("load agent relation for cycle check: %w", err)
 	}
-	if err := a.checkNoCycleExcluding(ctx, existing.SchemaID, sourceID, targetID, id); err != nil {
+	if err := a.creator.CheckNoCycle(ctx, existing.SchemaID, sourceID, targetID, id); err != nil {
 		return err
 	}
 
@@ -520,68 +513,6 @@ func (a *agentRelationServiceHTTPAdapter) UpdateAgentRelation(ctx context.Contex
 		return fmt.Errorf("update agent relation: %w", err)
 	}
 	return nil
-}
-
-// checkNoCycle returns an InvalidInput error when adding the edge
-// source→target to the schema's existing delegation graph would close a
-// cycle. A cycle is closed iff there is already a path target→…→source.
-func (a *agentRelationServiceHTTPAdapter) checkNoCycle(ctx context.Context, schemaID, sourceID, targetID string) error {
-	return a.checkNoCycleExcluding(ctx, schemaID, sourceID, targetID, "")
-}
-
-// checkNoCycleExcluding is the variant used by updates: it ignores a specific
-// existing relation ID when building the graph so that re-saving an edge
-// does not falsely self-report a cycle through itself.
-func (a *agentRelationServiceHTTPAdapter) checkNoCycleExcluding(ctx context.Context, schemaID, sourceID, targetID, excludeID string) error {
-	// Self-loop is caught by the caller, but belt-and-braces:
-	if sourceID == targetID {
-		return pkgerrors.InvalidInput("source and target must be different agents")
-	}
-
-	existing, err := a.repo.List(ctx, schemaID)
-	if err != nil {
-		return fmt.Errorf("list existing agent relations: %w", err)
-	}
-
-	// Build an adjacency list of current edges (excluding the one being
-	// updated, if any) and probe reachability from target back to source.
-	adj := make(map[string][]string, len(existing))
-	for _, r := range existing {
-		if excludeID != "" && r.ID == excludeID {
-			continue
-		}
-		adj[r.SourceAgentID] = append(adj[r.SourceAgentID], r.TargetAgentID)
-	}
-
-	if reachable(adj, targetID, sourceID) {
-		return pkgerrors.InvalidInput("circular delegation: adding this edge would close a cycle")
-	}
-	return nil
-}
-
-// reachable reports whether dst is reachable from src in the directed graph adj.
-// BFS; stops as soon as dst is dequeued. O(V+E).
-func reachable(adj map[string][]string, src, dst string) bool {
-	if src == dst {
-		return true
-	}
-	visited := map[string]struct{}{src: {}}
-	queue := []string{src}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, next := range adj[cur] {
-			if next == dst {
-				return true
-			}
-			if _, seen := visited[next]; seen {
-				continue
-			}
-			visited[next] = struct{}{}
-			queue = append(queue, next)
-		}
-	}
-	return false
 }
 
 func (a *agentRelationServiceHTTPAdapter) DeleteAgentRelation(ctx context.Context, id string) error {

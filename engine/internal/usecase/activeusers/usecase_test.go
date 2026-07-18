@@ -67,10 +67,20 @@ func (f *fakeActivityStore) IsActiveSince(_ context.Context, userSub string, sin
 	return f.activeSubs[userSub], nil
 }
 
+// fakeFloor is a static FloorProvider: it returns a fixed (limit, enforce) pair
+// with no I/O, mirroring the plugin's contract.
+type fakeFloor struct {
+	limit   int64
+	enforce bool
+}
+
+func (f fakeFloor) Floor(_ context.Context) (int64, bool) { return f.limit, f.enforce }
+
 func TestGate_Check(t *testing.T) {
 	tests := []struct {
 		name        string
 		policies    map[string]string
+		floor       FloorProvider
 		activeSubs  map[string]bool
 		count       int64
 		userSub     string
@@ -78,6 +88,52 @@ func TestGate_Check(t *testing.T) {
 		wantLimit   int64
 		wantUsed    int64
 	}{
+		{
+			// BUG-12 (a): no policy row, an enforcing floor of 100, count at the
+			// floor. A NEW user must be rejected — the floor closes the
+			// fail-open gap where a missing policy meant unlimited.
+			name:        "missing policy with enforcing floor rejects new user at floor",
+			policies:    map[string]string{},
+			floor:       fakeFloor{limit: 100, enforce: true},
+			count:       100,
+			userSub:     "u-new",
+			wantAllowed: false,
+			wantLimit:   100,
+			wantUsed:    100,
+		},
+		{
+			// BUG-12 (b) — Fable F5: an unlimited plan surfaces as floor
+			// limit=-1. The gate MUST treat <=0 as unlimited and allow, NOT
+			// reject every user (used < -1 would reject all).
+			name:        "unlimited floor (-1) allows despite high count",
+			policies:    map[string]string{},
+			floor:       fakeFloor{limit: -1, enforce: true},
+			count:       9999,
+			userSub:     "u-new",
+			wantAllowed: true,
+		},
+		{
+			// BUG-12 (c): a non-enforcing floor (a plugin that opts out) leaves
+			// the gate unlimited — same as CE.
+			name:        "non-enforcing floor leaves gate unlimited",
+			policies:    map[string]string{},
+			floor:       fakeFloor{limit: 100, enforce: false},
+			count:       9999,
+			userSub:     "u-new",
+			wantAllowed: true,
+		},
+		{
+			// BUG-12 (d): a malformed policy value with an enforcing floor is
+			// floored (not fail-open) — operator misconfig cannot disable the cap.
+			name:        "malformed policy with enforcing floor is floored",
+			policies:    map[string]string{domain.PolicyActiveUsersLimit: "abc"},
+			floor:       fakeFloor{limit: 100, enforce: true},
+			count:       100,
+			userSub:     "u-new",
+			wantAllowed: false,
+			wantLimit:   100,
+			wantUsed:    100,
+		},
 		{
 			name:        "no limit policy allows",
 			policies:    map[string]string{},
@@ -151,7 +207,7 @@ func TestGate_Check(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			policies := &fakePolicyReader{values: tt.policies}
 			activity := &fakeActivityStore{activeSubs: tt.activeSubs, count: tt.count}
-			g := New(policies, activity, fixedClock)
+			g := New(policies, activity, fixedClock, tt.floor)
 
 			dec, err := g.Check(context.Background(), tt.userSub)
 			if err != nil {
@@ -175,7 +231,7 @@ func TestGate_Check(t *testing.T) {
 func TestGate_Check_WindowIsThirtyDaysBeforeNow(t *testing.T) {
 	policies := &fakePolicyReader{values: map[string]string{domain.PolicyActiveUsersLimit: "5"}}
 	activity := &fakeActivityStore{count: 0}
-	g := New(policies, activity, fixedClock)
+	g := New(policies, activity, fixedClock, nil)
 
 	if _, err := g.Check(context.Background(), "u-1"); err != nil {
 		t.Fatalf("Check: %v", err)
@@ -189,7 +245,7 @@ func TestGate_Check_WindowIsThirtyDaysBeforeNow(t *testing.T) {
 func TestGate_Check_NoLimitSkipsActivityQueries(t *testing.T) {
 	policies := &fakePolicyReader{values: map[string]string{}}
 	activity := &fakeActivityStore{}
-	g := New(policies, activity, fixedClock)
+	g := New(policies, activity, fixedClock, nil)
 
 	if _, err := g.Check(context.Background(), "u-1"); err != nil {
 		t.Fatalf("Check: %v", err)
@@ -202,7 +258,7 @@ func TestGate_Check_NoLimitSkipsActivityQueries(t *testing.T) {
 func TestGate_Check_ExistingUserSkipsCount(t *testing.T) {
 	policies := &fakePolicyReader{values: map[string]string{domain.PolicyActiveUsersLimit: "5"}}
 	activity := &fakeActivityStore{activeSubs: map[string]bool{"u-1": true}, count: 999}
-	g := New(policies, activity, fixedClock)
+	g := New(policies, activity, fixedClock, nil)
 
 	dec, err := g.Check(context.Background(), "u-1")
 	if err != nil {
@@ -241,7 +297,7 @@ func TestGate_Check_ErrorPropagation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := New(tt.policies, tt.activity, fixedClock)
+			g := New(tt.policies, tt.activity, fixedClock, nil)
 			if _, err := g.Check(context.Background(), "u-1"); !errors.Is(err, sentinel) {
 				t.Fatalf("want wrapped sentinel error, got %v", err)
 			}
@@ -251,7 +307,7 @@ func TestGate_Check_ErrorPropagation(t *testing.T) {
 
 func TestGate_RecordActivity_TouchPassthrough(t *testing.T) {
 	activity := &fakeActivityStore{}
-	g := New(&fakePolicyReader{}, activity, fixedClock)
+	g := New(&fakePolicyReader{}, activity, fixedClock, nil)
 
 	if err := g.RecordActivity(context.Background(), "u-1"); err != nil {
 		t.Fatalf("RecordActivity: %v", err)
@@ -264,7 +320,7 @@ func TestGate_RecordActivity_TouchPassthrough(t *testing.T) {
 func TestGate_RecordActivity_WrapsError(t *testing.T) {
 	sentinel := errors.New("boom")
 	activity := &fakeActivityStore{touchErr: sentinel}
-	g := New(&fakePolicyReader{}, activity, fixedClock)
+	g := New(&fakePolicyReader{}, activity, fixedClock, nil)
 
 	if err := g.RecordActivity(context.Background(), "u-1"); !errors.Is(err, sentinel) {
 		t.Fatalf("want wrapped sentinel error, got %v", err)
@@ -273,7 +329,7 @@ func TestGate_RecordActivity_WrapsError(t *testing.T) {
 
 func TestGate_CountActive(t *testing.T) {
 	activity := &fakeActivityStore{count: 42}
-	g := New(&fakePolicyReader{}, activity, fixedClock)
+	g := New(&fakePolicyReader{}, activity, fixedClock, nil)
 
 	count, err := g.CountActive(context.Background())
 	if err != nil {
@@ -289,7 +345,7 @@ func TestGate_CountActive(t *testing.T) {
 }
 
 func TestNew_NilClockDefaultsToTimeNow(t *testing.T) {
-	g := New(&fakePolicyReader{}, &fakeActivityStore{}, nil)
+	g := New(&fakePolicyReader{}, &fakeActivityStore{}, nil, nil)
 	if g.now == nil {
 		t.Fatal("nil clock must default to time.Now")
 	}

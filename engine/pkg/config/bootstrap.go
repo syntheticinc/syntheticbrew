@@ -46,6 +46,10 @@ type EngineBootstrap struct {
 	InternalPort int      `mapstructure:"internal_port"` // Control plane port (default 0 = single-port mode)
 	CORSOrigins  []string `mapstructure:"cors_origins"`  // Allowed CORS origins for external port (empty = allow all)
 	DataDir      string   `mapstructure:"data_dir"`
+	// PublicBaseURL is the deployment's public origin (e.g. https://engine.example.com),
+	// used to build absolute URLs the engine cannot infer behind a reverse proxy
+	// (currently the widget embed snippet). Empty = emit a placeholder.
+	PublicBaseURL string `mapstructure:"public_base_url"`
 }
 
 // BootstrapDatabase holds the database connection settings.
@@ -278,6 +282,7 @@ func bindEnvVars(v *viper.Viper) {
 		"engine.port":                    EnvEnginePort,
 		"engine.internal_port":           EnvInternalPort,
 		"engine.cors_origins":            EnvCORSOrigins,
+		"engine.public_base_url":         EnvPublicBaseURL,
 		"security.auth_mode":             EnvAuthMode,
 		"security.jwt_keys_dir":          EnvJWTKeysDir,
 		"security.jwt_public_key_path":   EnvJWTPublicKeyPath,
@@ -337,6 +342,7 @@ func applySecurityDefaults(cfg *BootstrapConfig) {
 func expandBootstrapEnvVars(cfg *BootstrapConfig) {
 	cfg.Engine.Host = expandEnvVars(cfg.Engine.Host)
 	cfg.Engine.DataDir = expandEnvVars(cfg.Engine.DataDir)
+	cfg.Engine.PublicBaseURL = expandEnvVars(cfg.Engine.PublicBaseURL)
 	cfg.Database.URL = expandEnvVars(cfg.Database.URL)
 	cfg.Security.AuthMode = expandEnvVars(cfg.Security.AuthMode)
 	cfg.Security.JWTKeysDir = expandEnvVars(cfg.Security.JWTKeysDir)

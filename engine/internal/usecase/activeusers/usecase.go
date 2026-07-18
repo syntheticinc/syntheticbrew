@@ -40,20 +40,36 @@ type ActivityStore interface {
 // window deterministically.
 type Clock func() time.Time
 
+// FloorProvider supplies a fallback active-users limit for the gate when no
+// per-tenant policy resolves one (a missing or malformed active_users_limit
+// row). It is nil in CE and in any non-enforcing deployment, in which case a
+// missing policy leaves the gate unlimited — the correct self-hosted default.
+//
+// Floor returns an opaque (limit, enforce) pair: the gate treats enforce=false
+// as "leave unlimited" and, when enforce=true, applies limit through the SAME
+// unlimited guard as a normal policy (limit <= 0 means unlimited). It must do
+// no I/O, so it has no error path that could itself fail open.
+type FloorProvider interface {
+	Floor(ctx context.Context) (limit int64, enforce bool)
+}
+
 // Gate checks a user against the configured active-users limit and records
 // activity once a turn completes. It holds no mutable state.
 type Gate struct {
 	policies PolicyReader
 	activity ActivityStore
 	now      Clock
+	floor    FloorProvider
 }
 
-// New creates a Gate. clock may be nil, in which case time.Now is used.
-func New(policies PolicyReader, activity ActivityStore, clock Clock) *Gate {
+// New creates a Gate. clock may be nil, in which case time.Now is used. floor
+// may be nil, in which case a missing/malformed policy leaves the gate
+// unlimited (the CE default).
+func New(policies PolicyReader, activity ActivityStore, clock Clock, floor FloorProvider) *Gate {
 	if clock == nil {
 		clock = time.Now
 	}
-	return &Gate{policies: policies, activity: activity, now: clock}
+	return &Gate{policies: policies, activity: activity, now: clock, floor: floor}
 }
 
 // windowStart returns the start of the rolling activity window.
@@ -72,13 +88,8 @@ func (g *Gate) Check(ctx context.Context, userSub string) (domain.ActiveUsersDec
 	if err != nil {
 		return domain.ActiveUsersDecision{}, fmt.Errorf("get active-users policies: %w", err)
 	}
-	raw, ok := policies[domain.PolicyActiveUsersLimit]
+	limit, ok := g.resolveLimit(ctx, policies)
 	if !ok {
-		return domain.ActiveUsersDecision{Allowed: true}, nil
-	}
-	limit, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || limit <= 0 {
-		slog.WarnContext(ctx, "active-users limit is not a positive integer — gate disabled", "value", raw)
 		return domain.ActiveUsersDecision{Allowed: true}, nil
 	}
 
@@ -103,6 +114,41 @@ func (g *Gate) Check(ctx context.Context, userSub string) (domain.ActiveUsersDec
 		return domain.ActiveUsersDecision{Allowed: true}, nil
 	}
 	return domain.ActiveUsersDecision{Allowed: false, Limit: limit, Used: used}, nil
+}
+
+// resolveLimit determines the active-users limit for this check. A configured,
+// positive policy value wins outright. When the policy is absent or
+// malformed/<=0, the floor provider supplies a fallback (a partially-provisioned
+// tenant may have no policy row at all): an enforced, positive floor is used;
+// anything else leaves the gate unlimited. The bool is false when the gate must
+// allow every user (no limit to enforce).
+func (g *Gate) resolveLimit(ctx context.Context, policies map[string]string) (int64, bool) {
+	if raw, present := policies[domain.PolicyActiveUsersLimit]; present {
+		limit, err := strconv.ParseInt(raw, 10, 64)
+		if err == nil && limit > 0 {
+			return limit, true
+		}
+		slog.WarnContext(ctx, "active-users limit is not a positive integer — falling back to floor", "value", raw)
+	}
+	return g.floorLimit(ctx)
+}
+
+// floorLimit consults the floor provider for a fallback limit. It returns
+// (limit, true) only for an enforced, positive floor. A nil provider, a
+// non-enforcing provider, or an unlimited floor (limit <= 0) yields (0, false)
+// so the gate allows every user — the default whenever no plugin supplies an
+// enforced floor (self-hosted, or a plugin that opts out), and
+// guarding against an unlimited plan (ActiveUsersLimit = -1) rejecting every
+// user via a `used < -1` test.
+func (g *Gate) floorLimit(ctx context.Context) (int64, bool) {
+	if g.floor == nil {
+		return 0, false
+	}
+	limit, enforce := g.floor.Floor(ctx)
+	if !enforce || limit <= 0 {
+		return 0, false
+	}
+	return limit, true
 }
 
 // RecordActivity marks userSub as active now. Called once a turn completes

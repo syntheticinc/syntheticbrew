@@ -244,15 +244,16 @@ func buildProvisionNextSteps(schemaName, modelName string) []string {
 // --- get_embed_snippet ---
 
 type getEmbedSnippetTool struct {
-	schemaRepo SchemaRepository
-	minter     WidgetTokenMinter
+	schemaRepo    SchemaRepository
+	minter        WidgetTokenMinter
+	publicBaseURL string
 }
 
 // NewGetEmbedSnippetTool wires the embed-snippet tool. It verifies the schema
 // exists and is chat-enabled, mints a chat-scoped widget token via the minter,
 // and returns the ready-to-paste <script> snippet.
-func NewGetEmbedSnippetTool(schemaRepo SchemaRepository, minter WidgetTokenMinter) tool.InvokableTool {
-	return &getEmbedSnippetTool{schemaRepo: schemaRepo, minter: minter}
+func NewGetEmbedSnippetTool(schemaRepo SchemaRepository, minter WidgetTokenMinter, publicBaseURL string) tool.InvokableTool {
+	return &getEmbedSnippetTool{schemaRepo: schemaRepo, minter: minter, publicBaseURL: publicBaseURL}
 }
 
 func (t *getEmbedSnippetTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -264,7 +265,7 @@ Generates a ready-to-paste HTML embed snippet for a chat schema: a <script> tag 
 The schema must be chat-enabled (provision_agent enables chat automatically). The minted key is chat-only and is shown exactly once — store it securely.`),
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"schema_name": {Type: schema.String, Desc: "Name of the chat-enabled schema to embed.", Required: true},
-			"endpoint":    {Type: schema.String, Desc: "Public engine base URL (e.g. https://engine.example.com). If omitted, the snippet uses a placeholder you must replace with your engine's public URL.", Required: false},
+			"endpoint":    {Type: schema.String, Desc: "Public engine base URL (e.g. https://engine.example.com). Overrides the deployment's configured public base URL. If omitted and none is configured, the snippet uses a placeholder you must replace with your engine's public URL.", Required: false},
 		}),
 	}, nil
 }
@@ -292,12 +293,21 @@ func (t *getEmbedSnippetTool) InvokableRun(ctx context.Context, argsJSON string,
 	}
 
 	base := "https://YOUR-ENGINE-URL"
-	if args.Endpoint != "" {
+	switch {
+	case args.Endpoint != "":
 		validated, msg := validateEndpoint(args.Endpoint)
 		if msg != "" {
 			return msg, nil
 		}
 		base = validated
+	case t.publicBaseURL != "":
+		// Configured deployment origin (operator env, never request-derived),
+		// used when the caller omits an explicit endpoint. Validated like an
+		// explicit endpoint; a misconfigured origin degrades to the placeholder
+		// rather than emitting a broken snippet.
+		if validated, msg := validateEndpoint(t.publicBaseURL); msg == "" {
+			base = validated
+		}
 	}
 
 	token, err := t.minter.MintChatToken(ctx, "widget-"+args.SchemaName)

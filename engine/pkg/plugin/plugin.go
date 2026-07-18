@@ -195,6 +195,13 @@ type Plugin interface {
 	// directly from the database without extra enrichment.
 	KGCounter() KGCounter
 
+	// ActiveUsersFloor returns the optional floor provider for the
+	// distinct-user gate. Nil — the CE default — means no floor: a missing
+	// active_users_limit policy leaves the gate unlimited, which is correct for
+	// self-hosted CE. A plugin returns a provider to supply a fallback limit so
+	// a missing/malformed policy row cannot silently disable the gate.
+	ActiveUsersFloor() ActiveUsersFloor
+
 	// EmbedderFor optionally returns a custom Embedder for a knowledge model
 	// resolved from the DB (base URL, API key, model name, dimension). It lets a
 	// plugin route embedding generation for a specific model over its own

@@ -432,9 +432,10 @@ func registerHTTPRoutes(deps routesDeps) {
 		// every path.
 		agentRelationRepo := configrepo.NewGORMAgentRelationRepository(pgDB)
 		schemaCreateUC := newSchemaCreateUsecase(schemaRepo, plugin)
+		agentRelationCreateUC := newAgentRelationCreateUsecase(agentRelationRepo)
 		schemaHandler := deliveryhttp.NewSchemaHandler(
 			&schemaServiceHTTPAdapter{repo: schemaRepo, db: pgDB, creator: schemaCreateUC},
-			&agentRelationServiceHTTPAdapter{repo: agentRelationRepo, agentRepo: agentRepo, schemaRepo: schemaRepo, db: pgDB},
+			&agentRelationServiceHTTPAdapter{repo: agentRelationRepo, agentRepo: agentRepo, schemaRepo: schemaRepo, db: pgDB, creator: agentRelationCreateUC},
 			schemaRepo,
 		)
 		r.Group(func(r chi.Router) {
@@ -598,12 +599,17 @@ func registerHTTPRoutes(deps routesDeps) {
 		// settings:read: these are operator aggregates, not admin-only, and NOT
 		// reachable by chat-scoped widget tokens. All stores are tenant-scoped.
 		if pgDB != nil {
+			var activeUsersFloor activeusers.FloorProvider
+			if f := deps.Plugin.ActiveUsersFloor(); f != nil {
+				activeUsersFloor = f
+			}
 			usageStatusAdapter := newUsageStatusAdapter(
 				configrepo.NewGORMTenantPolicyRepository(pgDB),
 				activeusers.New(
 					configrepo.NewGORMTenantPolicyRepository(pgDB),
 					configrepo.NewGORMActiveUserRepository(pgDB),
 					nil,
+					activeUsersFloor,
 				),
 				configrepo.NewGORMSchemaRepository(pgDB),
 				configrepo.NewGORMKnowledgeRepository(pgDB),

@@ -90,6 +90,14 @@ func (f *fakeAgentResolver) GetByName(_ context.Context, name string) (*configre
 	return nil, errors.New("agent not found")
 }
 
+func (f *fakeAgentResolver) List(_ context.Context) ([]configrepo.AgentRecord, error) {
+	out := make([]configrepo.AgentRecord, 0, len(f.byName))
+	for _, r := range f.byName {
+		out = append(out, *r)
+	}
+	return out, nil
+}
+
 // fakeSchemaTenantChecker returns a fixed schema record. Tests seed a single
 // schema belonging to the same "tenant" and return it for every lookup; cross-
 // tenant isolation is covered by tenant_isolation_test.go at the repo layer,
@@ -136,6 +144,9 @@ func newCycleAdapter(t *testing.T) (*agentRelationServiceHTTPAdapter, *fakeRelat
 		// through the interface fields), so leaving it nil is safe and
 		// makes it explicit that the cycle check is DB-free.
 		db: nil,
+		// create + cycle guard route through the shared seam over the same fake
+		// lister, so List (cycle graph) and Create see one dataset.
+		creator: newAgentRelationCreateUsecase(lister),
 	}, lister
 }
 

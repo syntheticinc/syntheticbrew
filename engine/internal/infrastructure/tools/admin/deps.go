@@ -28,6 +28,11 @@ type AdminToolDependencies struct {
 	// WidgetTokenMinter mints chat-scoped widget tokens for get_embed_snippet.
 	// Nil disables the get_embed_snippet tool at registration time.
 	WidgetTokenMinter WidgetTokenMinter
+	// PublicBaseURL is the deployment's public origin (e.g. https://app.example.com).
+	// get_embed_snippet defaults the widget URL to it when the caller omits an
+	// explicit endpoint; empty keeps the placeholder (self-host with no configured
+	// origin). Operator config, never request-derived.
+	PublicBaseURL string
 	// MCPSyncer keeps the live per-tenant MCP client registry in step with
 	// MCP-server lifecycle writes (create / update / delete / set_enabled) so
 	// a freshly provisioned server dials in without a restart. Derives the
