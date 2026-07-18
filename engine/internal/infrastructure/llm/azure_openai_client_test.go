@@ -130,7 +130,7 @@ func TestCreateClientFromDBModel_AzureOpenAI(t *testing.T) {
 				APIKeyEncrypted: "test-key",
 				APIVersion:      tt.apiVersion,
 			}
-			client, err := CreateClientFromDBModel(m)
+			client, err := CreateClientFromDBModel(m, nil)
 			require.NoError(t, err)
 			require.NotNil(t, client)
 		})

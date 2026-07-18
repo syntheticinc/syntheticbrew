@@ -98,7 +98,7 @@ func TestChatHandler_BYOKHeaders_ReachServiceContext(t *testing.T) {
 	svc := &fakeChatService{}
 	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
 
-	mw := NewBYOKMiddleware(BYOKConfig{
+	mw := newTestBYOKMiddleware(BYOKConfig{
 		Enabled:          true,
 		AllowedProviders: []string{"openai", "anthropic", "openai_compatible"},
 	})
@@ -135,7 +135,7 @@ func TestChatHandler_BYOKHeaders_ReachServiceContext(t *testing.T) {
 func TestChatHandler_DisallowedProvider_Returns403(t *testing.T) {
 	svc := &fakeChatService{}
 	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
-	mw := NewBYOKMiddleware(BYOKConfig{
+	mw := newTestBYOKMiddleware(BYOKConfig{
 		Enabled:          true,
 		AllowedProviders: []string{"openai"},
 	})
@@ -168,7 +168,7 @@ func TestChatHandler_DisallowedProvider_Returns403(t *testing.T) {
 func TestChatHandler_MissingKey_Returns400(t *testing.T) {
 	svc := &fakeChatService{}
 	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
-	mw := NewBYOKMiddleware(BYOKConfig{
+	mw := newTestBYOKMiddleware(BYOKConfig{
 		Enabled:          true,
 		AllowedProviders: []string{"openai"},
 	})
@@ -196,7 +196,7 @@ func TestChatHandler_MissingKey_Returns400(t *testing.T) {
 func TestChatHandler_NoBYOK_TenantConfigPath(t *testing.T) {
 	svc := &fakeChatService{}
 	handler := NewChatHandler(svc, byokTestSchemaResolver(), fakeForwardHeaders)
-	mw := NewBYOKMiddleware(BYOKConfig{Enabled: true, AllowedProviders: []string{"openai"}})
+	mw := newTestBYOKMiddleware(BYOKConfig{Enabled: true, AllowedProviders: []string{"openai"}})
 
 	r := chi.NewRouter()
 	r.Use(mw.InjectBYOK)

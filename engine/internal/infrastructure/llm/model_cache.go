@@ -17,14 +17,16 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // ModelCache provides thread-safe caching of LLM clients resolved from the database.
 // Clients are created lazily on first access and cached until explicitly invalidated.
 type ModelCache struct {
-	mu      sync.RWMutex
-	clients map[string]*cachedModel
-	db      *gorm.DB
+	mu           sync.RWMutex
+	clients      map[string]*cachedModel
+	db           *gorm.DB
+	egressPolicy plugin.EgressPolicy
 }
 
 // ResolvedModel is the cached view of a model record — client plus the
@@ -46,10 +48,13 @@ type cachedModel struct {
 }
 
 // NewModelCache creates a new ModelCache backed by the given database.
-func NewModelCache(db *gorm.DB) *ModelCache {
+// egressPolicy is the deployment egress policy applied to every stored model
+// client; pass nil in CE for the permissive default.
+func NewModelCache(db *gorm.DB, egressPolicy plugin.EgressPolicy) *ModelCache {
 	return &ModelCache{
-		clients: make(map[string]*cachedModel),
-		db:      db,
+		clients:      make(map[string]*cachedModel),
+		db:           db,
+		egressPolicy: egressPolicy,
 	}
 }
 
@@ -77,7 +82,7 @@ func (c *ModelCache) Resolve(ctx context.Context, modelID string) (*ResolvedMode
 		return nil, fmt.Errorf("model ID %s not found: %w", modelID, err)
 	}
 
-	client, err := CreateClientFromDBModel(dbModel)
+	client, err := CreateClientFromDBModel(dbModel, c.egressPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("create client for model %q: %w", dbModel.Name, err)
 	}
@@ -198,8 +203,8 @@ func (t *anthropicCacheTransport) RoundTrip(req *http.Request) (*http.Response, 
 // response logging. usage reporting sits inside extra body so an operator-supplied
 // `usage` via extra_body wins (it is injected first, then left untouched by the
 // idempotent usage-reporting pass).
-func newOpenAICompatTransport(m models.LLMProviderModel) http.RoundTripper {
-	var transport http.RoundTripper = http.DefaultTransport
+func newOpenAICompatTransport(m models.LLMProviderModel, base http.RoundTripper) http.RoundTripper {
+	transport := base
 	if IsOpenAIStrictRoute(m.Type, m.ModelName, m.BaseURL) {
 		transport = &propertiesNormalizingTransport{base: transport}
 	}
@@ -230,9 +235,15 @@ func openRouterProviderOrderSet(extra map[string]any) bool {
 	return hasOrder
 }
 
-// CreateClientFromDBModel creates a ToolCallingChatModel from a database LLMProviderModel record.
-func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatModel, error) {
+// CreateClientFromDBModel creates a ToolCallingChatModel from a database
+// LLMProviderModel record. egressPolicy is the injected deployment policy for
+// the operator/stored-model path (Permissive in CE — the operator may target
+// internal hosts; tightened in managed deployments). Every provider branch —
+// including azure and gemini, which build their own clients — routes egress
+// through the guarded HTTP client so no stored base URL escapes the check.
+func CreateClientFromDBModel(m models.LLMProviderModel, egressPolicy plugin.EgressPolicy) (model.ToolCallingChatModel, error) {
 	ctx := context.Background()
+	guard := operatorEgress(egressPolicy)
 
 	switch m.Type {
 	case "ollama":
@@ -244,9 +255,10 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 			baseURL = strings.TrimRight(baseURL, "/") + "/v1"
 		}
 		cfg := &openai.ChatModelConfig{
-			BaseURL: baseURL,
-			Model:   m.ModelName,
-			APIKey:  "ollama",
+			BaseURL:    baseURL,
+			Model:      m.ModelName,
+			APIKey:     "ollama",
+			HTTPClient: newGuardedHTTPClient(guard, nil),
 		}
 		client, err := openai.NewChatModel(ctx, cfg)
 		if err != nil {
@@ -260,7 +272,9 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 			Model:   m.ModelName,
 			APIKey:  m.APIKeyEncrypted,
 		}
-		cfg.HTTPClient = &http.Client{Transport: newOpenAICompatTransport(m)}
+		cfg.HTTPClient = newGuardedHTTPClient(guard, func(base http.RoundTripper) http.RoundTripper {
+			return newOpenAICompatTransport(m, base)
+		})
 		client, err := openai.NewChatModel(ctx, cfg)
 		if err != nil {
 			return nil, err
@@ -268,7 +282,8 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 		return WrapWithRetry(client), nil
 
 	case "azure_openai":
-		client, err := NewAzureOpenAIChatModel(m.BaseURL, m.APIKeyEncrypted, m.ModelName, m.APIVersion)
+		client, err := NewAzureOpenAIChatModel(m.BaseURL, m.APIKeyEncrypted, m.ModelName, m.APIVersion,
+			WithAzureHTTPClient(newGuardedHTTPClient(guard, nil)))
 		if err != nil {
 			return nil, err
 		}
@@ -279,15 +294,13 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 		if m.BaseURL != "" {
 			baseURL = m.BaseURL
 		}
-		httpClient := &http.Client{}
-		httpClient.Transport = &anthropicCacheTransport{
-			base: http.DefaultTransport,
-		}
 		cfg := &openai.ChatModelConfig{
-			BaseURL:    baseURL,
-			Model:      m.ModelName,
-			APIKey:     m.APIKeyEncrypted,
-			HTTPClient: httpClient,
+			BaseURL: baseURL,
+			Model:   m.ModelName,
+			APIKey:  m.APIKeyEncrypted,
+			HTTPClient: newGuardedHTTPClient(guard, func(base http.RoundTripper) http.RoundTripper {
+				return &anthropicCacheTransport{base: base}
+			}),
 		}
 		client, err := openai.NewChatModel(ctx, cfg)
 		if err != nil {
@@ -296,7 +309,7 @@ func CreateClientFromDBModel(m models.LLMProviderModel) (model.ToolCallingChatMo
 		return WrapWithRetry(client), nil
 
 	case "google":
-		var opts []GeminiOption
+		opts := []GeminiOption{WithGeminiHTTPClient(newGuardedHTTPClient(guard, nil))}
 		if m.BaseURL != "" {
 			opts = append(opts, WithGeminiBaseURL(m.BaseURL))
 		}

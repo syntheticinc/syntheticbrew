@@ -48,7 +48,7 @@ func createChatModel(cfg config.Config) (model.ToolCallingChatModel, error) {
 // multi-tenant mode the sentinel has no default, so this
 // returns the env/nil fallback and per-tenant model resolution at chat time is
 // unchanged.
-func resolveBootChatModel(cfg config.Config, db *gorm.DB) (model.ToolCallingChatModel, string, error) {
+func resolveBootChatModel(cfg config.Config, db *gorm.DB, egressPolicy pluginpkg.EgressPolicy) (model.ToolCallingChatModel, string, error) {
 	if db == nil {
 		return envChatModel(cfg)
 	}
@@ -65,7 +65,7 @@ func resolveBootChatModel(cfg config.Config, db *gorm.DB) (model.ToolCallingChat
 		return envChatModel(cfg)
 	}
 
-	client, err := llm.CreateClientFromDBModel(*m)
+	client, err := llm.CreateClientFromDBModel(*m, egressPolicy)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to build chat model from DB default; falling back to env config",
 			"model", m.ModelName, "type", m.Type, "error", err)

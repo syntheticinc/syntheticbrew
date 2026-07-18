@@ -33,7 +33,7 @@ func postChatThroughChain(t *testing.T, m models.LLMProviderModel) []byte {
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := newOpenAICompatTransport(m).RoundTrip(req)
+	resp, err := newOpenAICompatTransport(m, http.DefaultTransport).RoundTrip(req)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.NotEmpty(t, captured, "fake provider must have received a request")

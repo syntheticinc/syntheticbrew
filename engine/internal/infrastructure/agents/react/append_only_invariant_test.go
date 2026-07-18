@@ -75,7 +75,7 @@ func TestOwnedGraph_AppendOnlyPrefixInvariant(t *testing.T) {
 
 	client, err := llm.CreateClientFromDBModel(models.LLMProviderModel{
 		Type: "openai_compatible", BaseURL: srv.URL, ModelName: "test-model", APIKeyEncrypted: "test-key",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	lookup := &charTool{name: "lookup", run: func(string) string { return `{"facts":["A","B","C"]}` }}

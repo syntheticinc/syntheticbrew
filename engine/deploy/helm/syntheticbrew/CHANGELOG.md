@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.0] — 2026-07-18
+
+### Changed
+
+- Track engine `1.16.0` (`appVersion`) — per-tenant BYOK enablement + BYOK/stored-model SSRF egress guard. No template changes; the feature is off by default and configured per tenant (Admin Settings) or via existing `config.byok` values.
+
 ## [0.12.8] — 2026-07-18
 
 ### Changed

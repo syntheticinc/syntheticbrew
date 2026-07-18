@@ -18,7 +18,6 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/tools"
-	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
 )
 
@@ -479,13 +478,12 @@ func derefString(p *string) string {
 }
 
 // settingServiceHTTPAdapter bridges GORMSettingRepository to the http.SettingService interface.
-// byokMW, db, and fallback are optional — when set, any write to a byok.*
-// key triggers a live SetConfig so the middleware hot-swaps without restart.
+// byokResolver is optional — when set, any write to a byok.* key invalidates
+// the writer's tenant cache entry so the per-tenant config re-loads on the next
+// request (tenant-scoped: one tenant's toggle never touches another).
 type settingServiceHTTPAdapter struct {
 	repo         *configrepo.GORMSettingRepository
-	byokMW       *deliveryhttp.BYOKMiddleware
-	db           *gorm.DB
-	byokFallback config.BYOKConfig
+	byokResolver *byokTenantResolver
 }
 
 // settingValueAsString renders a jsonb value for the HTTP layer:
@@ -530,12 +528,8 @@ func (a *settingServiceHTTPAdapter) UpdateSetting(ctx context.Context, key, valu
 	if err != nil {
 		return nil, err
 	}
-	if a.byokMW != nil && strings.HasPrefix(key, "byok.") {
-		cfg := loadBYOKConfig(ctx, a.db, a.byokFallback)
-		a.byokMW.SetConfig(deliveryhttp.BYOKConfig{
-			Enabled:          cfg.Enabled,
-			AllowedProviders: cfg.AllowedProviders,
-		})
+	if a.byokResolver != nil && strings.HasPrefix(key, "byok.") {
+		a.byokResolver.InvalidateTenant(ctx)
 	}
 	return &deliveryhttp.SettingResponse{
 		Key:       setting.Key,

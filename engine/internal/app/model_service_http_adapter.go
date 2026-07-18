@@ -11,6 +11,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/configrepo"
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // ModelCacheInvalidator allows invalidating cached model clients when models are modified.
@@ -55,6 +56,10 @@ type modelServiceHTTPAdapter struct {
 	// AI Builder is usable right after step 1 of the wizard. Optional; nil
 	// means no backfill (useful in unit tests).
 	agentRepo *configrepo.GORMAgentRepository
+	// egressPolicy is the deployment egress policy applied when building a
+	// client to verify a stored model (VerifyModel actively dials the base
+	// URL — a managed deployment must not let it reach an internal address).
+	egressPolicy plugin.EgressPolicy
 }
 
 func (m *modelServiceHTTPAdapter) ListModels(ctx context.Context) ([]deliveryhttp.ModelResponse, error) {
@@ -478,7 +483,7 @@ func (m *modelServiceHTTPAdapter) VerifyModel(ctx context.Context, name string) 
 		return nil, pkgerrors.NotFound(fmt.Sprintf("model not found: %s", name))
 	}
 
-	client, err := llm.CreateClientFromDBModel(*dbModel)
+	client, err := llm.CreateClientFromDBModel(*dbModel, m.egressPolicy)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to create client: %s", err.Error())
 		return &deliveryhttp.ModelVerifyResult{

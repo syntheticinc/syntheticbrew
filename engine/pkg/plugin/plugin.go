@@ -170,6 +170,14 @@ type Plugin interface {
 	// RestrictedTransportPolicy (stdio blocked to prevent host code execution).
 	TransportPolicy() TransportPolicy
 
+	// EgressPolicy returns the outbound-LLM egress policy for this deployment.
+	// CE / bare-metal deployments return PermissiveEgressPolicy (all
+	// destinations allowed — a self-hosted operator may target internal hosts).
+	// Managed / multi-tenant deployments return a tightened policy (deny private
+	// ranges + hostname allowlist). Never nil — the untrusted BYOK path composes
+	// this with a hardcoded deny-private baseline it can never relax.
+	EgressPolicy() EgressPolicy
+
 	// PrepareModelSelector is called once at server startup. The plugin may
 	// register per-agent models on the selector; CE's Noop leaves the
 	// selector untouched so all agents use the default BYOK model.

@@ -53,26 +53,27 @@ type InfraComponentsConfig struct {
 func NewInfraComponents(icc InfraComponentsConfig) (*InfraComponents, error) {
 	cfg := icc.Config
 
+	plug := icc.Plugin
+	if plug == nil {
+		plug = pluginpkg.Noop{}
+	}
+
 	// 1. Resolve the boot default chat model. The DB is the source of truth:
 	// env (cfg.LLM) is only a fallback when the DB has no default set. This
 	// keeps DB-only deployments chat-capable across non-deploy restarts
 	// (eviction/drain/OOM/crash) without a manual re-apply.
-	chatModel, modelName, err := resolveBootChatModel(cfg, icc.DB)
+	chatModel, modelName, err := resolveBootChatModel(cfg, icc.DB, plug.EgressPolicy())
 	if err != nil {
 		return nil, err
 	}
 
 	chatModel = wrapWithDebugModel(chatModel, icc.ModelDebugDir)
-	plug := icc.Plugin
-	if plug == nil {
-		plug = pluginpkg.Noop{}
-	}
 	modelSelector := createModelSelector(plug, chatModel, modelName)
 
 	// 2. Create model cache (for dynamic model resolution from DB)
 	var modelCache *llm.ModelCache
 	if icc.DB != nil {
-		modelCache = llm.NewModelCache(icc.DB)
+		modelCache = llm.NewModelCache(icc.DB, plug.EgressPolicy())
 	}
 
 	// 3. Create work storage, agent pool, session storage

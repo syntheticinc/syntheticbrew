@@ -51,7 +51,7 @@ func TestAppendIncrement_LiveQwen37Plus(t *testing.T) {
 		BaseURL:         "https://openrouter.ai/api/v1",
 		ModelName:       "qwen/qwen3.7-plus",
 		APIKeyEncrypted: key,
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	mod := llm.NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true, MinPrefixTokens: 1})

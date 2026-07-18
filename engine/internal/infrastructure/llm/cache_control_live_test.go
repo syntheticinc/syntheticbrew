@@ -35,7 +35,7 @@ func TestCacheControl_LiveOpenRouterQwen(t *testing.T) {
 		BaseURL:         "https://openrouter.ai/api/v1",
 		ModelName:       "qwen/qwen3-coder-next",
 		APIKeyEncrypted: key,
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true})
@@ -96,7 +96,7 @@ func TestCacheControl_LiveIntraTurnTiming(t *testing.T) {
 		BaseURL:         "https://openrouter.ai/api/v1",
 		ModelName:       "qwen/qwen3-coder-next",
 		APIKeyEncrypted: key,
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	mod := NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true})
@@ -172,7 +172,7 @@ func TestCacheControl_LiveAnthropicEngineCodePath(t *testing.T) {
 		CacheControl: &models.CacheControl{Enabled: true},
 	})
 
-	client, err := CreateClientFromDBModel(m)
+	client, err := CreateClientFromDBModel(m, nil)
 	require.NoError(t, err)
 	mod := NewCacheControlModifier(m.Type, m.GetConfig().CacheControl)
 	require.NotNil(t, mod, "cache modifier must be built for openai_compatible + enabled")
@@ -219,7 +219,7 @@ func TestSessionID_LiveStickyCacheQwen(t *testing.T) {
 		BaseURL:         "https://openrouter.ai/api/v1",
 		ModelName:       "qwen/qwen3-coder-next",
 		APIKeyEncrypted: key,
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	// The exact option react.buildChatCallOptions attaches per turn.

@@ -58,7 +58,7 @@ func TestOwnedGraph_SessionIDHeaderReachesWire(t *testing.T) {
 
 	client, err := llm.CreateClientFromDBModel(models.LLMProviderModel{
 		Type: "openai_compatible", BaseURL: srv.URL, ModelName: "m", APIKeyEncrypted: "k",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	const sessionID = "conversation-abc-123"

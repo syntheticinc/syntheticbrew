@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"errors"
 	"strings"
 
 	pkgerrors "github.com/syntheticinc/syntheticbrew/pkg/errors"
@@ -26,6 +27,13 @@ import (
 func classifyLLMError(err error) error {
 	if err == nil {
 		return nil
+	}
+
+	// Egress-policy rejection — a blocked internal/private destination. Never
+	// retry (the target will stay blocked) and keep the opaque message so it
+	// cannot become a scan oracle.
+	if errors.Is(err, errEgressBlocked) {
+		return pkgerrors.Wrap(err, pkgerrors.CodeInvalidInput, "llm egress blocked")
 	}
 
 	msg := strings.ToLower(err.Error())
