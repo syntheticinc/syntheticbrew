@@ -485,7 +485,7 @@ function MCPPageInner() {
             value={catalogSearch}
             onChange={(e) => setCatalogSearch(e.target.value)}
             placeholder="Search servers..."
-            className="w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/30 rounded-card text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent transition-colors"
+            className="w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/30 rounded-btn text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent transition-colors"
           />
 
           {/* Category filter */}

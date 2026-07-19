@@ -306,7 +306,7 @@ export default function AgentsPage() {
           placeholder="Search agents..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-sm bg-brand-dark-alt border border-brand-shade3/50 rounded-card text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3"
+          className="w-full max-w-sm bg-brand-dark-alt border border-brand-shade3/50 rounded-btn text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3"
         />
       </div>
 
@@ -333,7 +333,16 @@ export default function AgentsPage() {
             ) : (
               <>
                 <p>No agents configured. Create your first agent to get started.</p>
-                <p className="mt-2 text-xs text-brand-shade3/70">
+                <p className="mt-3">
+                  <button
+                    onClick={() => navigate('/api-keys')}
+                    className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+                    data-testid="agents-empty-connect-agent"
+                  >
+                    Onboard a coding agent — it builds one for you
+                  </button>
+                </p>
+                <p className="mt-3 text-xs text-brand-shade3/70">
                   If SyntheticBrew helps you, consider{' '}
                   <a
                     href="https://github.com/syntheticinc/syntheticbrew"

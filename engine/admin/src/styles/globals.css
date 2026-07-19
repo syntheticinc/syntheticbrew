@@ -26,13 +26,13 @@
   }
 
   body {
-    @apply bg-brand-dark font-mono text-brand-light antialiased;
+    @apply bg-brand-dark font-sans text-brand-light antialiased;
     color-scheme: dark;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #87867F #1F1F1F;
+    scrollbar-color: #6f695f #24221e;
   }
 
   ::-webkit-scrollbar {
@@ -40,16 +40,16 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: #1F1F1F;
+    background: #24221e;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #87867F;
+    background: #6f695f;
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #CBC9BC;
+    background: #aaa196;
   }
 
   /* Global form element styling — dark theme readable inputs */
@@ -67,15 +67,15 @@
     @apply text-brand-light border border-brand-shade3/50 rounded-btn text-sm
            focus:outline-none focus:border-brand-accent focus:ring-1
            focus:ring-brand-accent transition-colors;
-    background-color: #1F1F1F !important;
-    color: #F7F8F1 !important;
+    background-color: #24221e !important;
+    color: #f4efe7 !important;
   }
 
   /* Dropdown arrow only for select elements */
   select {
     -webkit-appearance: none;
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2387867F' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23aaa196' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 8px center;
     padding-right: 28px !important;
@@ -83,8 +83,8 @@
 
   /* Dark theme for native select dropdowns */
   select option {
-    background-color: #1F1F1F;
-    color: #F7F8F1;
+    background-color: #24221e;
+    color: #f4efe7;
   }
 
   /* Subtle noise texture on body for depth */
@@ -101,23 +101,23 @@
 
 /* React Flow — dark theme controls (outside @layer to beat rf's unlayered styles) */
 .react-flow__controls {
-  background: #1F1F1F !important;
-  border: 1px solid rgba(135, 134, 127, 0.2) !important;
+  background: #24221e !important;
+  border: 1px solid rgba(170, 161, 150, 0.2) !important;
   border-radius: 4px !important;
   box-shadow: none !important;
 }
 
 .react-flow__controls-button {
-  background: #1F1F1F !important;
-  border-bottom: 1px solid rgba(135, 134, 127, 0.15) !important;
-  fill: #87867F !important;
-  color: #87867F !important;
+  background: #24221e !important;
+  border-bottom: 1px solid rgba(170, 161, 150, 0.15) !important;
+  fill: #aaa196 !important;
+  color: #aaa196 !important;
 }
 
 .react-flow__controls-button:hover {
-  background: #2a2a2a !important;
-  fill: #CBC9BC !important;
-  color: #CBC9BC !important;
+  background: #2c2a25 !important;
+  fill: #c6beb2 !important;
+  color: #c6beb2 !important;
 }
 
 .react-flow__controls-button:last-child {
@@ -125,10 +125,10 @@
 }
 
 .react-flow__controls-button svg {
-  fill: #87867F !important;
+  fill: #aaa196 !important;
 }
 
 .react-flow__controls-button:hover svg {
-  fill: #CBC9BC !important;
+  fill: #c6beb2 !important;
 }
 

@@ -4,32 +4,35 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Values mirror the marketing-site dark theme (cloud-web-astro
+        // global.css / cloud-web-spa index.css) — keep in sync.
         brand: {
           accent: '#D7513E',
-          'accent-hover': '#C04635',
-          dark: '#111111',
-          'dark-surface': '#181818',
-          'dark-alt': '#1F1F1F',
-          light: '#F7F8F1',
-          shade1: '#DFD8D0',
-          shade2: '#CBC9BC',
-          shade3: '#87867F',
+          'accent-hover': '#B94332',
+          dark: '#171715',
+          'dark-surface': '#1e1e1b',
+          'dark-alt': '#24221e',
+          light: '#f4efe7',
+          shade1: '#d8d0c3',
+          shade2: '#c6beb2',
+          shade3: '#aaa196',
         },
         status: {
           active: '#4CAF50',
           attention: '#D7513E',
-          idle: '#87867F',
+          idle: '#aaa196',
         },
       },
       fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'monospace'],
       },
       zIndex: {
         60: '60',
       },
       borderRadius: {
-        card: '2px',
-        btn: '2px',
+        card: '18px',
+        btn: '10px',
       },
       keyframes: {
         'slide-in-right': {

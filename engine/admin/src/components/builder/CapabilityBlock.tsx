@@ -12,7 +12,7 @@ interface CapabilityBlockProps {
 }
 
 const inputCls =
-  'w-full bg-brand-dark-alt border border-brand-shade3/50 rounded-card text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3';
+  'w-full bg-brand-dark-alt border border-brand-shade3/50 rounded-btn text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3';
 
 const labelCls = 'block text-xs text-brand-shade3 mb-1 font-mono';
 const descCls = 'text-xs text-brand-shade3 mb-3';

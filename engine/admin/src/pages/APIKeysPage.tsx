@@ -166,7 +166,7 @@ export default function APIKeysPage() {
               onChange={(e) => setName(e.target.value)}
               required
               placeholder="my-integration"
-              className="w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/50 rounded-card text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent"
+              className="w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/50 rounded-btn text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent"
             />
           </div>
           <div>
@@ -227,7 +227,7 @@ export default function APIKeysPage() {
               type="text"
               value={createdToken ?? ''}
               readOnly
-              className="flex-1 px-3 py-2 border border-brand-shade3/30 rounded-card text-sm font-mono bg-brand-dark text-brand-light"
+              className="flex-1 px-3 py-2 border border-brand-shade3/30 rounded-btn text-sm font-mono bg-brand-dark text-brand-light"
             />
             <button
               onClick={copyToken}

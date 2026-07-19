@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { Link, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import BottomPanel from './BottomPanel';
 import QuotaBanner from './QuotaBanner';
@@ -11,6 +11,13 @@ function TopHeader() {
 
   return (
     <div className="flex items-center gap-3 px-4 py-1.5 border-b border-brand-shade3/10 bg-brand-dark-surface shrink-0 justify-end">
+      <Link
+        to="/api-keys"
+        className="text-[11px] text-brand-shade2 hover:text-brand-light border border-brand-shade3/30 rounded-btn px-2.5 py-1 transition-colors"
+        data-testid="topbar-connect-agent"
+      >
+        Connect coding agent
+      </Link>
       {prototypeEnabled && (
         <>
           <span className="text-[11px] text-brand-shade3 font-mono">

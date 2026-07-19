@@ -18,7 +18,7 @@ interface FormFieldProps {
 }
 
 const inputClasses =
-  'w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/50 rounded-card text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent disabled:bg-brand-dark disabled:text-brand-shade3 disabled:opacity-60 transition-colors';
+  'w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/50 rounded-btn text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent disabled:bg-brand-dark disabled:text-brand-shade3 disabled:opacity-60 transition-colors';
 
 export default function FormField({
   label,

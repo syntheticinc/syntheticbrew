@@ -13,6 +13,14 @@ function engineUrl(): string {
 
 const MCP_RPC_PATH = '/api/v1/mcp/rpc';
 
+// Self-contained onboarding prompt: every step maps to an MCP tool this engine
+// exposes (provision_agent, admin_create_knowledge_base, admin_add_document,
+// admin_link_knowledge_base, get_embed_snippet) — no external references.
+const SETUP_PROMPT = `Set up my SyntheticBrew agent end-to-end using the syntheticbrew MCP tools:
+1. Create an agent called "support" for my website.
+2. Create a knowledge base, load the docs I'll give you, and link it to the agent.
+3. Give me the embed snippet for my site and a test question to try.`;
+
 function claudeCodeCommand(url: string, token: string): string {
   return `claude mcp add --transport http syntheticbrew ${url}${MCP_RPC_PATH} --header "Authorization: Bearer ${token}"`;
 }
@@ -93,7 +101,15 @@ const AGENT_SNIPPETS: readonly AgentSnippet[] = [
 
 // CopyBlock renders a monospace snippet with a copy button, matching the
 // snippet-output styling used on WidgetConfigPage and the token modal.
-function CopyBlock({ label, value }: { label: string; value: string }) {
+function CopyBlock({
+  label,
+  value,
+  testId = 'connect-snippet',
+}: {
+  label: string;
+  value: string;
+  testId?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -123,7 +139,7 @@ function CopyBlock({ label, value }: { label: string; value: string }) {
         </button>
       </div>
       <pre
-        data-testid="connect-snippet"
+        data-testid={testId}
         className="bg-brand-dark-alt px-4 py-3 rounded-card text-xs text-brand-shade2 font-mono overflow-x-auto border border-brand-shade3/20 whitespace-pre-wrap break-all"
       >
         <code>{value}</code>
@@ -253,7 +269,7 @@ export default function ConnectClaudeCode({ onMinted }: ConnectClaudeCodeProps) 
                 type="text"
                 value={token}
                 readOnly
-                className="flex-1 px-3 py-2 border border-brand-shade3/30 rounded-card text-sm font-mono bg-brand-dark text-brand-light"
+                className="flex-1 px-3 py-2 border border-brand-shade3/30 rounded-btn text-sm font-mono bg-brand-dark text-brand-light"
               />
               <button
                 type="button"
@@ -290,6 +306,15 @@ export default function ConnectClaudeCode({ onMinted }: ConnectClaudeCodeProps) 
               ))}
             </div>
             <CopyBlock label={activeSnippet.blockLabel} value={activeSnippet.build(url, token)} />
+          </div>
+
+          {/* Onboarding prompt — the agent does the rest once connected */}
+          <div className="pt-4 border-t border-brand-shade3/15">
+            <p className="text-sm text-brand-light mb-3">
+              Then paste this prompt into your agent — it builds a working,
+              grounded agent for you:
+            </p>
+            <CopyBlock label="Setup prompt" value={SETUP_PROMPT} testId="setup-prompt-snippet" />
           </div>
 
           <button
