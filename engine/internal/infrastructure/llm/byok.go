@@ -8,7 +8,20 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
+
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
+
+// pinnedBYOKProviders are BYOK providers whose base URL is fixed to a known
+// hosted endpoint. An end-user X-BYOK-Base-URL override for these is
+// illegitimate (there is no self-hosted variant) and is rejected — it only
+// shrinks the SSRF surface to "the two custom-base_url providers with a
+// validated URL".
+var pinnedBYOKProviders = map[string]bool{
+	"openai":     true,
+	"openrouter": true,
+	"anthropic":  true,
+}
 
 // BYOKCredentials carries per-request, per-end-user model credentials
 // extracted from the X-BYOK-* request headers (V2 §5.8). When present in
@@ -75,7 +88,22 @@ func RedactAPIKey(key string) string {
 // Other providers are explicitly unsupported for BYOK to keep the
 // surface narrow and audited. Adding one is a small change but should
 // be reviewed alongside the allowed_providers config.
-func BuildBYOKChatModel(ctx context.Context, creds BYOKCredentials) (model.ToolCallingChatModel, error) {
+//
+// egressPolicy is the injected deployment policy; this public entry ALWAYS
+// composes it with the hardcoded deny-private baseline (untrustedEgress) so an
+// end-user base_url can never make the engine dial an internal address. The
+// baseline is non-relaxable here by construction — a future caller cannot skip
+// it. Tests exercise routing via the unexported buildBYOKModel with an
+// explicit permissive policy.
+func BuildBYOKChatModel(ctx context.Context, creds BYOKCredentials, egressPolicy plugin.EgressPolicy) (model.ToolCallingChatModel, error) {
+	return buildBYOKModel(ctx, creds, untrustedEgress(egressPolicy))
+}
+
+// buildBYOKModel builds the ad-hoc chat model applying the given effective
+// egress policy to every provider branch. Unexported: production reaches it
+// only through BuildBYOKChatModel (which composes the non-relaxable baseline);
+// tests may pass a permissive policy to route at a loopback test server.
+func buildBYOKModel(ctx context.Context, creds BYOKCredentials, guard plugin.EgressPolicy) (model.ToolCallingChatModel, error) {
 	if creds.APIKey == "" {
 		return nil, fmt.Errorf("byok: api key required")
 	}
@@ -85,19 +113,26 @@ func BuildBYOKChatModel(ctx context.Context, creds BYOKCredentials) (model.ToolC
 
 	provider := strings.ToLower(creds.Provider)
 
+	// F3: a base_url override for a pinned hosted provider is illegitimate —
+	// reject it rather than silently honouring an end-user-supplied host.
+	if creds.BaseURL != "" && pinnedBYOKProviders[provider] {
+		return nil, fmt.Errorf("byok: base_url override is not permitted for provider %q", provider)
+	}
+
 	var cfg *openai.ChatModelConfig
+	var transform func(base http.RoundTripper) http.RoundTripper
 
 	switch provider {
 	case "openai":
 		cfg = &openai.ChatModelConfig{
-			BaseURL: defaultBaseURL(creds.BaseURL, "https://api.openai.com/v1"),
+			BaseURL: "https://api.openai.com/v1",
 			Model:   defaultString(creds.Model, "gpt-4o-mini"),
 			APIKey:  creds.APIKey,
 		}
 
 	case "openrouter":
 		cfg = &openai.ChatModelConfig{
-			BaseURL: defaultBaseURL(creds.BaseURL, "https://openrouter.ai/api/v1"),
+			BaseURL: "https://openrouter.ai/api/v1",
 			Model:   creds.Model, // no sensible default — must be supplied
 			APIKey:  creds.APIKey,
 		}
@@ -130,18 +165,22 @@ func BuildBYOKChatModel(ctx context.Context, creds BYOKCredentials) (model.ToolC
 		}
 
 	case "anthropic":
-		httpClient := &http.Client{}
-		httpClient.Transport = &anthropicCacheTransport{base: http.DefaultTransport}
 		cfg = &openai.ChatModelConfig{
-			BaseURL:    defaultBaseURL(creds.BaseURL, "https://api.anthropic.com/v1"),
-			Model:      defaultString(creds.Model, "claude-3-5-sonnet-20241022"),
-			APIKey:     creds.APIKey,
-			HTTPClient: httpClient,
+			BaseURL: "https://api.anthropic.com/v1",
+			Model:   defaultString(creds.Model, "claude-3-5-sonnet-20241022"),
+			APIKey:  creds.APIKey,
+		}
+		transform = func(base http.RoundTripper) http.RoundTripper {
+			return &anthropicCacheTransport{base: base}
 		}
 
 	default:
 		return nil, fmt.Errorf("byok: unsupported provider %q", creds.Provider)
 	}
+
+	// D1/F4: every branch receives the guarded HTTP client. Without this the
+	// eino default transport would dial past the egress check.
+	cfg.HTTPClient = newGuardedHTTPClient(guard, transform)
 
 	client, err := openai.NewChatModel(ctx, cfg)
 	if err != nil {

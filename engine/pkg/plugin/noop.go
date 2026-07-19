@@ -68,6 +68,11 @@ func (Noop) SetKnowledgeDocumentCounter(KnowledgeDocumentCounter) {}
 // TransportPolicy returns PermissiveTransportPolicy — CE allows all transports.
 func (Noop) TransportPolicy() TransportPolicy { return PermissiveTransportPolicy{} }
 
+// EgressPolicy returns PermissiveEgressPolicy — CE allows all LLM destinations
+// (a self-hosted operator may target internal hosts). The untrusted BYOK path
+// still enforces its own hardcoded deny-private baseline on top of this.
+func (Noop) EgressPolicy() EgressPolicy { return PermissiveEgressPolicy{} }
+
 // PrepareModelSelector is a no-op. CE has no per-agent model selection — all
 // agents use the default BYOK model.
 func (Noop) PrepareModelSelector(_ ModelSelectorConfigurator, _ model.ToolCallingChatModel) {}

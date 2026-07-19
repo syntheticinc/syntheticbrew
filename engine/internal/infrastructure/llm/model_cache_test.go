@@ -55,7 +55,7 @@ func seedModel(t *testing.T, db *gorm.DB, name, providerType, baseURL, modelName
 
 func TestModelCache_Get_NotFound(t *testing.T) {
 	db := setupTestDB(t)
-	cache := NewModelCache(db)
+	cache := NewModelCache(db, nil)
 
 	_, _, err := cache.Get(context.Background(), "nonexistent-999")
 	require.Error(t, err)
@@ -66,7 +66,7 @@ func TestModelCache_Get_UnsupportedType(t *testing.T) {
 	db := setupTestDB(t)
 	id := seedModel(t, db, "bad-model", "unknown_provider", "http://localhost", "test", "")
 
-	cache := NewModelCache(db)
+	cache := NewModelCache(db, nil)
 	_, _, err := cache.Get(context.Background(), id)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported provider type")
@@ -74,7 +74,7 @@ func TestModelCache_Get_UnsupportedType(t *testing.T) {
 
 func TestModelCache_Invalidate(t *testing.T) {
 	db := setupTestDB(t)
-	cache := NewModelCache(db)
+	cache := NewModelCache(db, nil)
 
 	// Pre-populate cache manually to avoid needing a real LLM server.
 	mockClient := &mockChatModel{id: "cached"}
@@ -99,7 +99,7 @@ func TestModelCache_Invalidate(t *testing.T) {
 }
 
 func TestModelCache_InvalidateAll(t *testing.T) {
-	cache := NewModelCache(nil)
+	cache := NewModelCache(nil, nil)
 
 	cache.mu.Lock()
 	cache.clients["1"] = &cachedModel{resolved: &ResolvedModel{Client: &mockChatModel{id: "a"}, Name: "a"}}
@@ -114,7 +114,7 @@ func TestModelCache_InvalidateAll(t *testing.T) {
 }
 
 func TestModelCache_Get_CacheHit(t *testing.T) {
-	cache := NewModelCache(nil)
+	cache := NewModelCache(nil, nil)
 	mockClient := &mockChatModel{id: "cached-model"}
 
 	cache.mu.Lock()
@@ -128,7 +128,7 @@ func TestModelCache_Get_CacheHit(t *testing.T) {
 }
 
 func TestModelCache_ConcurrentAccess(t *testing.T) {
-	cache := NewModelCache(nil)
+	cache := NewModelCache(nil, nil)
 	mockClient := &mockChatModel{id: "concurrent"}
 
 	cache.mu.Lock()
@@ -165,7 +165,7 @@ func TestCreateClientFromDBModel_UnsupportedType(t *testing.T) {
 		BaseURL:   "http://localhost",
 		ModelName: "test",
 	}
-	_, err := CreateClientFromDBModel(m)
+	_, err := CreateClientFromDBModel(m, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported provider type: grpc_custom")
 }

@@ -4,7 +4,8 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"sync/atomic"
+
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 const (
@@ -26,60 +27,77 @@ const (
 	headerBYOKBaseURL  = "X-BYOK-Base-URL"
 )
 
-// BYOKConfig holds BYOK middleware configuration. Loaded from the
-// `settings` table at startup and refreshed via SetConfig when the admin
-// updates the toggles, so middleware behaviour follows the live config
-// without a restart (V2 §5.8).
+// BYOKConfig holds the resolved per-tenant BYOK configuration for a request.
+// It is produced by a BYOKConfigResolver from the tenant's `settings` rows, so
+// one tenant's toggle never affects another (V2 §5.8).
 type BYOKConfig struct {
 	Enabled          bool
 	AllowedProviders []string // e.g. ["openai", "anthropic", "openrouter"]
 }
 
-// byokState is the immutable snapshot stored in the atomic.Value.
-// We swap a fresh pointer on each SetConfig — readers see a consistent
-// view without a mutex.
-type byokState struct {
-	enabled          bool
-	allowedProviders map[string]struct{}
+// BYOKConfigResolver returns the BYOK configuration for the request's tenant.
+// Defined consumer-side (delivery) so the middleware never imports the app
+// layer. The concrete resolver (in package app) reads the tenant-scoped
+// settings rows and fails closed on an unresolvable tenant.
+type BYOKConfigResolver interface {
+	Resolve(ctx context.Context) BYOKConfig
 }
 
-func newByokState(cfg BYOKConfig) *byokState {
-	allowed := make(map[string]struct{}, len(cfg.AllowedProviders))
-	for _, p := range cfg.AllowedProviders {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		allowed[strings.ToLower(p)] = struct{}{}
-	}
-	return &byokState{
-		enabled:          cfg.Enabled,
-		allowedProviders: allowed,
-	}
+// customBaseURLProviders require an explicit allowlist entry even when the
+// allowlist is empty (F1). openai_compatible and ollama accept a user base URL,
+// so an empty "allow-all" list must NOT silently expose them on the untrusted
+// end-user path (a zero-config tenant would otherwise route ollama at the
+// engine's own localhost). A tenant opts into these by listing them.
+var customBaseURLProviders = map[string]bool{
+	"openai_compatible": true,
+	"ollama":            true,
 }
+
+// pinnedBYOKProviders use a fixed hosted endpoint (F3). An end-user base-URL
+// override for them is illegitimate and rejected at the boundary with 400 —
+// duplicated delivery-side so the middleware need not import the infra layer.
+var pinnedBYOKProviders = map[string]bool{
+	"openai":     true,
+	"openrouter": true,
+	"anthropic":  true,
+}
+
+// untrustedBaseURLPolicy validates a user-supplied BYOK base URL at the URL
+// layer (scheme, metadata hostname, literal private IP). It mirrors the
+// engine-owned untrusted deny-private baseline so a rejection surfaces as a
+// clean 400 before execution; the dial-time Control check remains the
+// DNS-rebinding backstop.
+var untrustedBaseURLPolicy plugin.EgressPolicy = plugin.DenyPrivateEgressPolicy{}
 
 // BYOKMiddleware parses BYOK headers and injects them into request context.
-// Configuration is held atomically and can be hot-swapped via SetConfig
-// (admin toggles → settings table → middleware refresh) without a restart.
+// The active configuration is resolved per-tenant on each request so a
+// tenant-admin's toggle is isolated to that tenant.
 type BYOKMiddleware struct {
-	state atomic.Pointer[byokState]
+	resolver BYOKConfigResolver
 }
 
-// NewBYOKMiddleware creates a new BYOKMiddleware seeded with cfg.
-func NewBYOKMiddleware(cfg BYOKConfig) *BYOKMiddleware {
-	m := &BYOKMiddleware{}
-	m.state.Store(newByokState(cfg))
-	return m
+// NewBYOKMiddleware creates a new BYOKMiddleware backed by resolver.
+func NewBYOKMiddleware(resolver BYOKConfigResolver) *BYOKMiddleware {
+	return &BYOKMiddleware{resolver: resolver}
 }
 
-// SetConfig atomically replaces the active configuration. Safe to call
-// from any goroutine; in-flight requests keep their snapshot.
-func (m *BYOKMiddleware) SetConfig(cfg BYOKConfig) {
-	m.state.Store(newByokState(cfg))
+// providerAllowed reports whether provider may be used under allowlist. A
+// non-empty allowlist is authoritative. An empty allowlist means allow-all
+// EXCEPT the custom-base_url providers, which always require explicit listing.
+func providerAllowed(provider string, allowlist map[string]struct{}) bool {
+	if len(allowlist) > 0 {
+		_, ok := allowlist[provider]
+		return ok
+	}
+	return !customBaseURLProviders[provider]
 }
 
 // InjectBYOK is middleware that reads BYOK headers and adds them to context.
 // If BYOK is disabled or headers are absent, the request passes through unchanged.
+//
+// It must be mounted only under mandatory Authenticate+Tenant middleware — the
+// resolver fails closed on a missing tenant, so an optional-auth mount would
+// wrongly reject or (worse) mis-scope requests.
 func (m *BYOKMiddleware) InjectBYOK(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		provider := r.Header.Get(headerBYOKProvider)
@@ -93,8 +111,8 @@ func (m *BYOKMiddleware) InjectBYOK(next http.Handler) http.Handler {
 			return
 		}
 
-		state := m.state.Load()
-		if state == nil || !state.enabled {
+		cfg := m.resolver.Resolve(r.Context())
+		if !cfg.Enabled {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "BYOK is disabled"})
 			return
 		}
@@ -104,10 +122,29 @@ func (m *BYOKMiddleware) InjectBYOK(next http.Handler) http.Handler {
 			return
 		}
 
+		allowlist := make(map[string]struct{}, len(cfg.AllowedProviders))
+		for _, p := range cfg.AllowedProviders {
+			if p = strings.TrimSpace(p); p != "" {
+				allowlist[strings.ToLower(p)] = struct{}{}
+			}
+		}
+
 		providerLower := strings.ToLower(provider)
-		if len(state.allowedProviders) > 0 {
-			if _, ok := state.allowedProviders[providerLower]; !ok {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "provider not allowed: " + provider})
+		if !providerAllowed(providerLower, allowlist) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "provider not allowed: " + provider})
+			return
+		}
+
+		// Base-URL policy (F3 + untrusted deny-private). Enforced here so a
+		// violation is a clean 400 at the boundary rather than a silent
+		// fallback to the tenant model deep in the turn executor.
+		if baseURL != "" {
+			if pinnedBYOKProviders[providerLower] {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "base_url override is not permitted for provider " + provider})
+				return
+			}
+			if err := untrustedBaseURLPolicy.CheckURL(baseURL); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "base URL not permitted"})
 				return
 			}
 		}

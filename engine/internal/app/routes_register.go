@@ -27,7 +27,6 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
 	ucschematemplate "github.com/syntheticinc/syntheticbrew/internal/usecase/schematemplate"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
-	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	pluginpkg "github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
@@ -52,12 +51,12 @@ type routesDeps struct {
 	AuthMW               *deliveryhttp.AuthMiddleware
 	TenantMW             *deliveryhttp.TenantMiddleware
 	BYOKMW               *deliveryhttp.BYOKMiddleware
+	BYOKResolver         *byokTenantResolver
 	AuditLogger          *audit.Logger
 	UpdateChecker        *versioncheck.UpdateChecker
 	LocalSessionHandler  *deliveryhttp.LocalSessionHandler
 	TransportPolicy      mcpcatalog.TransportPolicy
 	Plugin               pluginpkg.Plugin
-	BYOKConfig           config.BYOKConfig
 	ExternalRouter       chi.Router
 	InternalRouter       chi.Router
 	HasInternalServer    bool // true in two-port mode
@@ -88,13 +87,11 @@ func registerHTTPRoutes(deps routesDeps) {
 	agentLifecycleReader := deps.AgentLifecycleReader
 	authMW := deps.AuthMW
 	tenantMW := deps.TenantMW
-	byokMW := deps.BYOKMW
 	auditLogger := deps.AuditLogger
 	updateChecker := deps.UpdateChecker
 	localSessionHandler := deps.LocalSessionHandler
 	transportPolicy := deps.TransportPolicy
 	plugin := deps.Plugin
-	byokFallbackCfg := deps.BYOKConfig
 	r := deps.ExternalRouter
 	internalRouter := deps.InternalRouter
 
@@ -183,7 +180,7 @@ func registerHTTPRoutes(deps routesDeps) {
 
 		// Models
 		llmProviderRepo := configrepo.NewGORMLLMProviderRepository(pgDB)
-		modelService := &modelServiceHTTPAdapter{repo: llmProviderRepo, modelCache: components.ModelCache, agentRepo: agentRepo}
+		modelService := &modelServiceHTTPAdapter{repo: llmProviderRepo, modelCache: components.ModelCache, agentRepo: agentRepo, egressPolicy: deps.Plugin.EgressPolicy()}
 		modelHandler := deliveryhttp.NewModelHandler(modelService)
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeModelsRead))
@@ -465,9 +462,7 @@ func registerHTTPRoutes(deps routesDeps) {
 		settingRepo := configrepo.NewGORMSettingRepository(pgDB)
 		settingHandler := deliveryhttp.NewSettingHandler(&settingServiceHTTPAdapter{
 			repo:         settingRepo,
-			byokMW:       byokMW,
-			db:           pgDB,
-			byokFallback: byokFallbackCfg,
+			byokResolver: deps.BYOKResolver,
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeSettingsRead))

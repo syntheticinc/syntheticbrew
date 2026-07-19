@@ -632,6 +632,7 @@ func Run(sc ServerConfig) error {
 	var internalHTTPPort int
 	var httpAuthMW *deliveryhttp.AuthMiddleware
 	var byokMW *deliveryhttp.BYOKMiddleware
+	var byokResolver *byokTenantResolver
 	if bootstrapCfg != nil {
 		httpPort = bootstrapCfg.Engine.Port
 		if httpPort == 0 {
@@ -729,15 +730,16 @@ func Run(sc ServerConfig) error {
 		authMW := deliveryhttp.NewAuthMiddlewareWithVerifier(jwtVerifier, &tokenRepoHTTPAdapter{repo: apiTokenRepo})
 		httpAuthMW = authMW
 
-		// V2 §5.8: per-end-user BYOK middleware. Reads the live config from
-		// `settings` (admin UI updates take effect on the next request via
-		// SetConfig) and falls back to the YAML bootstrap when the table is
-		// empty. Mounted after auth on chat / agent endpoints below.
-		byokCfg := loadBYOKConfig(ctx, pgDB, cfg.BYOK)
-		byokMW = deliveryhttp.NewBYOKMiddleware(deliveryhttp.BYOKConfig{
-			Enabled:          byokCfg.Enabled,
-			AllowedProviders: byokCfg.AllowedProviders,
-		})
+		// V2 §5.8: per-end-user BYOK middleware. The resolver reads the live
+		// config from the tenant-scoped `settings` rows on each request (admin UI
+		// updates take effect immediately, isolated per tenant) and falls back to
+		// the YAML bootstrap when a tenant has no row. sentinelFallback is true
+		// only in local auth-mode (the CE token carries no tenant); in external
+		// multi-tenant mode an unattributed request fails closed (F7). Mounted
+		// after auth on chat / agent endpoints below (N5).
+		byokResolver = newBYOKTenantResolver(pgDB, cfg.BYOK,
+			bootstrapCfg.Security.AuthMode == config.AuthModeLocal)
+		byokMW = deliveryhttp.NewBYOKMiddleware(byokResolver)
 
 		// Audit logger
 		auditLogger := audit.NewLogger(pgDB)
@@ -789,12 +791,12 @@ func Run(sc ServerConfig) error {
 			AuthMW:               authMW,
 			TenantMW:             tenantMW,
 			BYOKMW:               byokMW,
+			BYOKResolver:         byokResolver,
 			AuditLogger:          auditLogger,
 			UpdateChecker:        updateChecker,
 			LocalSessionHandler:  localSessionHandler,
 			TransportPolicy:      sc.Plugin.TransportPolicy(),
 			Plugin:               sc.Plugin,
-			BYOKConfig:           cfg.BYOK,
 			ExternalRouter:       r,
 			InternalRouter:       internalRouter,
 			HasInternalServer:    internalHTTPServer != nil,
@@ -870,6 +872,9 @@ func Run(sc ServerConfig) error {
 		components.ModelCache,
 		agentModelResolver,
 	)
+
+	// Wire the deployment egress policy into the untrusted BYOK model path.
+	factory.SetEgressPolicy(sc.Plugin.EgressPolicy())
 
 	// Wire agent UUID resolver so engine execution context uses uuid FK, not agent name.
 	if agentRegistry != nil {
@@ -970,6 +975,11 @@ func Run(sc ServerConfig) error {
 			agents:      agentRegistry,
 			registryMgr: registryMgr,
 			chatEnabled: components.AgentService != nil || components.ModelCache != nil,
+		}
+		// Set the BYOK resolver only when present — assigning a nil concrete
+		// pointer to the interface field would make it non-nil and panic on call.
+		if byokResolver != nil {
+			chatService.byok = byokResolver
 		}
 		var schemaRepoForChat *configrepo.GORMSchemaRepository
 		if pgDB != nil {

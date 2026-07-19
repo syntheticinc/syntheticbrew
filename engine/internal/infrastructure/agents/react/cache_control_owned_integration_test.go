@@ -55,7 +55,7 @@ func TestOwnedGraph_CacheControlReachesChatNodeWire(t *testing.T) {
 		BaseURL:         srv.URL,
 		ModelName:       "test-model",
 		APIKeyEncrypted: "test-key",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	agent, err := NewAgent(context.Background(), AgentConfig{
@@ -114,7 +114,7 @@ func TestOwnedGraph_CacheBreakpointOnHeadAndCacheableTail(t *testing.T) {
 
 	client, err := llm.CreateClientFromDBModel(models.LLMProviderModel{
 		Type: "openai_compatible", BaseURL: srv.URL, ModelName: "test-model", APIKeyEncrypted: "test-key",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	const userInputMarker = "STABLE-USER-TURN-MARKER"

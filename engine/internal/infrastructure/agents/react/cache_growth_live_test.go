@@ -102,7 +102,7 @@ func liveCacheClient(t *testing.T, sessionID string) (model.ToolCallingChatModel
 		BaseURL:         "https://openrouter.ai/api/v1",
 		ModelName:       "qwen/qwen3.7-plus",
 		APIKeyEncrypted: key,
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	mod := llm.NewCacheControlModifier("openai_compatible", &models.CacheControl{Enabled: true})

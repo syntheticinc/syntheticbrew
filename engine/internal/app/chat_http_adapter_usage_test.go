@@ -70,6 +70,47 @@ func TestGateTurn_BlocksAtLimit_UsageLimited(t *testing.T) {
 	}
 }
 
+// fakeBYOKResolver reports a fixed enablement for the BUG-05 hint test.
+type fakeBYOKResolver struct{ enabled bool }
+
+func (f fakeBYOKResolver) Resolve(context.Context) deliveryhttp.BYOKConfig {
+	return deliveryhttp.BYOKConfig{Enabled: f.enabled}
+}
+
+// TestGateTurn_BYOKHintConditional is BUG-05: the "bring your own model key"
+// hint on the usage-limit error appears only when BYOK is enabled for the
+// tenant — advertising it while BYOK is off points at an unusable option.
+func TestGateTurn_BYOKHintConditional(t *testing.T) {
+	limited := domain.UsageDecision{Allowed: false, BlockedScope: domain.ScopeTenant, Unit: domain.UnitTurns, Limit: 50, Used: 50}
+
+	t.Run("byok off — no hint", func(t *testing.T) {
+		a := &chatServiceHTTPAdapter{usage: &fakeUsageGate{dec: limited}, byok: fakeBYOKResolver{enabled: false}}
+		err := a.gateTurn(context.Background(), "user-1", false)
+		if err == nil || !strings.Contains(err.Error(), "usage limit reached") {
+			t.Fatalf("want usage-limit error, got %v", err)
+		}
+		if strings.Contains(err.Error(), "bring your own model key") {
+			t.Fatalf("hint must be absent when BYOK disabled, got %v", err)
+		}
+	})
+
+	t.Run("byok on — hint present", func(t *testing.T) {
+		a := &chatServiceHTTPAdapter{usage: &fakeUsageGate{dec: limited}, byok: fakeBYOKResolver{enabled: true}}
+		err := a.gateTurn(context.Background(), "user-1", false)
+		if err == nil || !strings.Contains(err.Error(), "bring your own model key") {
+			t.Fatalf("hint must be present when BYOK enabled, got %v", err)
+		}
+	})
+
+	t.Run("nil resolver — no hint", func(t *testing.T) {
+		a := &chatServiceHTTPAdapter{usage: &fakeUsageGate{dec: limited}}
+		err := a.gateTurn(context.Background(), "user-1", false)
+		if err == nil || strings.Contains(err.Error(), "bring your own model key") {
+			t.Fatalf("nil resolver must drop hint, got %v", err)
+		}
+	})
+}
+
 func TestGateTurn_BYOKSkips(t *testing.T) {
 	g := &fakeUsageGate{dec: domain.UsageDecision{Allowed: false}} // would block if consulted
 	a := &chatServiceHTTPAdapter{usage: g}

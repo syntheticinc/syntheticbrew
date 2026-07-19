@@ -166,9 +166,11 @@ export default function SettingsPage() {
           <code className="mx-1 px-1 bg-brand-dark rounded">X-BYOK-Provider</code>,
           <code className="mx-1 px-1 bg-brand-dark rounded">X-BYOK-API-Key</code>,
           <code className="mx-1 px-1 bg-brand-dark rounded">X-BYOK-Model</code>
-          and, for self-hosted endpoints,
+          and, for <code className="mx-1 px-1 bg-brand-dark rounded">openai_compatible</code> / <code className="mx-1 px-1 bg-brand-dark rounded">ollama</code> only,
           <code className="mx-1 px-1 bg-brand-dark rounded">X-BYOK-Base-URL</code>
-          headers on the chat endpoint.
+          headers on the chat endpoint. The hosted providers use fixed endpoints, and a base URL pointing at a
+          private/internal address is refused. Selecting no providers allows the hosted ones; the custom-base-URL
+          providers must be selected explicitly.
         </p>
 
         {/* Enable toggle — writes byok.enabled "true"/"false". */}
@@ -235,7 +237,8 @@ export default function SettingsPage() {
           })}
         </div>
         <p className="text-xs text-brand-shade3 mt-2">
-          No providers selected = all supported providers are allowed when BYOK is enabled.
+          No providers selected = the hosted providers (OpenAI, Anthropic, OpenRouter) are allowed.
+          OpenAI-compatible and Ollama accept a custom base URL, so they must be selected explicitly.
         </p>
       </section>
       </>}

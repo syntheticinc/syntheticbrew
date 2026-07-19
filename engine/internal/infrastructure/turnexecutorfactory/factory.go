@@ -11,6 +11,7 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/orchestrator"
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
 
 // AgentModelResolver looks up the ModelID associated with a named agent.
@@ -61,6 +62,9 @@ type Factory struct {
 	capConfigReader tools.CapabilityConfigReader
 	// Agent UUID resolver: name → uuid FK (for engine_adapter ExecutionConfig.AgentID)
 	agentUUIDResolver AgentUUIDResolver
+	// Deployment egress policy for the untrusted BYOK path (injected via
+	// SetEgressPolicy). Nil composes to the hardcoded deny-private baseline alone.
+	egressPolicy plugin.EgressPolicy
 }
 
 // New creates a new factory for Engine-based TurnExecutors.
@@ -86,6 +90,12 @@ func New(
 		agentPool:              agentPool,
 		contextRemindersGetter: contextRemindersGetter,
 	}
+}
+
+// SetEgressPolicy injects the deployment egress policy applied to the untrusted
+// BYOK model path. Nil leaves the hardcoded deny-private baseline in effect.
+func (f *Factory) SetEgressPolicy(policy plugin.EgressPolicy) {
+	f.egressPolicy = policy
 }
 
 // SetMemory configures the memory storage for memory_recall/memory_store tools.
@@ -280,7 +290,7 @@ func (f *Factory) CreateForSession(
 // fingerprinted key (llm.RedactAPIKey) — never the raw secret.
 func (f *Factory) resolveModel(ctx context.Context, agentName string) *llm.ResolvedModel {
 	if creds := llm.BYOKCredentialsFrom(ctx); creds != nil {
-		client, err := llm.BuildBYOKChatModel(ctx, *creds)
+		client, err := llm.BuildBYOKChatModel(ctx, *creds, f.egressPolicy)
 		if err != nil {
 			slog.ErrorContext(ctx, "byok: build chat model failed",
 				"agent", agentName,

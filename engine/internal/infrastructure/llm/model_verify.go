@@ -48,7 +48,13 @@ func VerifyModel(ctx context.Context, client model.ToolCallingChatModel, modelNa
 	result.ResponseTimeMs = time.Since(start).Milliseconds()
 
 	if err != nil {
+		// N1: an egress-policy rejection returns a single opaque message so the
+		// verify endpoint cannot be used as a private-host/port scan oracle. Real
+		// connection errors to permitted hosts keep their detail for debugging.
 		errMsg := fmt.Sprintf("connectivity check failed: %s", err.Error())
+		if opaque, blocked := normalizeEgressError(err); blocked {
+			errMsg = opaque
+		}
 		result.Connectivity = "error"
 		result.ToolCalling = "skipped"
 		result.Error = &errMsg

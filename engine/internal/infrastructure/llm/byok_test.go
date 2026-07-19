@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,16 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/syntheticinc/syntheticbrew/pkg/plugin"
 )
+
+// permissiveTestPolicy allows loopback so httptest servers (127.0.0.1) can be
+// used to prove BYOK routing. Production never passes a permissive policy on
+// the untrusted path — BuildBYOKChatModel composes the non-relaxable
+// deny-private baseline itself. Tests reach the builder through the unexported
+// buildBYOKModel with this policy to exercise the happy path.
+func permissiveTestPolicy() plugin.EgressPolicy { return plugin.PermissiveEgressPolicy{} }
 
 // TestBuildBYOKChatModel_OpenAICompatible_RoutesToUserEndpoint is the
 // integration check for V2 §5.8: when BYOK credentials are present, the
@@ -51,7 +61,7 @@ func TestBuildBYOKChatModel_OpenAICompatible_RoutesToUserEndpoint(t *testing.T) 
 		BaseURL:  srv.URL,
 	}
 
-	model, err := BuildBYOKChatModel(context.Background(), creds)
+	model, err := buildBYOKModel(context.Background(), creds, permissiveTestPolicy())
 	require.NoError(t, err)
 	require.NotNil(t, model)
 
@@ -94,7 +104,7 @@ func TestBuildBYOKChatModel_SurfacesProvider401(t *testing.T) {
 		BaseURL:  srv.URL,
 	}
 
-	model, err := BuildBYOKChatModel(context.Background(), creds)
+	model, err := buildBYOKModel(context.Background(), creds, permissiveTestPolicy())
 	require.NoError(t, err)
 	require.NotNil(t, model)
 
@@ -111,13 +121,63 @@ func TestBuildBYOKChatModel_SurfacesProvider401(t *testing.T) {
 	}
 }
 
+// TestBuildBYOKChatModel_RejectsPrivateBaseURL is the BUG-09 SSRF regression:
+// the public entry composes a non-relaxable deny-private baseline, so an
+// end-user base_url that resolves to an internal address is blocked BEFORE any
+// connection — even when the injected deployment policy is permissive. Covered
+// via provider=openai_compatible (custom base_url is honoured) with a spread of
+// private / metadata / CGNAT / IPv4-mapped targets.
+func TestBuildBYOKChatModel_RejectsPrivateBaseURL(t *testing.T) {
+	targets := []string{
+		"http://127.0.0.1/v1",
+		"http://169.254.169.254/v1",          // cloud metadata
+		"http://10.0.0.5/v1",                 // private
+		"http://192.168.1.1/v1",              // private
+		"http://[::1]/v1",                    // IPv6 loopback
+		"http://100.64.0.1/v1",               // CGNAT (Go IsPrivate misses)
+		"http://metadata.google.internal/v1", // metadata hostname
+		"http://[::ffff:10.0.0.1]/v1",        // IPv4-mapped private
+		"http://localhost/v1",                // hostname → resolves to 127.0.0.1: blocked POST-DNS by Control, not by CheckURL
+	}
+	for _, target := range targets {
+		t.Run(target, func(t *testing.T) {
+			creds := BYOKCredentials{Provider: "openai_compatible", APIKey: "sk-x", Model: "m", BaseURL: target}
+			// Public entry — composes the baseline even with a permissive policy.
+			model, err := BuildBYOKChatModel(context.Background(), creds, plugin.PermissiveEgressPolicy{})
+			require.NoError(t, err, "client construction should not dial")
+			_, err = model.Generate(context.Background(), []*schema.Message{{Role: schema.User, Content: "ping"}})
+			require.Error(t, err, "private/internal base_url must be blocked")
+			assert.True(t, errors.Is(err, errEgressBlocked) ||
+				strings.Contains(err.Error(), errEgressBlocked.Error()),
+				"expected egress-blocked error, got: %v", err)
+		})
+	}
+}
+
+// TestBuildBYOKChatModel_RejectsBaseURLOverrideForPinned is F3: an end-user
+// base_url override for a pinned hosted provider is illegitimate and rejected.
+func TestBuildBYOKChatModel_RejectsBaseURLOverrideForPinned(t *testing.T) {
+	for _, provider := range []string{"openai", "openrouter", "anthropic"} {
+		t.Run(provider, func(t *testing.T) {
+			_, err := BuildBYOKChatModel(context.Background(), BYOKCredentials{
+				Provider: provider,
+				APIKey:   "sk-x",
+				Model:    "m",
+				BaseURL:  "http://169.254.169.254/v1",
+			}, plugin.PermissiveEgressPolicy{})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "base_url override is not permitted")
+		})
+	}
+}
+
 // TestBuildBYOKChatModel_RequiresAPIKey is a unit-level guard against
 // silently building a client without credentials.
 func TestBuildBYOKChatModel_RequiresAPIKey(t *testing.T) {
 	_, err := BuildBYOKChatModel(context.Background(), BYOKCredentials{
 		Provider: "openai",
 		Model:    "gpt-4o-mini",
-	})
+	}, plugin.PermissiveEgressPolicy{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "api key required")
 }
@@ -126,7 +186,7 @@ func TestBuildBYOKChatModel_RequiresAPIKey(t *testing.T) {
 func TestBuildBYOKChatModel_RequiresProvider(t *testing.T) {
 	_, err := BuildBYOKChatModel(context.Background(), BYOKCredentials{
 		APIKey: "sk-x",
-	})
+	}, plugin.PermissiveEgressPolicy{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "provider required")
 }
@@ -138,20 +198,26 @@ func TestBuildBYOKChatModel_OpenAICompatibleRequiresBaseURL(t *testing.T) {
 		Provider: "openai_compatible",
 		APIKey:   "sk-x",
 		Model:    "gpt-4o-mini",
-	})
+	}, plugin.PermissiveEgressPolicy{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "base_url required")
 }
 
 // TestBuildBYOKChatModel_UnsupportedProvider exercises the explicit
-// allowlist of supported BYOK providers.
+// allowlist of supported BYOK providers. N3: azure_openai and google (gemini)
+// are NOT in the BYOK set — their model name is part of the URL path, so they
+// must stay off the untrusted header path.
 func TestBuildBYOKChatModel_UnsupportedProvider(t *testing.T) {
-	_, err := BuildBYOKChatModel(context.Background(), BYOKCredentials{
-		Provider: "google",
-		APIKey:   "sk-x",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported provider")
+	for _, provider := range []string{"google", "azure_openai", "mistral"} {
+		t.Run(provider, func(t *testing.T) {
+			_, err := BuildBYOKChatModel(context.Background(), BYOKCredentials{
+				Provider: provider,
+				APIKey:   "sk-x",
+			}, plugin.PermissiveEgressPolicy{})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported provider")
+		})
+	}
 }
 
 // TestRedactAPIKey verifies the redacted form never contains the middle

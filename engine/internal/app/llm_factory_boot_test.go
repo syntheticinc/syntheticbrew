@@ -65,7 +65,7 @@ func TestResolveBootChatModel_DBDefaultWinsOverEnv(t *testing.T) {
 
 	cfg := bootEnvCfg("openrouter", "env-model") // env ALSO set
 
-	chatModel, name, err := resolveBootChatModel(cfg, db)
+	chatModel, name, err := resolveBootChatModel(cfg, db, nil)
 	require.NoError(t, err)
 	require.NotNil(t, chatModel, "DB default must yield a chat model so AgentService initializes (no 502 after restart)")
 	assert.Equal(t, "db-default-model", name, "DB default must win over env config")
@@ -76,7 +76,7 @@ func TestResolveBootChatModel_EnvFallbackWhenNoDBDefault(t *testing.T) {
 	db := bootModelsTestDB(t) // empty
 	cfg := bootEnvCfg("openrouter", "env-model")
 
-	chatModel, name, err := resolveBootChatModel(cfg, db)
+	chatModel, name, err := resolveBootChatModel(cfg, db, nil)
 	require.NoError(t, err)
 	require.NotNil(t, chatModel)
 	assert.Equal(t, "env-model", name)
@@ -88,7 +88,7 @@ func TestResolveBootChatModel_NilWhenNothingConfigured(t *testing.T) {
 	db := bootModelsTestDB(t) // empty
 	var cfg config.Config     // empty LLM
 
-	chatModel, name, err := resolveBootChatModel(cfg, db)
+	chatModel, name, err := resolveBootChatModel(cfg, db, nil)
 	require.NoError(t, err)
 	assert.Nil(t, chatModel)
 	assert.Equal(t, "", name)
@@ -98,7 +98,7 @@ func TestResolveBootChatModel_NilWhenNothingConfigured(t *testing.T) {
 func TestResolveBootChatModel_DBNilUsesEnv(t *testing.T) {
 	cfg := bootEnvCfg("openrouter", "env-model")
 
-	chatModel, name, err := resolveBootChatModel(cfg, nil)
+	chatModel, name, err := resolveBootChatModel(cfg, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, chatModel)
 	assert.Equal(t, "env-model", name)

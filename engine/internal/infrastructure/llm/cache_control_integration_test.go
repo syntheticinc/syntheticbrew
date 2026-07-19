@@ -46,7 +46,7 @@ func TestCacheControl_EndToEndWire(t *testing.T) {
 		BaseURL:         srv.URL,
 		ModelName:       "test-model",
 		APIKeyEncrypted: "test-key",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	// Same modifier the factory builds for a cache-enabled model.
@@ -109,7 +109,7 @@ func TestCacheControl_DisabledWireUnchanged(t *testing.T) {
 		BaseURL:         srv.URL,
 		ModelName:       "test-model",
 		APIKeyEncrypted: "test-key",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	// Caching off → factory builds a nil modifier → no option attached.

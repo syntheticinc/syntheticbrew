@@ -42,7 +42,7 @@ func TestOwnedGraph_StableHeadByteIdenticalAcrossTurns(t *testing.T) {
 
 	client, err := llm.CreateClientFromDBModel(models.LLMProviderModel{
 		Type: "openai_compatible", BaseURL: srv.URL, ModelName: "test-model", APIKeyEncrypted: "test-key",
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	// A large, turn-invariant system prompt so the stable head clears any provider cache

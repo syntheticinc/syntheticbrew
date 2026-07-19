@@ -130,6 +130,17 @@ type chatServiceHTTPAdapter struct {
 	// activeUsers caps distinct end users per rolling window. Nil in no-DB
 	// mode, in which case the gate is skipped entirely.
 	activeUsers activeUsersGate
+
+	// byok resolves whether BYOK is enabled for the request's tenant. Used
+	// only to keep the usage-limit hint truthful (BUG-05): the "bring your own
+	// key" suggestion appears only when BYOK is actually enabled. Nil → off.
+	byok byokEnablementResolver
+}
+
+// byokEnablementResolver reports the per-tenant BYOK config. Consumer-side
+// interface so the chat adapter needs only the enablement flag.
+type byokEnablementResolver interface {
+	Resolve(ctx context.Context) deliveryhttp.BYOKConfig
 }
 
 // resolveRegistry returns the AgentRegistry for the current request context.
@@ -344,9 +355,14 @@ func (a *chatServiceHTTPAdapter) gateTurn(ctx context.Context, userSub string, b
 		return fmt.Errorf("check usage limit: %w", err)
 	}
 	if !dec.Allowed {
-		return pkgerrors.UsageLimited(fmt.Sprintf(
-			"usage limit reached: %d/%d %s for this %s — bring your own model key to continue",
-			dec.Used, dec.Limit, dec.Unit, dec.BlockedScope))
+		msg := fmt.Sprintf("usage limit reached: %d/%d %s for this %s",
+			dec.Used, dec.Limit, dec.Unit, dec.BlockedScope)
+		// BUG-05: only advertise BYOK when it is actually enabled for this
+		// tenant — otherwise the hint points at an option the user cannot use.
+		if a.byok != nil && a.byok.Resolve(ctx).Enabled {
+			msg += " — bring your own model key to continue"
+		}
+		return pkgerrors.UsageLimited(msg)
 	}
 	return nil
 }

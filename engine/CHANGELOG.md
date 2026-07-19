@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.16.0] — 2026-07-18
+
+### Added
+
+- **Per-end-user BYOK is now safe to enable per tenant.** A tenant admin can turn on BYOK for their tenant alone; the setting no longer leaks across tenants. BYOK remains **off by default** in every edition.
+- **`EgressPolicy` plugin seam.** CE returns a permissive policy (a self-hosted operator may target internal hosts); managed deployments return a deny-private policy that blocks loopback/private/link-local/CGNAT/metadata destinations on operator-configured models.
+
+### Fixed / Security
+
+- **SSRF via `X-BYOK-Base-URL` and stored-model base URLs is closed.** Outbound LLM requests now pass a guarded HTTP client that validates the resolved IP right before connect (DNS-rebinding safe), disables proxy inheritance, caps and re-validates redirects, and rejects an https→http downgrade. The untrusted end-user header path always enforces a non-relaxable deny-private baseline; a blocked destination returns a single opaque error (no address echoed, so no scan oracle).
+- **Base URL override rejected for pinned providers.** `openai` / `anthropic` / `openrouter` use fixed hosted endpoints — an `X-BYOK-Base-URL` for them is now a 400. Only `openai_compatible` / `ollama` accept a base URL.
+- **Custom-base-URL providers require explicit opt-in.** An empty allowlist no longer implies `openai_compatible` / `ollama`, so a freshly-enabled tenant cannot unintentionally route the engine at an internal endpoint.
+- **BYOK config is resolved per tenant.** One tenant's `byok.enabled` toggle no longer affects others; an unattributed request in multi-tenant mode fails closed instead of reading the sentinel tenant's row.
+- **Usage-limit hint no longer advertises BYOK when it is disabled** for the tenant.
+
 ## [1.15.1] — 2026-07-18
 
 ### Fixed

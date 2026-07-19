@@ -40,7 +40,7 @@ func TestUsageReporting_LiveStreamingCachedVisible(t *testing.T) {
 		BaseURL:         "https://openrouter.ai/api/v1",
 		ModelName:       "qwen/qwen3.7-plus",
 		APIKeyEncrypted: key,
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	// Same cache-marking modifier the factory builds for a cache-enabled model. No manual
