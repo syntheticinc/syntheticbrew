@@ -237,7 +237,8 @@ export default function SettingsPage() {
           })}
         </div>
         <p className="text-xs text-brand-shade3 mt-2">
-          No providers selected = all supported providers are allowed when BYOK is enabled.
+          No providers selected = the hosted providers (OpenAI, Anthropic, OpenRouter) are allowed.
+          OpenAI-compatible and Ollama accept a custom base URL, so they must be selected explicitly.
         </p>
       </section>
       </>}
