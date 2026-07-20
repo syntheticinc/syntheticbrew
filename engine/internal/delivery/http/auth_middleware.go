@@ -253,7 +253,13 @@ func (m *AuthMiddleware) authenticateJWT(w http.ResponseWriter, r *http.Request,
 // token is present. Unlike Authenticate, it does NOT reject the request on
 // missing or invalid credentials — it simply passes through without
 // populating the context. Use for public routes that serve different
-// content based on tenant identity when known (e.g. widget CSP origins).
+// content based on identity when known (e.g. widget CSP origins, or the OAuth
+// consent page minting a nonce bound to the session subject).
+//
+// The user subject is populated whenever a token validates, independent of
+// tenant: local-mode admin sessions carry an empty tenant but a real subject,
+// and the consent flow binds to that subject. Tenant context is attached only
+// when the token carries a valid tenant UUID (multi-tenant deployments).
 func (m *AuthMiddleware) AuthenticateOptional(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -266,15 +272,22 @@ func (m *AuthMiddleware) AuthenticateOptional(next http.Handler) http.Handler {
 		if strings.HasPrefix(token, "bb_") {
 			hash := authprim.Hash(token)
 			info, err := m.tokenVerifier.VerifyToken(r.Context(), hash)
-			if err != nil || info.TenantID == "" {
+			if err != nil {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if _, err := uuid.Parse(info.TenantID); err != nil {
-				next.ServeHTTP(w, r)
-				return
+			ctx := r.Context()
+			if info.Name != "" {
+				ctx = domain.WithUserSub(ctx, info.Name)
 			}
-			next.ServeHTTP(w, r.WithContext(domain.WithTenantID(r.Context(), info.TenantID)))
+			if info.TenantID != "" {
+				if _, err := uuid.Parse(info.TenantID); err != nil {
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				ctx = domain.WithTenantID(ctx, info.TenantID)
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
@@ -283,15 +296,22 @@ func (m *AuthMiddleware) AuthenticateOptional(next http.Handler) http.Handler {
 			return
 		}
 		claims, err := m.jwtVerifier.Verify(token)
-		if err != nil || claims.TenantID == "" {
+		if err != nil {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if _, err := uuid.Parse(claims.TenantID); err != nil {
-			next.ServeHTTP(w, r)
-			return
+		ctx := r.Context()
+		if claims.Subject != "" {
+			ctx = domain.WithUserSub(ctx, claims.Subject)
 		}
-		next.ServeHTTP(w, r.WithContext(domain.WithTenantID(r.Context(), claims.TenantID)))
+		if claims.TenantID != "" {
+			if _, err := uuid.Parse(claims.TenantID); err != nil {
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+			ctx = domain.WithTenantID(ctx, claims.TenantID)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

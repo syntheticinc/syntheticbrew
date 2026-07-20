@@ -40,6 +40,9 @@ func (Noop) OnSchemaCreate(context.Context, string, int) error { return nil }
 // OnDocumentCreate is a no-op — CE enforces no knowledge-document limit.
 func (Noop) OnDocumentCreate(context.Context, string, int) error { return nil }
 
+// OnMCPClientConnected is a no-op — CE has no activation-tracking surface.
+func (Noop) OnMCPClientConnected(context.Context, string) {}
+
 // SetTenantSeeder is a no-op. CE has no provisioning endpoint, so there is
 // nothing to wire the seeder into.
 func (Noop) SetTenantSeeder(TenantSeeder) {}

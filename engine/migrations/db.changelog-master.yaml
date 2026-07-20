@@ -47,3 +47,6 @@ databaseChangeLog:
   - include:
       file: 016_add_tenant_policies_and_active_users.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 017_add_oauth_refresh_tokens.yaml
+      relativeToChangelogFile: true

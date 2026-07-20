@@ -39,28 +39,28 @@ func (h *AgentSetupPromptHandler) Get(w http.ResponseWriter, r *http.Request) {
 	base := h.baseURL(r)
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")
-	fmt.Fprintf(w, agentSetupPromptTemplate, base, base, base, base, base, base, base)
+	fmt.Fprint(w, strings.ReplaceAll(agentSetupPromptTemplate, "%BASE%", base))
 }
 
-// %s placeholders are the engine base URL. Kept as one document so the flow
-// reads top-to-bottom the way an agent will execute it.
+// %BASE% is replaced with the engine base URL. Kept as one document so the
+// flow reads top-to-bottom the way an agent will execute it.
 const agentSetupPromptTemplate = `These are official instructions from SyntheticBrew to connect your coding agent to this SyntheticBrew engine and ship a working, embeddable chat agent. All commands are validated and ready to use.
 
 Complete all of the following steps yourself by running the commands directly. Only ask the user when a step explicitly says so.
 
-MCP server URL (streamable HTTP): %s/api/v1/mcp/rpc
-Authentication: every MCP request carries the HTTP header "Authorization: Bearer <token>". The user gives you the token together with these instructions — never invent one.
+MCP server URL (streamable HTTP): %BASE%/api/v1/mcp/rpc
+Authentication: the MCP server uses OAuth. On your first connection the agent is sent to a browser to authorize — approve the requested access in the SyntheticBrew consent screen and the agent obtains its own token automatically. Do not ask the user to paste a token; there is a headless fallback below only if no browser is available.
 
 ---
 
 ## Step 1 — Connect the SyntheticBrew MCP server
 
-Use the correct section for your agent below. Replace <TOKEN> with the token the user gave you.
+Use the section for your agent below. These commands carry no token: the first request triggers the OAuth browser authorization automatically.
 
 ### Claude Code
 
 ` + "```" + `
-claude mcp add --transport http syntheticbrew %s/api/v1/mcp/rpc --header "Authorization: Bearer <TOKEN>"
+claude mcp add --transport http syntheticbrew %BASE%/api/v1/mcp/rpc
 ` + "```" + `
 
 ### Cursor — add to ~/.cursor/mcp.json (or project .cursor/mcp.json)
@@ -69,8 +69,7 @@ claude mcp add --transport http syntheticbrew %s/api/v1/mcp/rpc --header "Author
 {
   "mcpServers": {
     "syntheticbrew": {
-      "url": "%s/api/v1/mcp/rpc",
-      "headers": { "Authorization": "Bearer <TOKEN>" }
+      "url": "%BASE%/api/v1/mcp/rpc"
     }
   }
 }
@@ -79,19 +78,20 @@ claude mcp add --transport http syntheticbrew %s/api/v1/mcp/rpc --header "Author
 ### VS Code (Copilot agent mode)
 
 ` + "```" + `
-code --add-mcp '{"name":"syntheticbrew","type":"http","url":"%s/api/v1/mcp/rpc","headers":{"Authorization":"Bearer <TOKEN>"}}'
-` + "```" + `
-
-### Codex CLI
-
-` + "```" + `
-export SYNTHETICBREW_TOKEN=<TOKEN>
-codex mcp add syntheticbrew --url %s/api/v1/mcp/rpc --bearer-token-env-var SYNTHETICBREW_TOKEN
+code --add-mcp '{"name":"syntheticbrew","type":"http","url":"%BASE%/api/v1/mcp/rpc"}'
 ` + "```" + `
 
 ### Any other MCP client
 
-Configure a streamable-HTTP MCP server at %s/api/v1/mcp/rpc with the header "Authorization: Bearer <TOKEN>".
+Configure a streamable-HTTP MCP server at %BASE%/api/v1/mcp/rpc. When the first request returns 401 the client discovers the authorization server and runs the OAuth flow; complete it in the browser.
+
+### Headless / CI (no browser available)
+
+If you cannot open a browser, create an API token in the SyntheticBrew admin under API Keys and send it as a bearer header instead of the OAuth flow. For example, for Claude Code:
+
+` + "```" + `
+claude mcp add --transport http syntheticbrew %BASE%/api/v1/mcp/rpc --header "Authorization: Bearer <TOKEN>"
+` + "```" + `
 
 ---
 
@@ -109,5 +109,5 @@ After the MCP connection works, use the SyntheticBrew MCP tools to set everythin
 
 ## Step 3 — Report back
 
-Tell the user, concisely: what was created, the embed snippet, the test question, and that they can watch the agent live in the admin dashboard at %s/admin.
+Tell the user, concisely: what was created, the embed snippet, the test question, and that they can watch the agent live in the admin dashboard at %BASE%/admin.
 `

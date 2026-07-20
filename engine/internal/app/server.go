@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -48,6 +49,10 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/activeusers"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/kgread"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/oauthapprove"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/oauthauthorizeinfo"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/oauthregister"
+	"github.com/syntheticinc/syntheticbrew/internal/usecase/oauthtoken"
 	"github.com/syntheticinc/syntheticbrew/internal/usecase/usagelimit"
 	"github.com/syntheticinc/syntheticbrew/pkg/config"
 	"github.com/syntheticinc/syntheticbrew/pkg/logger"
@@ -695,6 +700,15 @@ func Run(sc ServerConfig) error {
 		// issuance is owned by an external issuer.
 		// The plugin may override the default verifier entirely — the
 		// middleware uses whatever it gets as long as the interface matches.
+		// OAuth 2.1 authorization server (MCP client flow). Resolved before the
+		// verifier so the composite wrap below can trust its AS keypair. When
+		// disabled (by config or auto-disabled because no issuer resolved, C-3)
+		// asWiring.Enabled is false and nothing downstream is wired.
+		asWiring, asErr := resolveOAuthAS(ctx, bootstrapCfg)
+		if asErr != nil {
+			return fmt.Errorf("resolve oauth authorization server: %w", asErr)
+		}
+
 		var jwtVerifier pluginpkg.JWTVerifier
 		var localSessionPrivKey []byte // non-nil in local mode, enables /auth/local-session route below
 		if pluginVerifier := sc.Plugin.JWTVerifier(); pluginVerifier != nil {
@@ -727,8 +741,59 @@ func Run(sc ServerConfig) error {
 					bootstrapCfg.Security.AuthMode, config.AuthModeLocal, config.AuthModeExternal)
 			}
 		}
+		// C-1: wrap whatever base verifier was resolved (plugin verifier in
+		// Cloud/EE, CE EdDSA verifier in local mode) with the composite verifier.
+		// Existing tokens carry no kid → delegated unchanged to the base; AS
+		// access tokens carry the AS kid → routed to the strict, admin-denying
+		// path. asWiring.Resource is the single source of truth shared with the
+		// token signer's aud and the protected-resource metadata.
+		if asWiring.Enabled {
+			jwtVerifier = auth.NewCompositeVerifier(jwtVerifier, map[string]ed25519.PublicKey{asWiring.KID: asWiring.Pub}, asWiring.Resource)
+		}
+
 		authMW := deliveryhttp.NewAuthMiddlewareWithVerifier(jwtVerifier, &tokenRepoHTTPAdapter{repo: apiTokenRepo})
 		httpAuthMW = authMW
+
+		// OAuth authorization-server handlers. Built only when the AS is enabled;
+		// otherwise nil and no AS routes/middleware are registered. The signer is
+		// the blob signer/verifier, access-token signer and refresh-token minter
+		// all at once (see internal/infrastructure/auth/oauth_signer.go).
+		var oauthHandler *deliveryhttp.OAuthHandler
+		var oauthProtectedResource *deliveryhttp.OAuthProtectedResource
+		if asWiring.Enabled {
+			refreshRepo := configrepo.NewGORMOAuthRefreshTokenRepository(pgDB)
+			registerUC := oauthregister.New(asWiring.Signer)
+			authorizeInfoUC := oauthauthorizeinfo.New(asWiring.Signer, asWiring.Signer)
+			approveUC := oauthapprove.New(asWiring.Signer, asWiring.Signer)
+			tokenUC := oauthtoken.New(
+				asWiring.Signer, asWiring.Signer, asWiring.Signer,
+				refreshRepo,
+				mcpConnectNotifier{plugin: sc.Plugin},
+				asWiring.Resource,
+			)
+			oauthHandler = deliveryhttp.NewOAuthHandler(asWiring.Issuer, asWiring.ConsentURL, registerUC, authorizeInfoUC, approveUC, tokenUC)
+			challenge := fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource", scope="provision"`, asWiring.Issuer)
+			oauthProtectedResource = deliveryhttp.NewOAuthProtectedResource(asWiring.Resource, asWiring.Issuer, challenge)
+		}
+
+		// D4-SEC (T11): Host allowlist + Sec-Fetch-Site gate on the
+		// credential-issuing endpoints (/oauth/*, /api/v1/oauth/*, local-session).
+		// Always registered — it also guards local-session, which exists whenever
+		// local auth mode is active regardless of the AS. Path-gated, so unrelated
+		// routes pass through untouched.
+		originGuard := deliveryhttp.NewOAuthOriginGuard(oauthGuardHost(bootstrapCfg))
+		r.Use(originGuard.Handler)
+		if internalHTTPServer != nil {
+			internalRouter.Use(originGuard.Handler)
+		}
+		// RFC 9728 §5: decorate 401s under /api/v1/mcp with the WWW-Authenticate
+		// challenge so MCP clients can bootstrap the OAuth flow.
+		if oauthProtectedResource != nil {
+			r.Use(oauthProtectedResource.Challenge())
+			if internalHTTPServer != nil {
+				internalRouter.Use(oauthProtectedResource.Challenge())
+			}
+		}
 
 		// V2 §5.8: per-end-user BYOK middleware. The resolver reads the live
 		// config from the tenant-scoped `settings` rows on each request (admin UI
@@ -795,6 +860,8 @@ func Run(sc ServerConfig) error {
 			AuditLogger:          auditLogger,
 			UpdateChecker:        updateChecker,
 			LocalSessionHandler:  localSessionHandler,
+			OAuthHandler:         oauthHandler,
+			OAuthProtectedRes:    oauthProtectedResource,
 			TransportPolicy:      sc.Plugin.TransportPolicy(),
 			Plugin:               sc.Plugin,
 			ExternalRouter:       r,

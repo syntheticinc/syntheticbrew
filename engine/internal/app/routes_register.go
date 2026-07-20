@@ -55,11 +55,16 @@ type routesDeps struct {
 	AuditLogger          *audit.Logger
 	UpdateChecker        *versioncheck.UpdateChecker
 	LocalSessionHandler  *deliveryhttp.LocalSessionHandler
-	TransportPolicy      mcpcatalog.TransportPolicy
-	Plugin               pluginpkg.Plugin
-	ExternalRouter       chi.Router
-	InternalRouter       chi.Router
-	HasInternalServer    bool // true in two-port mode
+	// OAuthHandler / OAuthProtectedRes are non-nil only when the OAuth 2.1
+	// authorization server is enabled (see resolveOAuthAS). When nil, no AS
+	// routes are registered.
+	OAuthHandler      *deliveryhttp.OAuthHandler
+	OAuthProtectedRes *deliveryhttp.OAuthProtectedResource
+	TransportPolicy   mcpcatalog.TransportPolicy
+	Plugin            pluginpkg.Plugin
+	ExternalRouter    chi.Router
+	InternalRouter    chi.Router
+	HasInternalServer bool // true in two-port mode
 	// KGToolProvider is the per-tenant Knowledge Graph tool resolver shared
 	// between the strategy registry (capability dispatch) and the apply usecase
 	// (collision detection). Constructed once in server.go.
@@ -125,11 +130,34 @@ func registerHTTPRoutes(deps routesDeps) {
 		r.Post("/api/v1/auth/local-session/refresh", localSessionHandler.Refresh)
 	}
 
+	// OAuth 2.1 authorization server (MCP client flow) — public, unenveloped
+	// endpoints. Registered only when the AS is enabled. Discovery + token +
+	// register are anonymous; authorize-info runs under optional auth so it can
+	// mint a consent nonce bound to the session subject when present while still
+	// serving anonymous discovery. Approve is gated inside the authed group below.
+	oauthHandler := deps.OAuthHandler
+	if oauthHandler != nil {
+		registerOAuthPublicRoutes(r, authMW, oauthHandler, deps.OAuthProtectedRes)
+		if deps.HasInternalServer {
+			registerOAuthPublicRoutes(internalRouter, authMW, oauthHandler, deps.OAuthProtectedRes)
+		}
+	}
+
 	// Protected management routes — on internalRouter (= r in single-port mode)
 	internalRouter.Group(func(r chi.Router) {
 		r.Use(authMW.Authenticate)
 		r.Use(tenantMW.Handler)
 		r.Use(deliveryhttp.AuditMiddleware(&auditHTTPAdapter{logger: auditLogger}))
+
+		// OAuth consent approval — admin-only, inside the authenticated group so
+		// the session subject/tenant are on the context (the consent nonce binds
+		// to that subject). Registered only when the AS is enabled.
+		if oauthHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(deliveryhttp.RequireScope(deliveryhttp.ScopeAdmin))
+				r.Post("/api/v1/oauth/approve", oauthHandler.Approve)
+			})
+		}
 
 		// Schema repo (created early because agent manager needs it for used_in_schemas)
 		schemaRepo := configrepo.NewGORMSchemaRepository(pgDB)
@@ -644,4 +672,31 @@ func registerHTTPRoutes(deps routesDeps) {
 	// usage, etc.). Noop plugin registers nothing.
 	plugin.RegisterHTTP(r, internalRouter)
 	_ = ctx
+}
+
+// registerOAuthPublicRoutes mounts the public OAuth 2.1 / RFC 9728 discovery
+// and token endpoints on router. Discovery, token and register are anonymous;
+// authorize-info runs under optional auth so a consent nonce is minted when a
+// session subject is present. The /api/v1/oauth/* aliases exist because the
+// production edge routes only /api/*. Called per router (external, and the
+// internal router in two-port mode) mirroring the local-session pattern.
+func registerOAuthPublicRoutes(
+	router chi.Router,
+	authMW *deliveryhttp.AuthMiddleware,
+	h *deliveryhttp.OAuthHandler,
+	pr *deliveryhttp.OAuthProtectedResource,
+) {
+	router.Get("/.well-known/oauth-authorization-server", h.Metadata)
+	if pr != nil {
+		router.Get("/.well-known/oauth-protected-resource", pr.Metadata)
+		router.Get("/.well-known/oauth-protected-resource/api/v1/mcp/rpc", pr.Metadata)
+	}
+	router.Post("/oauth/register", h.Register)
+	router.Post("/oauth/token", h.Token)
+	router.Post("/api/v1/oauth/register", h.Register)
+	router.Post("/api/v1/oauth/token", h.Token)
+	router.Group(func(router chi.Router) {
+		router.Use(authMW.AuthenticateOptional)
+		router.Get("/api/v1/oauth/authorize-info", h.AuthorizeInfo)
+	})
 }

@@ -37,6 +37,30 @@ type BootstrapConfig struct {
 	Updates    UpdatesConfig     `mapstructure:"updates"`
 	Seed       SeedConfig        `mapstructure:"seed"`
 	BYOK       BootstrapBYOK     `mapstructure:"byok"`
+	OAuth      BootstrapOAuth    `mapstructure:"oauth"`
+}
+
+// BootstrapOAuth configures the embedded OAuth 2.1 authorization server that
+// mints audience-bound access tokens for the MCP client flow.
+//
+// The server is default-on but degrades gracefully: when ASEnabled is true but
+// no issuer can be resolved (neither Issuer nor Engine.PublicBaseURL set) the
+// wiring logs a warning and disables the server rather than refusing to boot,
+// so existing installs without a public base URL are unaffected.
+type BootstrapOAuth struct {
+	// ASEnabled turns the authorization server on. Defaults to true.
+	ASEnabled bool `mapstructure:"as_enabled"`
+	// Issuer is the authorization-server base URL. Empty falls back to
+	// Engine.PublicBaseURL; if both are empty the server auto-disables.
+	Issuer string `mapstructure:"issuer"`
+	// ConsentURL is the consent page advertised as the authorization_endpoint.
+	// Empty defaults to Issuer + "/admin/oauth/consent".
+	ConsentURL string `mapstructure:"consent_url"`
+	// ASKeyPath is the hex-encoded authorization-server private key file, loaded
+	// only in external auth mode where the key is a pre-provisioned Secret
+	// identical across replicas. Empty in local mode (the key is generated and
+	// persisted next to the local-admin session key).
+	ASKeyPath string `mapstructure:"as_key_path"`
 }
 
 // EngineBootstrap holds the minimal engine settings needed at startup.
@@ -298,6 +322,10 @@ func bindEnvVars(v *viper.Viper) {
 		"seed.bootstrap_admin_token":     EnvBootstrapAdminToken,
 		"byok.enabled":                   EnvBYOKEnabled,
 		"byok.allowed_providers":         EnvBYOKAllowedProviders,
+		"oauth.as_enabled":               EnvOAuthASEnabled,
+		"oauth.issuer":                   EnvOAuthIssuer,
+		"oauth.consent_url":              EnvOAuthConsentURL,
+		"oauth.as_key_path":              EnvOAuthASKeyPath,
 	}
 	for key, env := range bindings {
 		// BindEnv associates a Viper key with one or more env var names.
@@ -318,6 +346,10 @@ func bindEnvVars(v *viper.Viper) {
 func setBootstrapDefaults(v *viper.Viper) {
 	v.SetDefault("security.auth_mode", AuthModeLocal)
 	v.SetDefault("security.local_session_ttl", time.Hour)
+	// OAuth authorization server is default-on. It auto-disables at wiring time
+	// when no issuer can be resolved (see BootstrapOAuth), so this default is
+	// safe for installs that never set a public base URL.
+	v.SetDefault("oauth.as_enabled", true)
 	// Embeddings defaults intentionally omitted — the indexing package owns
 	// the canonical defaults (DefaultOllamaURL / DefaultEmbedModel /
 	// DefaultDimension); the consumer fills them when the field is empty.
@@ -355,6 +387,9 @@ func expandBootstrapEnvVars(cfg *BootstrapConfig) {
 	cfg.MCP.DocsURL = expandEnvVars(cfg.MCP.DocsURL)
 	cfg.Updates.VersionsURL = expandEnvVars(cfg.Updates.VersionsURL)
 	cfg.Seed.BootstrapAdminToken = expandEnvVars(cfg.Seed.BootstrapAdminToken)
+	cfg.OAuth.Issuer = expandEnvVars(cfg.OAuth.Issuer)
+	cfg.OAuth.ConsentURL = expandEnvVars(cfg.OAuth.ConsentURL)
+	cfg.OAuth.ASKeyPath = expandEnvVars(cfg.OAuth.ASKeyPath)
 }
 
 // validateBootstrap checks that required bootstrap fields are present.

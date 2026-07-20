@@ -326,21 +326,9 @@ export default function AgentsPage() {
               'No agents match your search.'
             ) : (
               <>
-                <p>No agents configured. Connect a coding agent and it builds one for you.</p>
+                <p>No agents yet — connect a coding agent and it builds one for you.</p>
                 <p className="mt-3">
                   <OnboardCodingAgentButton />
-                </p>
-                <p className="mt-3 text-xs text-brand-shade3/70">
-                  If SyntheticBrew helps you, consider{' '}
-                  <a
-                    href="https://github.com/syntheticinc/syntheticbrew"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-brand-accent hover:underline"
-                  >
-                    starring us on GitHub
-                  </a>
-                  .
                 </p>
               </>
             )}

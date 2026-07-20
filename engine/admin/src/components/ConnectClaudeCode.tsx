@@ -13,13 +13,12 @@ function engineUrl(): string {
 
 const MCP_RPC_PATH = '/api/v1/mcp/rpc';
 
-// Self-contained onboarding prompt: every step maps to an MCP tool this engine
-// exposes (provision_agent, admin_create_knowledge_base, admin_add_document,
-// admin_link_knowledge_base, get_embed_snippet) — no external references.
-const SETUP_PROMPT = `Set up my SyntheticBrew agent end-to-end using the syntheticbrew MCP tools:
-1. Create an agent called "support" for my website.
-2. Create a knowledge base, load the docs I'll give you, and link it to the agent.
-3. Give me the embed snippet for my site and a test question to try.`;
+// The engine serves the full, validated setup steps at /agent-setup/prompt.md,
+// so the copyable instruction points there instead of duplicating the steps —
+// one source of truth shared with the OAuth onboarding flow.
+function setupPrompt(url: string): string {
+  return `Fetch ${url}/agent-setup/prompt.md and follow the instructions.`;
+}
 
 function claudeCodeCommand(url: string, token: string): string {
   return `claude mcp add --transport http syntheticbrew ${url}${MCP_RPC_PATH} --header "Authorization: Bearer ${token}"`;
@@ -206,10 +205,13 @@ export default function ConnectClaudeCode({ onMinted }: ConnectClaudeCodeProps) 
     <div className="bg-brand-dark-alt rounded-card border border-brand-shade3/15 p-5 mb-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-brand-light">Connect a coding agent</h2>
+          <h2 className="text-base font-semibold text-brand-light">
+            Manual setup — headless / CI
+          </h2>
           <p className="mt-1 text-sm text-brand-shade3 max-w-2xl">
-            Mint a scoped API token and connect an external coding agent (Claude Code, Cursor, VS
-            Code, Codex) to this engine over MCP. The agent reaches the engine at{' '}
+            For environments without a browser (CI, headless servers): mint a scoped API token and
+            paste it into the agent config. When a browser is available, prefer the one-click OAuth
+            connect instead — no token to copy. The agent reaches the engine at{' '}
             <code className="text-brand-shade2">{MCP_RPC_PATH}</code>.
           </p>
         </div>
@@ -308,13 +310,14 @@ export default function ConnectClaudeCode({ onMinted }: ConnectClaudeCodeProps) 
             <CopyBlock label={activeSnippet.blockLabel} value={activeSnippet.build(url, token)} />
           </div>
 
-          {/* Onboarding prompt — the agent does the rest once connected */}
+          {/* Onboarding prompt — points at the engine-served steps, so it never
+              drifts from the OAuth flow's single source of truth. */}
           <div className="pt-4 border-t border-brand-shade3/15">
             <p className="text-sm text-brand-light mb-3">
-              Then paste this prompt into your agent — it builds a working,
-              grounded agent for you:
+              Then give the agent this instruction — it fetches the full setup
+              steps from the engine and builds a grounded agent for you:
             </p>
-            <CopyBlock label="Setup prompt" value={SETUP_PROMPT} testId="setup-prompt-snippet" />
+            <CopyBlock label="Setup prompt" value={setupPrompt(url)} testId="setup-prompt-snippet" />
           </div>
 
           <button

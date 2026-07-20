@@ -102,6 +102,16 @@ type Plugin interface {
 	// (CE/self-hosted); implementations should no-op and return nil.
 	OnSchemaCreate(ctx context.Context, tenantID string, n int) error
 
+	// OnMCPClientConnected is invoked after an MCP client completes the OAuth
+	// authorization-code exchange (a fresh client connection). Plugins use it to
+	// record the activation event; refresh-token rotations are the same client
+	// staying connected and do not fire it. It must return immediately and be
+	// best-effort — token issuance never waits on or fails because of it.
+	//
+	// An empty tenantID means the call is outside any tenant scope
+	// (CE/self-hosted); implementations should no-op.
+	OnMCPClientConnected(ctx context.Context, tenantID string)
+
 	// OnDocumentCreate is invoked before the engine persists new knowledge
 	// documents — single uploads pass n=1. It is called inside the shared
 	// upload service so every ingest path (REST upload and the knowledge tools)

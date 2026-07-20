@@ -85,6 +85,16 @@ func (v *EdDSAVerifier) Verify(tokenStr string) (plugin.Claims, error) {
 		return plugin.Claims{}, fmt.Errorf("invalid token claims")
 	}
 
+	// typ-tagged JWTs are internal OAuth artifacts (authorization codes,
+	// client_id blobs) minted by the AS signer. They carry no aud, so the
+	// no-aud admin path below would resolve them to ScopeAdmin if one were
+	// replayed as a Bearer credential. Key separation already keeps AS-signed
+	// blobs from verifying here, but reject any typ-bearing token outright for
+	// defense in depth — they are never valid bearer credentials.
+	if _, hasTyp := mc["typ"]; hasTyp {
+		return plugin.Claims{}, fmt.Errorf("typ-tagged blob is not a bearer credential")
+	}
+
 	subject, _ := mc.GetSubject()
 
 	var tenantID string
