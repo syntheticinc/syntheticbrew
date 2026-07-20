@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.14.0] — 2026-07-20
+
+### Added
+
+- **OAuth 2.1 authorization server config** (engine `appVersion` 1.17.0). New `config.oauth` values: `issuer` (public URL agents reach the engine at; empty leaves the AS off → `SYNTHETICBREW_OAUTH_ISSUER`) and `asKeySecret` / `asKeySecretKey` (name of a Secret holding the AS signing key, mounted read-only → `SYNTHETICBREW_OAUTH_AS_KEY_PATH`). Set `asKeySecret` for multi-replica / external mode so every replica signs with the same key; in local single-replica mode leave it empty and the engine generates and persists the key in the keys volume alongside the session key.
+
 ## [0.13.0] — 2026-07-18
 
 ### Changed

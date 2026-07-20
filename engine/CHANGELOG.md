@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.17.0] — 2026-07-20
+
+### Added
+
+- **OAuth 2.1 authorization server in the engine.** Every edition (self-hosted CE, EE, Cloud) now issues and verifies its own MCP access tokens with no external dependency: RFC 8414 discovery, RFC 9728 protected-resource metadata + `WWW-Authenticate` challenge, RFC 7591 dynamic client registration, an authorize + consent flow (consent page in the admin dashboard at `/admin/oauth/consent`), and a token endpoint with PKCE S256 and rotating refresh tokens. Enable it by setting `SYNTHETICBREW_OAUTH_ISSUER` to the public URL agents reach the engine at; empty leaves it off (agents then connect with a scoped `bb_` token). Coding agents connect over OAuth in the browser with no token pasted into the agent chat.
+- **New env vars:** `SYNTHETICBREW_OAUTH_AS_ENABLED` (default true), `SYNTHETICBREW_OAUTH_ISSUER`, `SYNTHETICBREW_OAUTH_CONSENT_URL`, `SYNTHETICBREW_OAUTH_AS_KEY_PATH` (optional; a shared signing key for multi-instance deployments — otherwise the key is generated and persisted in the keys directory).
+- **New table `oauth_refresh_tokens`** (migration 017) backing single-use authorization codes and rotating refresh tokens with family revocation on reuse.
+
+### Fixed / Security
+
+- **Composite token verifier with key-id routing.** Authorization-server tokens are verified under a strict, admin-denying path (audience + scope required, resolves only to provision/manage, never admin); session and `bb_` tokens are unaffected. Tokens carrying an internal `typ` claim (authorization codes, client blobs) are rejected as bearer credentials, closing a privilege-confusion path.
+- **Anti-CSRF consent nonce** bound to the authenticated subject and the exact authorization request (client, redirect URI, scope, PKCE challenge).
+
 ## [1.16.0] — 2026-07-18
 
 ### Added
