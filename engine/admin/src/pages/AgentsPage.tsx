@@ -328,7 +328,7 @@ export default function AgentsPage() {
                 <p>No agents configured. Connect a coding agent and it builds one for you.</p>
                 <p className="mt-3">
                   <Button
-                    onClick={() => navigate('/connect-agent')}
+                    onClick={() => navigate('/onboarding')}
                     data-testid="agents-empty-connect-agent"
                   >
                     Onboard a coding agent
