@@ -3,7 +3,6 @@ import { api } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
-import ConnectClaudeCode from '../components/ConnectClaudeCode';
 import type { APIToken } from '../types';
 
 const SCOPES = [
@@ -135,8 +134,6 @@ export default function APIKeysPage() {
           Generate New Token
         </button>
       </div>
-
-      <ConnectClaudeCode onMinted={refetch} />
 
       <div className="bg-brand-dark-alt rounded-card border border-brand-shade3/15">
         <DataTable

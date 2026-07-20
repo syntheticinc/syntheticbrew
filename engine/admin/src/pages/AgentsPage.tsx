@@ -325,13 +325,13 @@ export default function AgentsPage() {
               'No agents match your search.'
             ) : (
               <>
-                <p>No agents configured. Create your first agent to get started.</p>
+                <p>No agents configured. Connect a coding agent and it builds one for you.</p>
                 <p className="mt-3">
                   <Button
-                    onClick={() => navigate('/api-keys')}
+                    onClick={() => navigate('/connect-agent')}
                     data-testid="agents-empty-connect-agent"
                   >
-                    Onboard a coding agent — it builds one for you
+                    Onboard a coding agent
                   </Button>
                 </p>
                 <p className="mt-3 text-xs text-brand-shade3/70">

@@ -97,9 +97,9 @@ function SummaryTable({
             const base =
               'px-2.5 py-1 text-[11px] font-mono rounded transition-colors disabled:cursor-not-allowed';
             const primary = isSelected
-              ? 'bg-brand-accent text-brand-dark'
+              ? 'bg-brand-accent text-white'
               : action.type === 'primary'
-                ? 'bg-brand-accent text-brand-dark hover:bg-brand-accent/80 disabled:opacity-50'
+                ? 'bg-brand-accent text-white hover:bg-brand-accent/80 disabled:opacity-50'
                 : 'bg-brand-shade3/20 text-brand-light hover:bg-brand-shade3/30 disabled:opacity-50';
             return (
               <button
@@ -178,7 +178,7 @@ function FormBody({
         type="button"
         disabled={isAnswered}
         onClick={handleSubmit}
-        className="rounded bg-brand-accent px-3 py-1 text-[11px] font-mono font-semibold text-brand-dark hover:bg-brand-accent/80 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="rounded bg-brand-accent px-3 py-1 text-[11px] font-mono font-semibold text-white hover:bg-brand-accent/80 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isAnswered ? 'Submitted' : 'Submit'}
       </button>
@@ -196,7 +196,7 @@ function renderControl(
   const chip = (selected: boolean) =>
     `rounded px-2.5 py-1 text-[11px] font-mono transition-colors disabled:cursor-not-allowed ${
       selected
-        ? 'bg-brand-accent text-brand-dark ring-1 ring-brand-accent'
+        ? 'bg-brand-accent text-white ring-1 ring-brand-accent'
         : 'bg-brand-shade3/20 text-brand-light hover:bg-brand-shade3/30'
     }`;
 

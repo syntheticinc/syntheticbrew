@@ -302,7 +302,7 @@ function ModelsPageInner() {
       header: 'Provider',
       render: (row: Model) => (
         <span className="flex items-center gap-1.5">
-          <span className="px-2 py-0.5 bg-brand-light rounded text-xs text-brand-shade3 font-medium">
+          <span className="px-2 py-0.5 bg-brand-shade3/15 rounded text-xs text-brand-shade2 font-medium">
             {row.type}
           </span>
         </span>
@@ -438,7 +438,7 @@ function ModelsPageInner() {
                 </span>
               </DetailRow>
               <DetailRow label="Type">
-                <span className="px-2 py-0.5 bg-brand-light rounded text-xs text-brand-shade3 font-medium">
+                <span className="px-2 py-0.5 bg-brand-shade3/15 rounded text-xs text-brand-shade2 font-medium">
                   {selected.type}
                 </span>
               </DetailRow>

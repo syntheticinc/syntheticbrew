@@ -214,7 +214,10 @@ export default function Sidebar() {
     <aside className="w-56 bg-brand-dark flex flex-col min-h-screen border-r border-brand-shade3/10">
       {/* Logo */}
       <div className="px-5 py-6 border-b border-brand-shade3/10">
-        <img src={import.meta.env.BASE_URL + 'logo-dark.svg'} alt="SyntheticBrew" className="h-8 logo-adaptive" />
+        {/* Two logo assets, CSS-switched by theme (the dark SVG is a composite
+            that breaks under a CSS invert filter). */}
+        <img src={import.meta.env.BASE_URL + 'logo-dark.svg'} alt="SyntheticBrew" className="h-8 logo-on-dark" />
+        <img src={import.meta.env.BASE_URL + 'logo-light.png'} alt="SyntheticBrew" className="h-8 logo-on-light" />
         <span className="text-[10px] text-brand-shade3 mt-2 block tracking-[0.2em] uppercase font-medium">Admin Dashboard</span>
       </div>
 

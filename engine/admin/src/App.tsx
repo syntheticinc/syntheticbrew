@@ -7,6 +7,7 @@ import ModelsPage from './pages/ModelsPage';
 import TasksPage from './pages/TasksPage';
 import SettingsPage from './pages/SettingsPage';
 import APIKeysPage from './pages/APIKeysPage';
+import ConnectAgentPage from './pages/ConnectAgentPage';
 import ConfigPage from './pages/ConfigPage';
 import AuditPage from './pages/AuditPage';
 import ResiliencePage from './pages/ResiliencePage';
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/api-keys" element={<APIKeysPage />} />
+            <Route path="/connect-agent" element={<ConnectAgentPage />} />
             <Route path="/config" element={<ConfigPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/resilience" element={<ResiliencePage />} />

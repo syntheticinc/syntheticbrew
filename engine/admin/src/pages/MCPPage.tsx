@@ -241,7 +241,7 @@ function MCPPageInner() {
       key: 'type',
       header: 'Type',
       render: (row: MCPServer) => (
-        <span className="px-2 py-0.5 bg-brand-light rounded text-xs text-brand-shade3 font-medium">
+        <span className="px-2 py-0.5 bg-brand-shade3/15 rounded text-xs text-brand-shade2 font-medium">
           {row.type}
         </span>
       ),
@@ -402,7 +402,7 @@ function MCPPageInner() {
           <>
             <DetailSection title="Configuration">
               <DetailRow label="Type">
-                <span className="px-2 py-0.5 bg-brand-light rounded text-xs text-brand-shade3 font-medium">{selected.type}</span>
+                <span className="px-2 py-0.5 bg-brand-shade3/15 rounded text-xs text-brand-shade2 font-medium">{selected.type}</span>
               </DetailRow>
               {selected.command && (
                 <DetailRow label="Command">
@@ -885,7 +885,7 @@ function MCPPageInner() {
         title="Remove MCP Server"
         message={
           <>
-            Remove MCP server <strong className="text-brand-dark">{deleteTarget}</strong>?
+            Remove MCP server <strong className="text-brand-light">{deleteTarget}</strong>?
           </>
         }
         confirmLabel="Remove"
