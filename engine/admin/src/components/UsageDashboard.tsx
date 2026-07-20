@@ -94,7 +94,7 @@ export default function UsageDashboard() {
             href={managePlanUrl}
             target="_blank"
             rel="noreferrer"
-            className="px-4 py-1.5 bg-brand-accent hover:bg-brand-accent-hover text-brand-light rounded-btn text-xs font-medium font-mono transition-colors"
+            className="px-4 py-1.5 bg-brand-accent hover:bg-brand-accent-hover text-white rounded-btn text-xs font-medium font-mono transition-colors"
           >
             Manage Plan
           </a>

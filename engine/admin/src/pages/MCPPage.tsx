@@ -312,7 +312,7 @@ function MCPPageInner() {
           </button>
           <button
             onClick={openCreate}
-            className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+            className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
           >
             Add Custom
           </button>
@@ -342,7 +342,7 @@ function MCPPageInner() {
             <>
               <button
                 onClick={() => openEdit(selected)}
-                className="flex-1 px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+                className="flex-1 px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
               >
                 Edit
               </button>
@@ -496,7 +496,7 @@ function MCPPageInner() {
                 onClick={() => setCatalogCategory(key)}
                 className={`px-2.5 py-1 rounded-btn text-[11px] font-medium transition-colors ${
                   catalogCategory === key
-                    ? 'bg-brand-accent text-brand-light'
+                    ? 'bg-brand-accent text-white'
                     : `${meta.color} hover:opacity-80`
                 }`}
               >
@@ -552,7 +552,7 @@ function MCPPageInner() {
                             onClick={() => { setSelectedPkgIdx(idx); setEnvInput({}); }}
                             className={`px-2.5 py-1 rounded-btn text-[11px] font-medium transition-colors ${
                               selectedPkgIdx === idx
-                                ? 'bg-brand-accent text-brand-light'
+                                ? 'bg-brand-accent text-white'
                                 : 'bg-brand-shade3/10 text-brand-shade2 hover:opacity-80'
                             }`}
                           >
@@ -632,7 +632,7 @@ function MCPPageInner() {
                 <button
                   onClick={() => handleInstallCatalogEntry(catalogDetail)}
                   disabled={alreadyAdded.has(catalogDetail.name) || saving}
-                  className="w-full py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
+                  className="w-full py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
                 >
                   {alreadyAdded.has(catalogDetail.name) ? 'Already Added' : saving ? 'Installing...' : 'Install'}
                 </button>

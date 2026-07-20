@@ -451,7 +451,7 @@ export default function KnowledgePage() {
         <h1 className="text-2xl font-bold text-brand-light">Knowledge Bases</h1>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+          className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
         >
           Create Knowledge Base
         </button>
@@ -482,7 +482,7 @@ export default function KnowledgePage() {
             <>
               <button
                 onClick={() => openEdit(selected)}
-                className="flex-1 px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+                className="flex-1 px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
               >
                 Edit
               </button>
@@ -623,7 +623,7 @@ export default function KnowledgePage() {
                   <button
                     onClick={handleLinkAgent}
                     disabled={!linkingAgent || linkingSaving}
-                    className="px-3 py-1.5 bg-brand-accent text-brand-light rounded-btn text-xs font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
+                    className="px-3 py-1.5 bg-brand-accent text-white rounded-btn text-xs font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
                   >
                     {linkingSaving ? '...' : 'Link'}
                   </button>

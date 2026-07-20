@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import Button from './Button';
 
 interface EmptyStateProps {
   icon?: ReactNode;
@@ -67,12 +68,9 @@ export default function EmptyState({ icon, message, description, action }: Empty
         <p className="text-xs text-brand-shade3/70 mb-4 text-center max-w-sm">{description}</p>
       )}
       {action && (
-        <button
-          onClick={action.onClick}
-          className="mt-3 px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
-        >
+        <Button onClick={action.onClick} className="mt-3">
           {action.label}
-        </button>
+        </Button>
       )}
     </div>
   );

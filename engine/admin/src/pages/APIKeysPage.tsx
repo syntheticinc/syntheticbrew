@@ -130,7 +130,7 @@ export default function APIKeysPage() {
         <h1 className="text-2xl font-bold text-brand-light">API Keys</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+          className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
         >
           Generate New Token
         </button>
@@ -201,7 +201,7 @@ export default function APIKeysPage() {
             <button
               type="submit"
               disabled={saving || !name}
-              className="px-4 py-2 text-sm text-brand-light bg-brand-accent rounded-btn hover:bg-brand-accent-hover disabled:opacity-50"
+              className="px-4 py-2 text-sm text-white bg-brand-accent rounded-btn hover:bg-brand-accent-hover disabled:opacity-50"
             >
               {saving ? 'Generating...' : 'Generate'}
             </button>

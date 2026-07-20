@@ -631,7 +631,7 @@ export interface KnowledgeStatus {
 // ============================================================================
 // Knowledge Graphs (KG) types — bundles of structured entities with JSON
 // schemas. Backend endpoints under /api/v1/knowledge-graphs are pending; the
-// admin SPA renders these via prototype mocks until the engine ships them.
+// admin SPA renders these shapes; the engine endpoints are not deployed yet.
 // ============================================================================
 
 export interface KGBundle {
@@ -759,4 +759,27 @@ export interface InterruptResumePayload {
   interrupt_id: string;
   kind: 'structured_output';
   payload: { answers: InterruptAnswer[] };
+}
+
+// Delegation-tree wire shapes used by the canvas / overview / schema-detail
+// components (adapted from the Engine REST API responses).
+export interface TreeAgent {
+  id: string;
+  name: string;
+  model: string;
+  description?: string;
+  avatarInitials: string; // fallback avatar: 2 letters
+  lifecycle: 'persistent' | 'spawn';
+  toolsCount: number;
+  knowledgeCount: number;
+  flowsCount: number;
+  activeSessions: number;
+  state: 'idle' | 'active' | 'degraded';
+}
+
+export interface TreeRelation {
+  id: string;
+  sourceAgentId: string;
+  targetAgentId: string;
+  config?: Record<string, unknown>;
 }

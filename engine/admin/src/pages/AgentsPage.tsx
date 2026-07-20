@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePrototype } from '../hooks/usePrototype';
 import { useApi } from '../hooks/useApi';
 import { useAdminRefresh } from '../hooks/useAdminRefresh';
 import { api } from '../api/client';
 import PageContainer from '../components/PageContainer';
+import Button from '../components/Button';
 import type { AgentInfo } from '../types';
 
 function AgentRow({ agent, onClick }: { agent: AgentInfo; onClick: () => void }) {
@@ -252,13 +252,12 @@ function NewAgentModal({
 }
 
 export default function AgentsPage() {
-  const { isPrototype } = usePrototype();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [systemExpanded, setSystemExpanded] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data: apiAgents, refetch } = useApi(() => api.listAgents(), [isPrototype]);
+  const { data: apiAgents, refetch } = useApi(() => api.listAgents());
   useAdminRefresh(refetch);
   const agents = apiAgents ?? [];
   const allFiltered = agents.filter(a => a.name.toLowerCase().includes(search.toLowerCase()));
@@ -290,13 +289,7 @@ export default function AgentsPage() {
           <h1 className="text-xl font-semibold text-brand-light">Agents</h1>
           <p className="text-sm text-brand-shade3 mt-1">Global agent configurations. Changes affect all schemas using the agent.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-brand-accent text-white text-sm font-medium rounded-btn hover:bg-brand-accent/80 transition-colors"
-        >
-          + New Agent
-        </button>
+        <Button onClick={() => setShowCreate(true)}>+ New Agent</Button>
       </div>
 
       {/* Search */}
@@ -334,13 +327,12 @@ export default function AgentsPage() {
               <>
                 <p>No agents configured. Create your first agent to get started.</p>
                 <p className="mt-3">
-                  <button
+                  <Button
                     onClick={() => navigate('/api-keys')}
-                    className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
                     data-testid="agents-empty-connect-agent"
                   >
                     Onboard a coding agent — it builds one for you
-                  </button>
+                  </Button>
                 </p>
                 <p className="mt-3 text-xs text-brand-shade3/70">
                   If SyntheticBrew helps you, consider{' '}

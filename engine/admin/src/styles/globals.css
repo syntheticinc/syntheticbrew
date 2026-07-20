@@ -174,3 +174,8 @@
 .light .text-blue-400 { color: #2563eb; }
 .light .text-purple-400, .light .text-purple-300 { color: #7e22ce; }
 .light .text-orange-400 { color: #c2410c; }
+
+/* Logo asset is light-on-dark; invert it for the light theme (site pattern). */
+.light .logo-adaptive {
+  filter: brightness(0);
+}

@@ -95,7 +95,7 @@ export default function ResiliencePage() {
       )}
 
       {toast && (
-        <div className="mb-4 p-3 bg-brand-accent/10 border border-brand-accent/30 rounded-btn text-sm text-brand-light">
+        <div className="mb-4 p-3 bg-brand-accent/10 border border-brand-accent/30 rounded-btn text-sm text-white">
           {toast}
         </div>
       )}

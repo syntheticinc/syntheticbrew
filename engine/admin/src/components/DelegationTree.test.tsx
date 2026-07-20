@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import DelegationTree from './DelegationTree';
-import type { TreeAgent, TreeRelation } from '../mocks/schemas';
+import type { TreeAgent, TreeRelation } from '../types';
 
 function makeAgent(id: string, name: string): TreeAgent {
   return {

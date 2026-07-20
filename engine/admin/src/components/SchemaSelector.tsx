@@ -64,7 +64,7 @@ export default function SchemaSelector() {
               className={[
                 'w-full px-3 py-1.5 text-left text-xs transition-colors flex items-center gap-2',
                 s.name === selectedSchema
-                  ? 'text-brand-light bg-brand-accent/10'
+                  ? 'text-white bg-brand-accent/10'
                   : 'text-brand-shade2 hover:bg-brand-dark-surface hover:text-brand-light',
               ].join(' ')}
             >

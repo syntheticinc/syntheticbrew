@@ -243,7 +243,7 @@ export default function ConnectClaudeCode({ onMinted }: ConnectClaudeCodeProps) 
             type="button"
             onClick={handleConnect}
             disabled={minting}
-            className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors disabled:opacity-50"
           >
             {minting ? 'Generating…' : 'Generate connection token'}
           </button>
@@ -297,7 +297,7 @@ export default function ConnectClaudeCode({ onMinted }: ConnectClaudeCodeProps) 
                   onClick={() => setActiveTabId(agent.id)}
                   className={`px-3 py-1.5 rounded-btn text-xs font-medium transition-colors ${
                     agent.id === activeSnippet.id
-                      ? 'bg-brand-accent text-brand-light'
+                      ? 'bg-brand-accent text-white'
                       : 'text-brand-shade2 hover:text-brand-light'
                   }`}
                 >

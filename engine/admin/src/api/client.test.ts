@@ -186,22 +186,7 @@ describe('APIClient', () => {
     await vi.waitFor(() => expect(bootstrapAuth).toHaveBeenCalledTimes(1));
   });
 
-  it('getUsageStatus in prototype mode returns the tenant usage mock without network', async () => {
-    localStorage.setItem('syntheticbrew_prototype_mode', 'true');
-    const mockFetch = vi.fn();
-    vi.stubGlobal('fetch', mockFetch);
-
-    const { api } = await import('./client');
-    const status = await api.getUsageStatus();
-
-    expect(mockFetch).not.toHaveBeenCalled();
-    expect(status.active_users).toEqual({ used: 12, limit: 2000 });
-    expect(status.schemas).toEqual({ used: 2, limit: 3 });
-    expect(status.knowledge_documents).toEqual({ used: 6, limit: 100 });
-    expect(status.turns).toEqual({ used: 18, limit: 50 });
-  });
-
-  it('getUsageStatus requests GET /usage-status outside prototype mode', async () => {
+  it('getUsageStatus requests GET /usage-status', async () => {
     const { api } = await import('./client');
     api.setToken('valid');
 

@@ -335,7 +335,7 @@ export default function TasksPage() {
         <div className="flex gap-2">
           <button
             onClick={() => { setCreateError(null); setShowCreate(true); }}
-            className="px-4 py-2 text-sm text-brand-light bg-brand-accent rounded-btn hover:opacity-90 transition-opacity font-medium"
+            className="px-4 py-2 text-sm text-white bg-brand-accent rounded-btn hover:opacity-90 transition-opacity font-medium"
           >
             + New task
           </button>
@@ -426,7 +426,7 @@ export default function TasksPage() {
                         onClick={() => setPage(item)}
                         className={`px-3 py-1 text-sm border rounded-btn transition-colors ${
                           item === page
-                            ? 'bg-brand-accent text-brand-light border-brand-accent'
+                            ? 'bg-brand-accent text-white border-brand-accent'
                             : 'text-brand-shade2 border-brand-shade3/30 hover:bg-brand-dark hover:text-brand-light'
                         }`}
                       >

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { PrototypeProvider } from '../hooks/usePrototype';
 import OverviewPage from './OverviewPage';
 
 // ── API mock ──────────────────────────────────────────────────────────────────
@@ -19,18 +18,10 @@ const mockApi = vi.mocked(api);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function renderPage(prototypeMode = false) {
-  if (prototypeMode) {
-    localStorage.setItem('syntheticbrew_prototype_mode', 'true');
-  } else {
-    localStorage.removeItem('syntheticbrew_prototype_mode');
-  }
-
+function renderPage() {
   return render(
     <MemoryRouter>
-      <PrototypeProvider>
-        <OverviewPage />
-      </PrototypeProvider>
+      <OverviewPage />
     </MemoryRouter>,
   );
 }
@@ -43,40 +34,9 @@ const emptyHealth = { status: 'ok', version: '0.1.0', uptime: '1h', agents_count
 describe('OverviewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.removeItem('syntheticbrew_prototype_mode');
   });
 
-  describe('prototype mode', () => {
-    it('renders heading', () => {
-      renderPage(true);
-      expect(screen.getByText('Overview')).toBeInTheDocument();
-    });
-
-    it('renders stat labels from mock data', () => {
-      renderPage(true);
-      expect(screen.getByText('Active Sessions')).toBeInTheDocument();
-      expect(screen.getByText('Sessions Today')).toBeInTheDocument();
-      expect(screen.getByText('Chat-enabled Schemas')).toBeInTheDocument();
-      expect(screen.getByText('Success Rate')).toBeInTheDocument();
-    });
-
-    it('renders Live Sessions panel', () => {
-      renderPage(true);
-      expect(screen.getByText('Live Sessions')).toBeInTheDocument();
-    });
-
-    it('renders Recent Events panel', () => {
-      renderPage(true);
-      expect(screen.getByText('Recent Events')).toBeInTheDocument();
-    });
-
-    it('renders Schemas quick access', () => {
-      renderPage(true);
-      expect(screen.getByText('Schemas')).toBeInTheDocument();
-    });
-  });
-
-  describe('production mode', () => {
+  describe('overview', () => {
     beforeEach(() => {
       mockApi.listSessions.mockResolvedValue(emptyPaginated);
       mockApi.listSchemas.mockResolvedValue([]);
@@ -84,12 +44,12 @@ describe('OverviewPage', () => {
     });
 
     it('renders heading', async () => {
-      renderPage(false);
+      renderPage();
       await waitFor(() => expect(screen.getByText('Overview')).toBeInTheDocument());
     });
 
     it('renders stat labels', async () => {
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText('Active Sessions')).toBeInTheDocument();
         expect(screen.getByText('Sessions Today')).toBeInTheDocument();
@@ -99,7 +59,7 @@ describe('OverviewPage', () => {
     });
 
     it('shows — for Sessions Today (no backend source)', async () => {
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         // Sessions Today card value is always — in production
         expect(screen.getByText('no daily counter in API')).toBeInTheDocument();
@@ -107,28 +67,28 @@ describe('OverviewPage', () => {
     });
 
     it('shows — for Success Rate when no finished sessions', async () => {
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText('no completed sessions yet')).toBeInTheDocument();
       });
     });
 
     it('shows empty state for live sessions', async () => {
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText('No live sessions right now.')).toBeInTheDocument();
       });
     });
 
     it('shows event stream unavailable message', async () => {
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText('Event stream not available yet.')).toBeInTheDocument();
       });
     });
 
     it('shows system OK badge when health returns ok', async () => {
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText('System: OK')).toBeInTheDocument();
       });
@@ -152,7 +112,7 @@ describe('OverviewPage', () => {
         return Promise.resolve(emptyPaginated);
       });
 
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText('support-agent')).toBeInTheDocument();
       });
@@ -164,7 +124,7 @@ describe('OverviewPage', () => {
         { id: 's2', name: 'sales', agents_count: 2, created_at: '', chat_enabled: false },
       ]);
 
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText('1 / 2')).toBeInTheDocument();
       });
@@ -173,7 +133,7 @@ describe('OverviewPage', () => {
     it('handles API error gracefully', async () => {
       mockApi.listSessions.mockRejectedValue(new Error('network error'));
 
-      renderPage(false);
+      renderPage();
       await waitFor(() => {
         expect(screen.getByText(/Failed to load overview/)).toBeInTheDocument();
       });
