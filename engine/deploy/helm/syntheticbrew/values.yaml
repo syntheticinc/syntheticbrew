@@ -93,6 +93,21 @@ config:
     # these files and skips generation. Mutually exclusive with persistence.keys.
     existingKeysSecret: ""
 
+  # OAuth 2.1 authorization server — lets MCP coding agents sign in through the
+  # browser (no token to paste). Disabled until issuer is set.
+  oauth:
+    # Public URL agents reach this engine at (e.g. https://engine.example.com).
+    # Empty leaves the AS off — agents then connect with a scoped bb_ API token.
+    issuer: ""
+    # Name of a Secret holding the AS signing key (hex Ed25519 private key),
+    # mounted read-only; sets SYNTHETICBREW_OAUTH_AS_KEY_PATH. REQUIRED for
+    # multi-replica or external mode, so every replica signs with the SAME key
+    # (a per-replica key would make each replica reject the others' tokens). In
+    # local single-replica mode leave empty: the engine generates and persists
+    # the AS key under auth.jwtKeysPath alongside the session key.
+    asKeySecret: ""
+    asKeySecretKey: "as_ed25519.priv"
+
   # Embedding model
   embedURL: ""
   embedModel: nomic-embed-text
