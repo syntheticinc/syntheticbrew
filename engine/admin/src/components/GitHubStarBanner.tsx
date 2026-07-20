@@ -35,8 +35,9 @@ const CloseIcon = (
 
 // GitHubStarBanner shows a dismissible call-to-action asking the user to
 // star the repository. Dismissal persists via localStorage so the banner
-// appears at most once per browser profile.
-export function GitHubStarBanner() {
+// appears at most once per browser profile. `inline` renders it as a bare
+// row segment for embedding into the top bar (no own border/background).
+export function GitHubStarBanner({ inline = false }: { inline?: boolean } = {}) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -59,13 +60,17 @@ export function GitHubStarBanner() {
     setVisible(false);
   }
 
-  if (!visible) return null;
+  if (!visible) return inline ? <span /> : null;
 
   return (
     <div
       role="region"
       aria-label="GitHub star call-to-action"
-      className="flex items-center justify-between gap-3 border-b border-brand-shade3/15 bg-gradient-to-r from-brand-dark-alt via-brand-dark-surface to-brand-dark-alt px-4 py-2 text-[12px] text-brand-shade2 shrink-0"
+      className={
+        inline
+          ? 'flex items-center gap-3 min-w-0 text-[12px] text-brand-shade2'
+          : 'flex items-center justify-between gap-3 border-b border-brand-shade3/15 bg-gradient-to-r from-brand-dark-alt via-brand-dark-surface to-brand-dark-alt px-4 py-2 text-[12px] text-brand-shade2 shrink-0'
+      }
     >
       <div className="flex items-center gap-2 min-w-0">
         {StarIcon}

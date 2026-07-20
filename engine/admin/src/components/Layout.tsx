@@ -41,9 +41,12 @@ function ThemeToggle() {
 
 function TopHeader() {
   return (
-    <div className="flex items-center gap-3 px-4 py-1.5 border-b border-brand-shade3/10 bg-brand-dark-surface shrink-0 justify-end">
-      <ThemeToggle />
-      <OnboardCodingAgentButton compact />
+    <div className="flex items-center justify-between gap-3 px-4 py-1.5 border-b border-brand-shade3/10 bg-brand-dark-surface shrink-0">
+      <GitHubStarBanner inline />
+      <div className="flex items-center gap-3 shrink-0">
+        <ThemeToggle />
+        <OnboardCodingAgentButton compact />
+      </div>
     </div>
   );
 }
@@ -54,7 +57,6 @@ function LayoutInner() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <TopHeader />
-        <GitHubStarBanner />
         <QuotaBanner />
         <main className="flex-1 min-h-0 bg-brand-dark p-6 overflow-auto animate-fade-in">
           <Outlet />

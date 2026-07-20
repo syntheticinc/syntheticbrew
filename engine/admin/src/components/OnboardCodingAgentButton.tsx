@@ -6,14 +6,11 @@ import { api } from '../api/client';
    URL + token + the setup task — that the user pastes into any MCP-capable
    coding agent. Works offline/self-hosted: the MCP endpoint is this engine. */
 
-const MCP_RPC_PATH = '/api/v1/mcp/rpc';
-
+// Hero pattern: a short fetch-instruction — the engine itself serves the full
+// validated steps at /agent-setup/prompt.md, so they always match the engine
+// version. The token rides along because CE/EE MCP auth is a Bearer token.
 function buildPrompt(origin: string, token: string): string {
-  return `Set up my SyntheticBrew agent end-to-end:
-1. Add my SyntheticBrew MCP server to your MCP configuration: URL ${origin}${MCP_RPC_PATH} (streamable HTTP transport) with the HTTP header "Authorization: Bearer ${token}".
-2. Using its tools, create an agent called "support" for my website, grounded and honest — it must say "I don't know" rather than invent answers.
-3. Create a knowledge base, load the docs I'll give you, and link it to the agent.
-4. Give me the embed snippet for my site and a test question to try.`;
+  return `Fetch ${origin}/agent-setup/prompt.md and follow the instructions. My access token: ${token}`;
 }
 
 interface OnboardCodingAgentButtonProps {

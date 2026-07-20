@@ -33,10 +33,9 @@ describe('OnboardCodingAgentButton', () => {
       scopes: ['provision'],
     });
     const prompt = vi.mocked(navigator.clipboard.writeText).mock.calls[0]![0] as string;
-    expect(prompt).toContain(`${window.location.origin}/api/v1/mcp/rpc`);
-    expect(prompt).toContain('Bearer bb_onboard_1');
-    expect(prompt).toContain('knowledge base');
-    expect(prompt).toContain('embed snippet');
+    // Short fetch-instruction: full steps live at the engine-served prompt.md.
+    expect(prompt).toContain(`Fetch ${window.location.origin}/agent-setup/prompt.md`);
+    expect(prompt).toContain('bb_onboard_1');
     // Self-contained: no URLs beyond this engine's own origin.
     const external = prompt.match(/https?:\/\/[^\s"]+/g)!.filter(
       (u) => !u.startsWith(window.location.origin),

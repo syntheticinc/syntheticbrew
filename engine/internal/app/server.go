@@ -806,6 +806,18 @@ func Run(sc ServerConfig) error {
 		// Serve Admin Dashboard SPA — internal only (extracted to spa_handler.go).
 		mountSPA(internalRouter, "/admin", "/usr/share/syntheticbrew/admin")
 
+		// Coding-agent onboarding instructions — public markdown, the single
+		// source of truth the admin's "connect a coding agent" button points
+		// fetch-capable agents at.
+		{
+			setupBaseURL := ""
+			if bootstrapCfg != nil {
+				setupBaseURL = bootstrapCfg.Engine.PublicBaseURL
+			}
+			agentSetupHandler := deliveryhttp.NewAgentSetupPromptHandler(setupBaseURL)
+			r.Get("/agent-setup/prompt.md", agentSetupHandler.Get)
+		}
+
 		// Serve widget.js (static file) — external only (or both in single-port mode).
 		// V2: the admin generates a <script src="…/widget.js" data-agent="…" …>
 		// snippet client-side (docs/architecture/agent-first-runtime.md §4.3),
