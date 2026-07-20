@@ -5,6 +5,7 @@ import { useAdminRefresh } from '../hooks/useAdminRefresh';
 import { api } from '../api/client';
 import PageContainer from '../components/PageContainer';
 import Button from '../components/Button';
+import OnboardCodingAgentButton from '../components/OnboardCodingAgentButton';
 import type { AgentInfo } from '../types';
 
 function AgentRow({ agent, onClick }: { agent: AgentInfo; onClick: () => void }) {
@@ -327,12 +328,7 @@ export default function AgentsPage() {
               <>
                 <p>No agents configured. Connect a coding agent and it builds one for you.</p>
                 <p className="mt-3">
-                  <Button
-                    onClick={() => navigate('/onboarding')}
-                    data-testid="agents-empty-connect-agent"
-                  >
-                    Onboard a coding agent
-                  </Button>
+                  <OnboardCodingAgentButton />
                 </p>
                 <p className="mt-3 text-xs text-brand-shade3/70">
                   If SyntheticBrew helps you, consider{' '}

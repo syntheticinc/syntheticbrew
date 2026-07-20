@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ConnectClaudeCode from '../components/ConnectClaudeCode';
 import { api } from '../api/client';
 import type { CreateModelRequest } from '../types';
 
@@ -666,79 +665,6 @@ function Step2Template({
   );
 }
 
-// Fast path: a coding agent connected over MCP can do the whole setup —
-// models, agents, knowledge, schema. The gate re-checks live state, so as
-// soon as the agent has created a model the admin unlocks.
-function FastPathConnectAgent({ onContinue }: { onContinue: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [notReady, setNotReady] = useState(false);
-
-  async function checkAndContinue() {
-    setChecking(true);
-    setNotReady(false);
-    try {
-      const models = await api.listModels();
-      if (models.length > 0) {
-        onContinue();
-        return;
-      }
-      setNotReady(true);
-    } catch {
-      setNotReady(true);
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  return (
-    <div className="max-w-3xl mx-auto mb-8">
-      <div className="rounded-card border border-brand-accent/30 bg-brand-accent/5 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-sm font-semibold text-brand-light">
-              Fast path: onboard a coding agent
-            </div>
-            <p className="mt-1 text-xs text-brand-shade3 max-w-xl">
-              Connect Cursor, Claude Code, or any MCP-capable agent and it does
-              this whole setup for you — model, agents, knowledge, embed snippet.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            className="text-xs text-brand-accent hover:underline whitespace-nowrap cursor-pointer"
-            data-testid="fast-path-toggle"
-          >
-            {open ? 'Hide' : 'Show me'}
-          </button>
-        </div>
-        {open && (
-          <div className="mt-4">
-            <ConnectClaudeCode />
-            <div className="mt-3 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={checkAndContinue}
-                disabled={checking}
-                className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors disabled:opacity-50 cursor-pointer"
-                data-testid="fast-path-continue"
-              >
-                {checking ? 'Checking…' : "My agent has run — continue"}
-              </button>
-              {notReady && (
-                <span className="text-xs text-brand-shade3">
-                  Nothing created yet — run the setup prompt in your agent first.
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function OnboardingWizard() {
   const [step, setStep] = useState<1 | 2>(1);
   // Deployments that provide a default model let the user continue keyless.
@@ -783,7 +709,6 @@ export default function OnboardingWizard() {
         </div>
 
         <div className="flex-1 px-6 py-10">
-          <FastPathConnectAgent onContinue={() => navigate('/')} />
           <ProgressHeader step={step} />
           {step === 1 && <Step1ConnectLLM onSuccess={() => setStep(2)} platformDefault={platformDefault} />}
           {step === 2 && <Step2Template onDone={finish} />}
