@@ -73,6 +73,7 @@ export default function OnboardCodingAgentButton({ compact = false }: OnboardCod
       <button
         type="button"
         onClick={handleClick}
+        title="Copies a setup line that includes a scoped access token — paste it only into a coding agent you trust. Revoke anytime under API Keys."
         className="text-[11px] text-brand-shade2 hover:text-brand-light border border-brand-shade3/30 rounded-btn px-2.5 py-1 transition-colors cursor-pointer"
         data-testid="topbar-connect-agent"
       >
@@ -82,13 +83,19 @@ export default function OnboardCodingAgentButton({ compact = false }: OnboardCod
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors cursor-pointer disabled:opacity-50"
-      data-testid="agents-empty-connect-agent"
-    >
-      {label}
-    </button>
+    <span className="inline-flex flex-col items-center gap-1.5">
+      <button
+        type="button"
+        onClick={handleClick}
+        className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors cursor-pointer disabled:opacity-50"
+        data-testid="agents-empty-connect-agent"
+      >
+        {label}
+      </button>
+      <span className="text-[11px] text-brand-shade3/80 max-w-sm">
+        The copied line includes a scoped access token — paste it only into a
+        coding agent you trust. Revoke it anytime under API Keys.
+      </span>
+    </span>
   );
 }
