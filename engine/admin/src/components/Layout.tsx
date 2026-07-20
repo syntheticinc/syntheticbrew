@@ -5,7 +5,6 @@ import OnboardCodingAgentButton from './OnboardCodingAgentButton';
 import Sidebar from './Sidebar';
 import BottomPanel from './BottomPanel';
 import QuotaBanner from './QuotaBanner';
-import GitHubStarBanner from './GitHubStarBanner';
 import { BottomPanelProvider } from '../hooks/useBottomPanel';
 
 function ThemeToggle() {
@@ -39,10 +38,35 @@ function ThemeToggle() {
   );
 }
 
+const StarIcon = (
+  <svg
+    className="w-[14px] h-[14px] shrink-0 text-amber-300"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    stroke="none"
+    aria-hidden="true"
+  >
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+  </svg>
+);
+
 function TopHeader() {
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-1.5 border-b border-brand-shade3/10 bg-brand-dark-surface shrink-0">
-      <GitHubStarBanner inline />
+    <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-brand-shade3/15 bg-gradient-to-r from-brand-dark-alt via-brand-dark-surface to-brand-dark-alt shrink-0">
+      <div className="flex items-center gap-2 min-w-0 text-[12px] text-brand-shade2">
+        {StarIcon}
+        <span className="truncate">
+          Enjoying SyntheticBrew? Star us on GitHub and help others discover it —{' '}
+          <a
+            href="https://github.com/syntheticinc/syntheticbrew"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-brand-light underline underline-offset-2 decoration-brand-shade3/40 hover:decoration-brand-accent hover:text-brand-accent transition-colors"
+          >
+            github.com/syntheticinc/syntheticbrew
+          </a>
+        </span>
+      </div>
       <div className="flex items-center gap-3 shrink-0">
         <ThemeToggle />
         <OnboardCodingAgentButton compact />
