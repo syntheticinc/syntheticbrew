@@ -35,6 +35,7 @@ export default function APIKeysPage() {
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [showManualSetup, setShowManualSetup] = useState(false);
 
   function toggleScope(bit: number) {
     setScopesMask((prev) => prev ^ bit);
@@ -136,12 +137,6 @@ export default function APIKeysPage() {
         </button>
       </div>
 
-      <p className="text-xs text-brand-shade3 mb-2">
-        Alternative entry point: the Agents page can onboard a coding agent in
-        one click — the setup below is the manual, per-client route.
-      </p>
-      <ConnectClaudeCode onMinted={refetch} />
-
       <div className="bg-brand-dark-alt rounded-card border border-brand-shade3/15">
         <DataTable
           columns={columns}
@@ -149,6 +144,24 @@ export default function APIKeysPage() {
           keyField="id"
           emptyMessage="No API tokens. Generate your first token."
         />
+      </div>
+
+      {/* Manual MCP setup — collapsed; the primary path is the one-click
+          button on the Agents page / top bar. */}
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={() => setShowManualSetup((v) => !v)}
+          className="text-xs text-brand-shade3 underline hover:text-brand-shade2 transition-colors cursor-pointer"
+          data-testid="toggle-manual-mcp-setup"
+        >
+          {showManualSetup ? 'Hide manual coding-agent setup' : 'Connecting a coding agent manually (per-client instructions)'}
+        </button>
+        {showManualSetup && (
+          <div className="mt-3">
+            <ConnectClaudeCode onMinted={refetch} />
+          </div>
+        )}
       </div>
 
       {/* Create token modal */}

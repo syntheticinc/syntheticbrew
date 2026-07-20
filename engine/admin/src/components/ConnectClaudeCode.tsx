@@ -133,7 +133,7 @@ function CopyBlock({
         <button
           type="button"
           onClick={handleCopy}
-          className="px-3 py-1.5 bg-brand-dark border border-brand-shade3/30 text-brand-shade2 hover:text-brand-light rounded-btn text-xs font-medium font-mono transition-colors"
+          className="px-3 py-1.5 bg-brand-dark border border-brand-shade3/30 text-brand-shade2 hover:text-brand-light rounded-btn text-xs font-medium transition-colors cursor-pointer"
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -274,7 +274,7 @@ export default function ConnectClaudeCode({ onMinted }: ConnectClaudeCodeProps) 
               <button
                 type="button"
                 onClick={copyToken}
-                className="px-3 py-2 text-sm bg-brand-dark border border-brand-shade3/30 rounded-btn text-brand-shade2 hover:text-brand-light transition-colors"
+                className="px-3 py-1.5 bg-brand-dark border border-brand-shade3/30 text-brand-shade2 hover:text-brand-light rounded-btn text-xs font-medium transition-colors cursor-pointer"
               >
                 {tokenCopied ? 'Copied' : 'Copy'}
               </button>
