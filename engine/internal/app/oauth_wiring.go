@@ -100,13 +100,19 @@ func resolveOAuthIssuer(cfg *config.BootstrapConfig) string {
 
 // resolveASPrivateKey loads (external mode) or loads-or-generates (local mode)
 // the authorization-server Ed25519 private key.
+// resolveASPrivateKey resolves the authorization-server signing key. The choice
+// is driven by whether an explicit key path is configured — NOT by auth mode,
+// which governs how user/session tokens are verified and says nothing about
+// where the AS key lives. It mirrors how the session keypair is resolved.
+//
+// The invariant the AS actually needs: every instance that serves the same
+// issuer must sign and verify with the same key. That is a deployment-topology
+// concern (one instance vs many), not an auth-mode one.
 func resolveASPrivateKey(cfg *config.BootstrapConfig) (ed25519.PrivateKey, error) {
-	if cfg.Security.AuthMode == config.AuthModeExternal {
-		if cfg.OAuth.ASKeyPath == "" {
-			return nil, fmt.Errorf("oauth authorization server is enabled in external auth mode but " +
-				"SYNTHETICBREW_OAUTH_AS_KEY_PATH is not set: the AS signing key must be a pre-provisioned " +
-				"secret identical across replicas and is never auto-generated in external mode")
-		}
+	// Explicit key: the same file is mounted on every instance (a k8s Secret,
+	// for example). Use this for multi-instance deployments that don't share a
+	// keys directory, or to control rotation.
+	if cfg.OAuth.ASKeyPath != "" {
 		priv, err := auth.LoadPrivateKey(cfg.OAuth.ASKeyPath)
 		if err != nil {
 			return nil, fmt.Errorf("load oauth authorization-server private key: %w", err)
@@ -114,6 +120,17 @@ func resolveASPrivateKey(cfg *config.BootstrapConfig) (ed25519.PrivateKey, error
 		return priv, nil
 	}
 
+	// No explicit key: the engine generates one once in the keys directory and
+	// reuses it across restarts. Correct for a single instance or instances that
+	// share a persisted keys volume. A multi-instance deployment with
+	// per-instance ephemeral storage MUST instead set
+	// SYNTHETICBREW_OAUTH_AS_KEY_PATH, or each instance would sign with a
+	// different key and reject the others' tokens.
+	if cfg.Security.JWTKeysDir == "" {
+		return nil, fmt.Errorf("oauth authorization server is enabled but neither " +
+			"SYNTHETICBREW_OAUTH_AS_KEY_PATH nor SYNTHETICBREW_JWT_KEYS_DIR is set: the AS needs " +
+			"either an explicit signing key or a keys directory to generate and persist one")
+	}
 	kp, err := auth.LoadOrGenerateKeypairNamed(cfg.Security.JWTKeysDir, asKeypairName)
 	if err != nil {
 		return nil, fmt.Errorf("load/generate oauth authorization-server keypair: %w", err)

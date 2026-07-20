@@ -83,8 +83,9 @@ func TestResolveOAuthAS_LocalKeypairIsSeparateFromSessionKey(t *testing.T) {
 	require.NoError(t, err, "AS private key must be persisted under its own name")
 }
 
-func TestResolveOAuthAS_ExternalRequiresKeyPath(t *testing.T) {
-	// C-2: external mode never auto-generates — missing key path is fatal.
+func TestResolveOAuthAS_NoKeyPathAndNoKeysDirIsFatal(t *testing.T) {
+	// With neither an explicit key nor a keys directory the AS has nowhere to
+	// get or persist a signing key — fail fast rather than boot without one.
 	cfg := &config.BootstrapConfig{
 		Security: config.BootstrapSecurity{AuthMode: config.AuthModeExternal, JWTPublicKeyPath: "/tmp/pub"},
 		OAuth:    config.BootstrapOAuth{ASEnabled: true, Issuer: "https://engine.example"},
@@ -93,9 +94,27 @@ func TestResolveOAuthAS_ExternalRequiresKeyPath(t *testing.T) {
 	_, err := resolveOAuthAS(context.Background(), cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "SYNTHETICBREW_OAUTH_AS_KEY_PATH")
+	assert.Contains(t, err.Error(), "SYNTHETICBREW_JWT_KEYS_DIR")
 }
 
-func TestResolveOAuthAS_ExternalLoadsProvisionedKey(t *testing.T) {
+func TestResolveOAuthAS_AutoGeneratesFromKeysDirRegardlessOfAuthMode(t *testing.T) {
+	// Auth mode does not gate AS key generation: external mode with a keys dir
+	// (but no explicit key path) auto-generates, exactly like local mode.
+	cfg := &config.BootstrapConfig{
+		Security: config.BootstrapSecurity{AuthMode: config.AuthModeExternal, JWTKeysDir: t.TempDir()},
+		OAuth:    config.BootstrapOAuth{ASEnabled: true, Issuer: "https://engine.example"},
+	}
+
+	got, err := resolveOAuthAS(context.Background(), cfg)
+	require.NoError(t, err)
+	require.True(t, got.Enabled)
+	_, statErr := os.Stat(filepath.Join(cfg.Security.JWTKeysDir, "as_ed25519.priv"))
+	require.NoError(t, statErr, "AS key must be generated and persisted in the keys dir")
+}
+
+func TestResolveOAuthAS_LoadsProvisionedKeyPath(t *testing.T) {
+	// An explicit key path is used verbatim, independent of auth mode — the
+	// shared-secret path for multi-instance deployments.
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	keyPath := filepath.Join(t.TempDir(), "as.key")

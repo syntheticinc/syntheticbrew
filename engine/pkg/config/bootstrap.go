@@ -56,10 +56,13 @@ type BootstrapOAuth struct {
 	// ConsentURL is the consent page advertised as the authorization_endpoint.
 	// Empty defaults to Issuer + "/admin/oauth/consent".
 	ConsentURL string `mapstructure:"consent_url"`
-	// ASKeyPath is the hex-encoded authorization-server private key file, loaded
-	// only in external auth mode where the key is a pre-provisioned Secret
-	// identical across replicas. Empty in local mode (the key is generated and
-	// persisted next to the local-admin session key).
+	// ASKeyPath is the hex-encoded authorization-server private key file. When
+	// set, it is the shared signing key mounted on every instance (e.g. a k8s
+	// Secret) — required for multi-instance deployments. When empty, the engine
+	// generates and persists the key under JWTKeysDir, which suits a single
+	// instance or instances sharing a keys volume. This is independent of auth
+	// mode: auth mode governs how user tokens are verified, not where the AS
+	// signing key lives.
 	ASKeyPath string `mapstructure:"as_key_path"`
 }
 
