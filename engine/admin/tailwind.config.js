@@ -4,23 +4,25 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Values mirror the marketing-site dark theme (cloud-web-astro
-        // global.css / cloud-web-spa index.css) — keep in sync.
+        // Semantic tokens resolve through CSS variables (globals.css) so the
+        // admin follows the site's light/dark themes. Names are historical:
+        // "dark*" = surfaces, "light"/"shade*" = text tones — in the light
+        // theme the variables invert while class names stay unchanged.
         brand: {
           accent: '#D7513E',
           'accent-hover': '#B94332',
-          dark: '#171715',
-          'dark-surface': '#1e1e1b',
-          'dark-alt': '#24221e',
-          light: '#f4efe7',
-          shade1: '#d8d0c3',
-          shade2: '#c6beb2',
-          shade3: '#aaa196',
+          dark: 'rgb(var(--bb-surface) / <alpha-value>)',
+          'dark-surface': 'rgb(var(--bb-surface-2) / <alpha-value>)',
+          'dark-alt': 'rgb(var(--bb-surface-3) / <alpha-value>)',
+          light: 'rgb(var(--bb-text) / <alpha-value>)',
+          shade1: 'rgb(var(--bb-text-2) / <alpha-value>)',
+          shade2: 'rgb(var(--bb-text-3) / <alpha-value>)',
+          shade3: 'rgb(var(--bb-muted) / <alpha-value>)',
         },
         status: {
           active: '#4CAF50',
           attention: '#D7513E',
-          idle: '#aaa196',
+          idle: 'rgb(var(--bb-muted) / <alpha-value>)',
         },
       },
       fontFamily: {

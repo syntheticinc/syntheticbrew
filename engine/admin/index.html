@@ -10,6 +10,17 @@
     <title>SyntheticBrew Admin</title>
   </head>
   <body class="bg-brand-dark font-sans text-brand-light antialiased">
+    <script>
+      // Apply the persisted theme before the bundle loads to avoid a flash.
+      // Shared cookie first (set by sibling subdomains), then localStorage.
+      (function () {
+        try {
+          var m = document.cookie.match(/(?:^|;\s*)sbrew_theme=(light|dark)/);
+          var t = m ? m[1] : localStorage.getItem('syntheticbrew-theme');
+          if (t === 'light') document.documentElement.classList.add('light');
+        } catch (e) { /* default dark */ }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
