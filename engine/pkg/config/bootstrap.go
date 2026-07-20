@@ -112,8 +112,12 @@ type BootstrapSecurity struct {
 	// Accepts "local" or "external"; defaults to "local" when empty.
 	AuthMode string `mapstructure:"auth_mode"`
 
-	// JWTKeysDir is the directory where the local Ed25519 keypair is stored.
-	// Used only when AuthMode == "local". Defaults to <data_dir>/keys.
+	// JWTKeysDir is the directory where engine-managed Ed25519 keypairs are
+	// stored: the local-admin session key (local mode only) and the OAuth
+	// authorization-server key (any mode, when no explicit AS key path is set).
+	// Defaults to <data_dir>/keys in local mode only; in external mode it stays
+	// empty unless set, so an external deployment that enables the AS without a
+	// key path must set this or SYNTHETICBREW_OAUTH_AS_KEY_PATH.
 	JWTKeysDir string `mapstructure:"jwt_keys_dir"`
 
 	// JWTPublicKeyPath is the path to the Ed25519 public key of the external

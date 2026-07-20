@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/auth"
@@ -49,11 +51,12 @@ type oauthASWiring struct {
 //   - C-3 (auto-disable, never brick boot): AS enabled but no issuer resolvable
 //     → loud WARN and return a disabled wiring rather than failing startup.
 //     PUBLIC_BASE_URL is optional and often unset on existing installs.
-//   - C-2 (external key is a pre-provisioned Secret): in external auth mode the
-//     AS private key is loaded from OAuth.ASKeyPath and MUST NOT be generated —
-//     AS enabled + external + no key path is a hard startup error.
-//   - H-1 (separate key): in local mode the AS keypair is generated under a
-//     distinct file name (as_ed25519), never reusing the session key.
+//   - Shared-key-across-instances: every instance serving the same issuer must
+//     sign with the same key. An explicit OAuth.ASKeyPath is the shared key;
+//     with none set the key is generated and persisted under JWTKeysDir. When
+//     neither is available the server fails fast (see resolveASPrivateKey).
+//   - H-1 (separate key): the AS keypair uses a distinct file name (as_ed25519),
+//     never reusing the local-admin session key, in every mode.
 func resolveOAuthAS(ctx context.Context, cfg *config.BootstrapConfig) (*oauthASWiring, error) {
 	if cfg == nil || !cfg.OAuth.ASEnabled {
 		return &oauthASWiring{Enabled: false}, nil
@@ -67,7 +70,7 @@ func resolveOAuthAS(ctx context.Context, cfg *config.BootstrapConfig) (*oauthASW
 		return &oauthASWiring{Enabled: false}, nil
 	}
 
-	priv, err := resolveASPrivateKey(cfg)
+	priv, err := resolveASPrivateKey(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +101,6 @@ func resolveOAuthIssuer(cfg *config.BootstrapConfig) string {
 	return cfg.Engine.PublicBaseURL
 }
 
-// resolveASPrivateKey loads (external mode) or loads-or-generates (local mode)
-// the authorization-server Ed25519 private key.
 // resolveASPrivateKey resolves the authorization-server signing key. The choice
 // is driven by whether an explicit key path is configured — NOT by auth mode,
 // which governs how user/session tokens are verified and says nothing about
@@ -108,7 +109,7 @@ func resolveOAuthIssuer(cfg *config.BootstrapConfig) string {
 // The invariant the AS actually needs: every instance that serves the same
 // issuer must sign and verify with the same key. That is a deployment-topology
 // concern (one instance vs many), not an auth-mode one.
-func resolveASPrivateKey(cfg *config.BootstrapConfig) (ed25519.PrivateKey, error) {
+func resolveASPrivateKey(ctx context.Context, cfg *config.BootstrapConfig) (ed25519.PrivateKey, error) {
 	// Explicit key: the same file is mounted on every instance (a k8s Secret,
 	// for example). Use this for multi-instance deployments that don't share a
 	// keys directory, or to control rotation.
@@ -131,9 +132,28 @@ func resolveASPrivateKey(cfg *config.BootstrapConfig) (ed25519.PrivateKey, error
 			"SYNTHETICBREW_OAUTH_AS_KEY_PATH nor SYNTHETICBREW_JWT_KEYS_DIR is set: the AS needs " +
 			"either an explicit signing key or a keys directory to generate and persist one")
 	}
+	// Detect first-generation so it never happens silently: a freshly generated
+	// signing key on a multi-instance deployment that forgot the shared key path
+	// is the one misconfiguration this path can't reject, and it only surfaces
+	// later as intermittent 401s behind the load balancer.
+	keyPath := filepath.Join(cfg.Security.JWTKeysDir, asKeypairName+".priv")
+	_, statErr := os.Stat(keyPath)
+	firstGen := os.IsNotExist(statErr)
+
 	kp, err := auth.LoadOrGenerateKeypairNamed(cfg.Security.JWTKeysDir, asKeypairName)
 	if err != nil {
 		return nil, fmt.Errorf("load/generate oauth authorization-server keypair: %w", err)
+	}
+	if firstGen {
+		if cfg.Security.AuthMode == config.AuthModeExternal {
+			slog.WarnContext(ctx, "generated a new OAuth authorization-server signing key in the keys "+
+				"directory; a multi-instance deployment MUST instead set SYNTHETICBREW_OAUTH_AS_KEY_PATH "+
+				"to a shared key, or every instance will sign with a different key and reject the others",
+				"path", keyPath, "kid", auth.KeyID(kp.Public))
+		} else {
+			slog.InfoContext(ctx, "generated a new OAuth authorization-server signing key",
+				"path", keyPath, "kid", auth.KeyID(kp.Public))
+		}
 	}
 	return kp.Private, nil
 }

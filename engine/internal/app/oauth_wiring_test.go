@@ -132,6 +132,49 @@ func TestResolveOAuthAS_LoadsProvisionedKeyPath(t *testing.T) {
 	assert.Equal(t, ed25519.PublicKey(priv.Public().(ed25519.PublicKey)), got.Pub)
 }
 
+func TestResolveOAuthAS_LoadsSeedFormatKeyPath(t *testing.T) {
+	// The 32-byte seed form is a documented alternative to the 64-byte key.
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	keyPath := filepath.Join(t.TempDir(), "as.seed")
+	require.NoError(t, os.WriteFile(keyPath, []byte(hex.EncodeToString(priv.Seed())+"\n"), 0o600))
+
+	cfg := &config.BootstrapConfig{
+		Security: config.BootstrapSecurity{AuthMode: config.AuthModeExternal, JWTPublicKeyPath: "/tmp/pub"},
+		OAuth:    config.BootstrapOAuth{ASEnabled: true, Issuer: "https://engine.example", ASKeyPath: keyPath},
+	}
+
+	got, err := resolveOAuthAS(context.Background(), cfg)
+	require.NoError(t, err)
+	assert.Equal(t, pub, got.Pub)
+}
+
+func TestResolveOAuthAS_MalformedKeyPathIsFatal(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "as.bad")
+	require.NoError(t, os.WriteFile(keyPath, []byte("not-hex\n"), 0o600))
+
+	cfg := &config.BootstrapConfig{
+		Security: config.BootstrapSecurity{AuthMode: config.AuthModeExternal, JWTPublicKeyPath: "/tmp/pub"},
+		OAuth:    config.BootstrapOAuth{ASEnabled: true, Issuer: "https://engine.example", ASKeyPath: keyPath},
+	}
+
+	_, err := resolveOAuthAS(context.Background(), cfg)
+	require.Error(t, err)
+}
+
+func TestResolveOAuthAS_GeneratedKeyIsStableAcrossResolves(t *testing.T) {
+	// Persistence property multi-instance shared-volume deploys rely on: a
+	// second resolve against the same keys dir yields the same signing key/kid.
+	cfg := localASConfig(t, "https://engine.example", "")
+
+	first, err := resolveOAuthAS(context.Background(), cfg)
+	require.NoError(t, err)
+	second, err := resolveOAuthAS(context.Background(), cfg)
+	require.NoError(t, err)
+	assert.Equal(t, first.KID, second.KID, "AS key must persist and re-resolve to the same kid")
+	assert.Equal(t, first.Pub, second.Pub)
+}
+
 func TestOAuthGuardHost(t *testing.T) {
 	assert.Equal(t, "engine.example", oauthGuardHost(&config.BootstrapConfig{
 		OAuth: config.BootstrapOAuth{Issuer: "https://engine.example/"},

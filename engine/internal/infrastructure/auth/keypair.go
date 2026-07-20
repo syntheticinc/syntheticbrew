@@ -133,7 +133,15 @@ func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
 	}
 	switch len(decoded) {
 	case ed25519.PrivateKeySize:
-		return ed25519.PrivateKey(decoded), nil
+		// A full 64-byte key carries its own public half; reject one whose
+		// public bytes don't match the seed, otherwise every token would fail
+		// verification against the derived public key with no clear cause.
+		key := ed25519.PrivateKey(decoded)
+		derived := ed25519.NewKeyFromSeed(decoded[:ed25519.SeedSize])
+		if !key.Public().(ed25519.PublicKey).Equal(derived.Public()) {
+			return nil, fmt.Errorf("%s: 64-byte key is internally inconsistent (public half does not match seed)", path)
+		}
+		return key, nil
 	case ed25519.SeedSize:
 		return ed25519.NewKeyFromSeed(decoded), nil
 	default:
