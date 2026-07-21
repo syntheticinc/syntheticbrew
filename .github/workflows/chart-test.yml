@@ -165,26 +165,23 @@ jobs:
           # A chart-managed DB Secret (no existingSecret) must be a pre-install/
           # pre-upgrade hook at a weight below the migrations Job (5), or the
           # migrations hook starts before the Secret exists and a fresh install
-          # hangs on CreateContainerConfigError. See CHANGELOG 0.14.0 Fixed.
-          R=/tmp/r-managed-secret.yaml
-          helm template smoke engine/deploy/helm/syntheticbrew \
-            --set image.tag=1.0.0 \
-            --set postgresql.external.host=pg \
-            --set postgresql.external.password=pw \
-            --show-only templates/secret.yaml > "$R"
-          grep -q '"helm.sh/hook": pre-install,pre-upgrade' "$R"
-          grep -q '"helm.sh/hook-weight": "-5"' "$R"
-          # With migrations disabled the Secret must stay a normal resource.
-          helm template smoke engine/deploy/helm/syntheticbrew \
-            --set image.tag=1.0.0 \
-            --set postgresql.external.host=pg \
-            --set postgresql.external.password=pw \
-            --set migrations.enabled=false \
-            --show-only templates/secret.yaml > /tmp/r-managed-secret-nomig.yaml
-          if grep -q 'helm.sh/hook' /tmp/r-managed-secret-nomig.yaml; then
-            echo "FAIL: chart-managed Secret is a hook even with migrations disabled"; exit 1
-          fi
-          echo "OK: chart-managed Secret hook gated on migrations.enabled"
+          # hangs on CreateContainerConfigError. See CHANGELOG 0.14.0 Fixed. The
+          # hook is unconditional (like the ServiceAccount) — gating it on
+          # migrations.enabled would flip Helm ownership across upgrades and Helm
+          # would delete the Secret. Assert the hook holds with migrations both on
+          # and off.
+          for MIG in true false; do
+            R=/tmp/r-managed-secret-$MIG.yaml
+            helm template smoke engine/deploy/helm/syntheticbrew \
+              --set image.tag=1.0.0 \
+              --set postgresql.external.host=pg \
+              --set postgresql.external.password=pw \
+              --set migrations.enabled=$MIG \
+              --show-only templates/secret.yaml > "$R"
+            grep -q '"helm.sh/hook": pre-install,pre-upgrade' "$R"
+            grep -q '"helm.sh/hook-weight": "-5"' "$R"
+          done
+          echo "OK: chart-managed Secret is an unconditional pre-install hook"
 
       - name: replicaCount=local guard
         run: |
