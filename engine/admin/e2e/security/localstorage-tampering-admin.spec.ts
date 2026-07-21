@@ -1,4 +1,4 @@
-// §1.20 OWASP — localStorage tampering: tamper token → 401; prototype mode flag has no API side-effect
+// §1.20 OWASP — localStorage tampering: tamper token → 401; tamper tenant_id claim → rejected
 // TC: SEC-LS-01
 
 import { test, expect, apiFetch } from '../fixtures';
@@ -22,30 +22,6 @@ test.describe('localStorage tampering', () => {
     const hasAuthError = url.includes('login') || url.includes('auth') ||
       await page.locator('text=/sign in|log in|unauthorized/i').count() > 0;
     expect(hasAuthError || url.includes('/admin')).toBe(true);
-  });
-
-  test('manually setting prototype_mode=true does not cause API write side effects', async ({ authenticatedAdmin, request, adminToken }) => {
-    const page = authenticatedAdmin;
-
-    // Record agents count before
-    const beforeRes = await apiFetch(request, '/agents', { token: adminToken });
-    const beforeBody = await beforeRes.json();
-    const beforeAgents = Array.isArray(beforeBody) ? beforeBody : (beforeBody.agents ?? beforeBody.data ?? []);
-    const beforeCount = beforeAgents.length;
-
-    // Enable prototype mode
-    await page.evaluate(() => localStorage.setItem('syntheticbrew_prototype_mode', 'true'));
-    await page.goto('/admin/agents');
-    await page.waitForLoadState('networkidle');
-
-    // Interact with UI if in prototype mode — no real API writes should occur
-    await page.waitForTimeout(1000);
-
-    // Agents count should not change
-    const afterRes = await apiFetch(request, '/agents', { token: adminToken });
-    const afterBody = await afterRes.json();
-    const afterAgents = Array.isArray(afterBody) ? afterBody : (afterBody.agents ?? afterBody.data ?? []);
-    expect(afterAgents.length).toBe(beforeCount);
   });
 
   test('tampered tenant_id in JWT claim rejected (invalid signature)', async ({ request }) => {

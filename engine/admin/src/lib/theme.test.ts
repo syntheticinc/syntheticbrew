@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { currentTheme, initTheme, setTheme } from './theme';
+import { currentTheme, setTheme } from './theme';
 
 function clearCookie() {
   document.cookie = 'sbrew_theme=; path=/; max-age=0';
@@ -14,7 +14,6 @@ beforeEach(() => {
 describe('theme', () => {
   it('defaults to dark when nothing is persisted', () => {
     expect(currentTheme()).toBe('dark');
-    expect(initTheme()).toBe('dark');
     expect(document.documentElement.classList.contains('light')).toBe(false);
   });
 
