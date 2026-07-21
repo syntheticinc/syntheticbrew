@@ -1,26 +1,12 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useSSEChat, type SSEMessage } from '../hooks/useSSEChat';
+import { useSSEChat } from '../hooks/useSSEChat';
 import { useBottomPanel } from '../hooks/useBottomPanel';
-import { usePrototype } from '../hooks/usePrototype';
 import { api } from '../api/client';
 import type { AgentDetail, SessionSummary, Schema } from '../types';
 import HeadersEditor, { type HeaderEntry } from './HeadersEditor';
 import ContextUsageBar from './ContextUsageBar';
 import BrewingSpinner from './BrewingSpinner';
 import { InterruptWidget } from './InterruptWidget';
-
-// ─── Mock streaming for prototype mode ──────────────────────────────────────
-
-const MOCK_TOOL_CALLS = [
-  { tool: 'memory_recall', input: '{"query": "previous interactions"}', output: '{"memories": []}' },
-  { tool: 'knowledge_search', input: '{"query": "product FAQ"}', output: '{"results": [{"title": "FAQ", "content": "..."}]}' },
-];
-
-const MOCK_RESPONSES = [
-  'Based on the knowledge base, here is the answer to your question. The system supports multiple agent configurations with memory, knowledge, and escalation capabilities.',
-  'I have processed your request. The agent flow executed successfully through the classifier and support pipeline.',
-  'Your test message has been routed through the schema flow. All tools executed correctly and the response was generated.',
-];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -30,18 +16,12 @@ const MOCK_RESPONSES = [
 // `/api/v1/schemas/{id}/chat` endpoint.
 export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: string } = {}) {
   const { selectedSchema } = useBottomPanel();
-  const { isPrototype } = usePrototype();
 
   const [schema, setSchema] = useState<Schema | null>(null);
   const [entryAgent, setEntryAgent] = useState<AgentDetail | null>(null);
   const [headers, setHeaders] = useState<HeaderEntry[]>([]);
   const [message, setMessage] = useState('');
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
-
-  // Prototype mode state
-  const [protoMessages, setProtoMessages] = useState<SSEMessage[]>([]);
-  const [protoStreaming, setProtoStreaming] = useState(false);
-  const [protoSessionId, setProtoSessionId] = useState('');
 
   // Session management state (production only)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -79,9 +59,8 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
     fetchMessages: (sid) => api.getSessionEvents(sid),
   });
 
-  // Use either prototype or production messages
-  const messages = isPrototype ? protoMessages : sseChat.messages;
-  const isStreaming = isPrototype ? protoStreaming : sseChat.isStreaming;
+  const messages = sseChat.messages;
+  const isStreaming = sseChat.isStreaming;
 
   // Resolve the schema to a real Schema record, then fetch its entry agent.
   // The canvas URL carries the schema NAME (engine 1.1.0+ name-keyed routes),
@@ -121,17 +100,17 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
 
   // Fetch sessions for selected schema's entry agent (production only)
   useEffect(() => {
-    if (!schema || !entryAgent || isPrototype) { setSessions([]); return; }
+    if (!schema || !entryAgent) { setSessions([]); return; }
     let cancelled = false;
     api.listSessions({ agent_name: entryAgent.name, per_page: 20 })
       .then((res) => { if (!cancelled) setSessions(res.sessions); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [schema, entryAgent, isPrototype]);
+  }, [schema, entryAgent]);
 
   // Refresh session list when a new session is created (sessionId changes)
   useEffect(() => {
-    if (!schema || !entryAgent || isPrototype || !sseChat.sessionId) return;
+    if (!schema || !entryAgent || !sseChat.sessionId) return;
     if (sessions?.some((s) => s.session_id === sseChat.sessionId)) return;
     api.listSessions({ agent_name: entryAgent.name, per_page: 20 })
       .then((res) => setSessions(res.sessions))
@@ -198,52 +177,6 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
     setExpandedItems((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
-  // ── Prototype mock send ──────────────────────────────────────────────────
-
-  function protoSend(text: string) {
-    if (!text.trim() || protoStreaming) return;
-
-    const userMsg: SSEMessage = { id: crypto.randomUUID(), role: 'user', content: text };
-    const assistantId = crypto.randomUUID();
-    const sid = protoSessionId || `session-${Date.now()}`;
-    if (!protoSessionId) setProtoSessionId(sid);
-
-    setProtoMessages((prev) => [
-      ...prev,
-      userMsg,
-      { id: assistantId, role: 'assistant', content: '', toolCalls: [], streaming: true },
-    ]);
-    setProtoStreaming(true);
-
-    // Simulate streaming with tool calls
-    const toolCalls = MOCK_TOOL_CALLS.map((tc) => ({ ...tc }));
-    const responseText = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)]!;
-
-    // Step 1: show tool calls after 500ms
-    setTimeout(() => {
-      setProtoMessages((prev) =>
-        prev.map((m) => m.id === assistantId ? { ...m, toolCalls } : m),
-      );
-    }, 500);
-
-    // Step 2: stream response text
-    let charIndex = 0;
-    const interval = setInterval(() => {
-      charIndex += 3;
-      if (charIndex >= responseText.length) {
-        clearInterval(interval);
-        setProtoMessages((prev) =>
-          prev.map((m) => m.id === assistantId ? { ...m, content: responseText, streaming: false } : m),
-        );
-        setProtoStreaming(false);
-        return;
-      }
-      setProtoMessages((prev) =>
-        prev.map((m) => m.id === assistantId ? { ...m, content: responseText.slice(0, charIndex) } : m),
-      );
-    }, 30);
-  }
-
   // ── Send message ─────────────────────────────────────────────────────────
 
   async function handleSend() {
@@ -251,11 +184,6 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
     if (!text || !schema || isStreaming) return;
     setMessage('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
-
-    if (isPrototype) {
-      protoSend(text);
-      return;
-    }
 
     await sseChat.sendMessage(text);
   }
@@ -268,21 +196,11 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
   }
 
   function handleReset() {
-    if (isPrototype) {
-      setProtoMessages([]);
-      setProtoSessionId('');
-    } else {
-      sseChat.resetSession();
-    }
+    sseChat.resetSession();
   }
 
   function handleStop() {
-    if (isPrototype) {
-      setProtoStreaming(false);
-      setProtoMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
-    } else {
-      sseChat.stopStreaming();
-    }
+    sseChat.stopStreaming();
   }
 
   // ── Session management (production only) ─────────────────────────────────
@@ -369,7 +287,7 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
         </div>
 
         {/* Session selector (production only) */}
-        {!isPrototype && (
+        {(
           <div className="flex items-center gap-2">
             <label className="text-[10px] text-brand-shade3 uppercase tracking-wide shrink-0">Session:</label>
             <div ref={sessionDropdownRef} className="relative flex-1">
@@ -433,7 +351,7 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto min-h-0 px-3 py-2 space-y-2">
-        {!isPrototype && sseChat.isRestoring && messages.length === 0 ? (
+        {sseChat.isRestoring && messages.length === 0 ? (
           <div className="flex items-center gap-2 text-[11px] text-brand-shade3 font-mono py-4 justify-center">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
               <path d="M21 12a9 9 0 11-6.219-8.56" />
@@ -608,7 +526,7 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
       </div>
 
       {/* Context usage bar */}
-      <ContextUsageBar maxContextTokens={entryAgent?.max_context_size ?? null} totalTokens={isPrototype ? null : sseChat.tokenUsage} contextTokens={isPrototype ? null : sseChat.contextTokens} cachedTokens={isPrototype ? null : sseChat.cachedTokens} />
+      <ContextUsageBar maxContextTokens={entryAgent?.max_context_size ?? null} totalTokens={sseChat.tokenUsage} contextTokens={sseChat.contextTokens} cachedTokens={sseChat.cachedTokens} />
 
       {/* Input area */}
       <div className="flex items-center gap-2 px-3 py-2 border-t border-brand-shade3/10 flex-shrink-0">
@@ -640,7 +558,7 @@ export default function TestFlowTab({ lockedSchemaId }: { lockedSchemaId?: strin
           <button
             onClick={handleSend}
             disabled={!message.trim() || !schema}
-            className="px-2.5 py-1.5 bg-brand-accent text-brand-light rounded-card text-xs font-medium hover:bg-brand-accent-hover disabled:opacity-40 transition-colors flex-shrink-0 inline-flex items-center gap-1"
+            className="px-2.5 py-1.5 bg-brand-accent text-white rounded-card text-xs font-medium hover:bg-brand-accent-hover disabled:opacity-40 transition-colors flex-shrink-0 inline-flex items-center gap-1"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="5 3 19 12 5 21 5 3" />

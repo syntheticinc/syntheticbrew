@@ -43,7 +43,7 @@ export default function FormModal({
             type="submit"
             form="form-modal-form"
             disabled={loading}
-            className="px-4 py-2 text-sm text-brand-light bg-brand-accent rounded-btn hover:bg-brand-accent-hover disabled:opacity-50 transition-colors font-medium"
+            className="px-4 py-2 text-sm text-white bg-brand-accent rounded-btn hover:bg-brand-accent-hover disabled:opacity-50 transition-colors font-medium"
           >
             {loading ? 'Saving...' : submitLabel}
           </button>

@@ -6,10 +6,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <title>SyntheticBrew Admin</title>
   </head>
-  <body class="bg-brand-dark font-mono text-brand-light antialiased">
+  <body class="bg-brand-dark font-sans text-brand-light antialiased">
+    <script>
+      // Apply the persisted theme before the bundle loads to avoid a flash.
+      // Shared cookie first (set by sibling subdomains), then localStorage.
+      (function () {
+        try {
+          var m = document.cookie.match(/(?:^|;\s*)sbrew_theme=(light|dark)/);
+          var t = m ? m[1] : localStorage.getItem('syntheticbrew-theme');
+          if (t === 'light') document.documentElement.classList.add('light');
+        } catch (e) { /* default dark */ }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

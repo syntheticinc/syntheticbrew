@@ -129,7 +129,7 @@ export default function ConfigPage() {
           <button
             onClick={handleReload}
             disabled={reloading}
-            className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
           >
             {reloading ? 'Reloading...' : 'Reload Config'}
           </button>
@@ -147,7 +147,7 @@ export default function ConfigPage() {
             <button
               onClick={handleExport}
               disabled={exporting}
-              className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
+              className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
             >
               {exporting ? 'Exporting...' : 'Export Configuration'}
             </button>
@@ -210,7 +210,7 @@ export default function ConfigPage() {
           <button
             onClick={handleImport}
             disabled={importing || !importYaml.trim()}
-            className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover disabled:opacity-50 transition-colors"
           >
             {importing ? 'Importing...' : 'Import Configuration'}
           </button>

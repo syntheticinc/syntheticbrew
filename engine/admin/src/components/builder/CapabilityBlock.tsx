@@ -12,7 +12,7 @@ interface CapabilityBlockProps {
 }
 
 const inputCls =
-  'w-full bg-brand-dark-alt border border-brand-shade3/50 rounded-card text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3';
+  'w-full bg-brand-dark-alt border border-brand-shade3/50 rounded-btn text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3';
 
 const labelCls = 'block text-xs text-brand-shade3 mb-1 font-mono';
 const descCls = 'text-xs text-brand-shade3 mb-3';
@@ -220,7 +220,7 @@ function KnowledgeConfig({ cap, onChange }: PanelProps) {
         </div>
         <a
           href={import.meta.env.BASE_URL + 'knowledge'}
-          className="inline-flex items-center gap-1 px-3 py-1.5 bg-brand-accent text-brand-light rounded-btn text-xs font-medium hover:bg-brand-accent-hover transition-colors"
+          className="inline-flex items-center gap-1 px-3 py-1.5 bg-brand-accent text-white rounded-btn text-xs font-medium hover:bg-brand-accent-hover transition-colors"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
           Manage Knowledge Bases

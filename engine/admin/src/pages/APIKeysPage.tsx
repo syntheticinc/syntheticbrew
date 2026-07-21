@@ -35,6 +35,7 @@ export default function APIKeysPage() {
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [showManualSetup, setShowManualSetup] = useState(false);
 
   function toggleScope(bit: number) {
     setScopesMask((prev) => prev ^ bit);
@@ -130,13 +131,11 @@ export default function APIKeysPage() {
         <h1 className="text-2xl font-bold text-brand-light">API Keys</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+          className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
         >
           Generate New Token
         </button>
       </div>
-
-      <ConnectClaudeCode onMinted={refetch} />
 
       <div className="bg-brand-dark-alt rounded-card border border-brand-shade3/15">
         <DataTable
@@ -145,6 +144,24 @@ export default function APIKeysPage() {
           keyField="id"
           emptyMessage="No API tokens. Generate your first token."
         />
+      </div>
+
+      {/* Manual MCP setup — collapsed; the primary path is the one-click
+          button on the Agents page / top bar. */}
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={() => setShowManualSetup((v) => !v)}
+          className="text-xs text-brand-shade3 underline hover:text-brand-shade2 transition-colors cursor-pointer"
+          data-testid="toggle-manual-mcp-setup"
+        >
+          {showManualSetup ? 'Hide manual coding-agent setup' : 'Connecting a coding agent manually (per-client instructions)'}
+        </button>
+        {showManualSetup && (
+          <div className="mt-3">
+            <ConnectClaudeCode onMinted={refetch} />
+          </div>
+        )}
       </div>
 
       {/* Create token modal */}
@@ -166,7 +183,7 @@ export default function APIKeysPage() {
               onChange={(e) => setName(e.target.value)}
               required
               placeholder="my-integration"
-              className="w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/50 rounded-card text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent"
+              className="w-full px-3 py-2 bg-brand-dark-alt border border-brand-shade3/50 rounded-btn text-sm text-brand-light placeholder-brand-shade3 focus:outline-none focus:border-brand-accent"
             />
           </div>
           <div>
@@ -201,7 +218,7 @@ export default function APIKeysPage() {
             <button
               type="submit"
               disabled={saving || !name}
-              className="px-4 py-2 text-sm text-brand-light bg-brand-accent rounded-btn hover:bg-brand-accent-hover disabled:opacity-50"
+              className="px-4 py-2 text-sm text-white bg-brand-accent rounded-btn hover:bg-brand-accent-hover disabled:opacity-50"
             >
               {saving ? 'Generating...' : 'Generate'}
             </button>
@@ -227,7 +244,7 @@ export default function APIKeysPage() {
               type="text"
               value={createdToken ?? ''}
               readOnly
-              className="flex-1 px-3 py-2 border border-brand-shade3/30 rounded-card text-sm font-mono bg-brand-dark text-brand-light"
+              className="flex-1 px-3 py-2 border border-brand-shade3/30 rounded-btn text-sm font-mono bg-brand-dark text-brand-light"
             />
             <button
               onClick={copyToken}

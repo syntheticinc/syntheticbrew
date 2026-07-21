@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TreeAgent, TreeRelation } from '../mocks/schemas';
+import type { TreeAgent, TreeRelation } from '../types';
 import { computeEntryAgent } from '../lib/delegationGraph';
 
 // Re-export so SchemaDetailPage can share the same helper without reaching

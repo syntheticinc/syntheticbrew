@@ -171,9 +171,9 @@ function ProgressHeader({ step }: { step: 1 | 2 }) {
               <div
                 className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold shrink-0 transition-colors ${
                   done
-                    ? 'bg-brand-accent text-brand-light'
+                    ? 'bg-brand-accent text-white'
                     : active
-                    ? 'bg-brand-accent text-brand-light ring-2 ring-brand-accent/30'
+                    ? 'bg-brand-accent text-white ring-2 ring-brand-accent/30'
                     : 'bg-brand-dark-alt text-brand-shade3 border border-brand-shade3/30'
                 }`}
               >
@@ -474,7 +474,7 @@ function Step1ConnectLLM({
           <button
             type="submit"
             disabled={status.kind === 'testing'}
-            className="flex items-center gap-2 px-5 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {status.kind === 'testing' ? (
               <>
@@ -649,7 +649,7 @@ function Step2Template({
           type="button"
           onClick={handleContinue}
           disabled={!selected || creating}
-          className="flex items-center gap-2 px-5 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-5 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {creating ? (
             <>

@@ -4,12 +4,12 @@ import DelegationTree, { computeEntryAgent } from '../components/DelegationTree'
 import { api } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import type { AgentDetail, Schema } from '../types';
-import type { TreeAgent, TreeRelation } from '../mocks/schemas';
+import type { TreeAgent, TreeRelation } from '../types';
 
 type TabKey = 'canvas' | 'settings';
 
 // ─── Type adapters ───────────────────────────────────────────────────────────
-// DelegationTree expects TreeAgent/TreeRelation (prototype mock shapes).
+// DelegationTree expects TreeAgent/TreeRelation wire shapes.
 // We adapt real API types to these shapes here at the boundary.
 
 function agentDetailToTreeAgent(a: AgentDetail, modelNameById?: Map<string, string>): TreeAgent {

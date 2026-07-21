@@ -30,7 +30,7 @@ export default function ConfirmDialog({
       btnClass = 'bg-amber-600 hover:bg-amber-700 text-white';
       break;
     default:
-      btnClass = 'bg-brand-accent hover:bg-brand-accent-hover text-brand-light';
+      btnClass = 'bg-brand-accent hover:bg-brand-accent-hover text-white';
   }
 
   return (

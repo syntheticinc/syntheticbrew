@@ -233,7 +233,7 @@ export default function WidgetConfigPage() {
                       type="button"
                       onClick={handleCopy}
                       disabled={!snippet}
-                      className="px-3 py-1.5 bg-brand-accent hover:bg-brand-accent-hover text-brand-light rounded-btn text-xs font-medium font-mono transition-colors disabled:opacity-50"
+                      className="px-3 py-1.5 bg-brand-accent hover:bg-brand-accent-hover text-white rounded-btn text-xs font-medium font-mono transition-colors disabled:opacity-50"
                     >
                       {copied ? 'Copied' : 'Copy'}
                     </button>

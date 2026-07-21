@@ -230,7 +230,7 @@ export default function BottomPanel() {
 
   return (
     <div
-      className="flex flex-col bg-brand-dark-surface border-t border-brand-shade3/10 font-mono overflow-hidden flex-shrink-0"
+      className="flex flex-col bg-brand-dark-alt border-t border-brand-shade3/15 shadow-[0_-6px_20px_rgba(55,42,28,0.07)] font-mono overflow-hidden flex-shrink-0"
       style={{ height: collapsed ? COLLAPSED_HEIGHT : height }}
     >
       {/* Drag handle */}
@@ -505,7 +505,7 @@ export default function BottomPanel() {
             onClick={() => handleSendAssistant()}
             disabled={isStreaming}
             aria-label="Send message"
-            className="bg-brand-accent hover:bg-brand-accent-hover border-none rounded-card text-brand-light text-xs px-3 py-1.5 cursor-pointer font-medium font-mono transition-colors disabled:opacity-50"
+            className="bg-brand-accent hover:bg-brand-accent-hover border-none rounded-card text-white text-xs px-3 py-1.5 cursor-pointer font-medium font-mono transition-colors disabled:opacity-50"
           >
             Send
           </button>

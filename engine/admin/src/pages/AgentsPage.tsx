@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePrototype } from '../hooks/usePrototype';
 import { useApi } from '../hooks/useApi';
 import { useAdminRefresh } from '../hooks/useAdminRefresh';
 import { api } from '../api/client';
 import PageContainer from '../components/PageContainer';
+import Button from '../components/Button';
+import OnboardCodingAgentButton from '../components/OnboardCodingAgentButton';
 import type { AgentInfo } from '../types';
 
 function AgentRow({ agent, onClick }: { agent: AgentInfo; onClick: () => void }) {
@@ -252,13 +253,12 @@ function NewAgentModal({
 }
 
 export default function AgentsPage() {
-  const { isPrototype } = usePrototype();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [systemExpanded, setSystemExpanded] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data: apiAgents, refetch } = useApi(() => api.listAgents(), [isPrototype]);
+  const { data: apiAgents, refetch } = useApi(() => api.listAgents());
   useAdminRefresh(refetch);
   const agents = apiAgents ?? [];
   const allFiltered = agents.filter(a => a.name.toLowerCase().includes(search.toLowerCase()));
@@ -290,13 +290,7 @@ export default function AgentsPage() {
           <h1 className="text-xl font-semibold text-brand-light">Agents</h1>
           <p className="text-sm text-brand-shade3 mt-1">Global agent configurations. Changes affect all schemas using the agent.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="px-4 py-2 bg-brand-accent text-white text-sm font-medium rounded-btn hover:bg-brand-accent/80 transition-colors"
-        >
-          + New Agent
-        </button>
+        <Button onClick={() => setShowCreate(true)}>+ New Agent</Button>
       </div>
 
       {/* Search */}
@@ -306,7 +300,7 @@ export default function AgentsPage() {
           placeholder="Search agents..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-sm bg-brand-dark-alt border border-brand-shade3/50 rounded-card text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3"
+          className="w-full max-w-sm bg-brand-dark-alt border border-brand-shade3/50 rounded-btn text-sm text-brand-light px-3 py-2 focus:outline-none focus:border-brand-accent placeholder-brand-shade3"
         />
       </div>
 
@@ -332,8 +326,11 @@ export default function AgentsPage() {
               'No agents match your search.'
             ) : (
               <>
-                <p>No agents configured. Create your first agent to get started.</p>
-                <p className="mt-2 text-xs text-brand-shade3/70">
+                <p>No agents configured. Connect a coding agent and it builds one for you.</p>
+                <p className="mt-3">
+                  <OnboardCodingAgentButton />
+                </p>
+                <p className="mt-3 text-xs text-brand-shade3/70">
                   If SyntheticBrew helps you, consider{' '}
                   <a
                     href="https://github.com/syntheticinc/syntheticbrew"

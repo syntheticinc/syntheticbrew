@@ -7,8 +7,6 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { ToastProvider, useToast } from '../components/builder/Toast';
 import type { AgentDetail, CapabilityConfig, CapabilityType, Model, MCPServer } from '../types';
 import { CAPABILITY_META } from '../types';
-import { usePrototype } from '../hooks/usePrototype';
-import { MOCK_AGENTS, MOCK_MODELS } from '../mocks/agents';
 
 const ALL_CAPABILITY_TYPES = Object.keys(CAPABILITY_META) as CapabilityType[];
 
@@ -57,7 +55,6 @@ function AgentDrillInInner() {
   const schema = params.schema ?? params.schemaName;
   const agentName = params.agent ?? params.agentName;
   const navigate = useNavigate();
-  const { isPrototype } = usePrototype();
 
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilityConfig[]>([]);
@@ -74,25 +71,6 @@ function AgentDrillInInner() {
 
   useEffect(() => {
     if (!agentName) { setLoading(false); return; }
-
-    if (isPrototype) {
-      const mockAgent = MOCK_AGENTS[agentName] ?? MOCK_AGENTS['support-agent'];
-      if (mockAgent) {
-        setAgent(mockAgent);
-        setEnabledTools(mockAgent.tools ?? []);
-        setCanSpawn(mockAgent.can_spawn ?? []);
-      }
-      // Pre-populate capabilities for prototype (matching original prototype)
-      const protoCaps: CapabilityConfig[] = [
-        { type: 'memory', enabled: true, config: { unlimited_retention: true, unlimited_entries: false, max_entries: 500 } },
-        { type: 'knowledge', enabled: true, config: { sources: ['support-docs.pdf'], chunks: 2341, top_k: 5, similarity_threshold: 0.75 } },
-      ];
-      setCapabilities(protoCaps);
-      setInitialCapabilities(protoCaps.map((c) => ({ ...c })));
-      setModels(MOCK_MODELS as Model[]);
-      setLoading(false);
-      return;
-    }
 
     Promise.all([
       api.getAgent(agentName),
@@ -119,16 +97,15 @@ function AgentDrillInInner() {
       })
       .catch(() => { /* fallback to empty */ })
       .finally(() => setLoading(false));
-  }, [agentName, isPrototype]);
+  }, [agentName]);
 
-  // Fetch models and all agent names for connections (production only)
+  // Fetch models and all agent names for connections
   useEffect(() => {
-    if (isPrototype) return;
     // Wave 5: agents require a chat-kind model (backend enforces
     // `model_id must reference a chat model`). Filter server-side.
     api.listModels({ kind: 'chat' }).then(setModels).catch(() => {});
     api.listMCPServers().then(setMcpServers).catch(() => {});
-  }, [isPrototype]);
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -230,7 +207,7 @@ function AgentDrillInInner() {
       await api.restoreBuilderAssistant();
       addToast('Builder Assistant restored to factory defaults', 'success');
       // Reload agent data
-      if (agentName && !isPrototype) {
+      if (agentName) {
         const data = await api.getAgent(agentName);
         setAgent(data);
         setEnabledTools(data.tools ?? []);
@@ -296,7 +273,7 @@ function AgentDrillInInner() {
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-1.5 bg-brand-accent text-brand-light rounded-btn text-sm font-medium font-mono hover:bg-brand-accent/90 disabled:opacity-50 transition-colors"
+            className="px-4 py-1.5 bg-brand-accent text-white rounded-btn text-sm font-medium font-mono hover:bg-brand-accent/90 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme tokens (RGB triplets so Tailwind alpha modifiers keep working).
+   Values mirror the marketing-site palettes — keep in sync. Default is the
+   dark theme; the `light` class on <html> switches to the light palette. */
+:root {
+  --bb-surface: 23 23 21;      /* page background */
+  --bb-surface-2: 30 30 27;    /* sidebar / table surfaces */
+  --bb-surface-3: 36 34 30;    /* cards / inputs */
+  --bb-text: 244 239 231;      /* primary text */
+  --bb-text-2: 216 208 195;    /* secondary text */
+  --bb-text-3: 198 190 178;    /* tertiary text */
+  --bb-muted: 170 161 150;     /* muted text / borders */
+  color-scheme: dark;
+}
+
+.light {
+  --bb-surface: 255 253 248;
+  --bb-surface-2: 255 255 255;
+  --bb-surface-3: 245 239 228;
+  --bb-text: 32 31 28;
+  --bb-text-2: 68 65 60;
+  --bb-text-3: 93 90 84;
+  --bb-muted: 111 106 98;
+  color-scheme: light;
+}
+
 @layer base {
   html, body, #root {
     @apply h-full;
@@ -26,13 +51,12 @@
   }
 
   body {
-    @apply bg-brand-dark font-mono text-brand-light antialiased;
-    color-scheme: dark;
+    @apply bg-brand-dark font-sans text-brand-light antialiased;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #87867F #1F1F1F;
+    scrollbar-color: rgb(var(--bb-muted) / 0.6) rgb(var(--bb-surface-3));
   }
 
   ::-webkit-scrollbar {
@@ -40,16 +64,16 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: #1F1F1F;
+    background: rgb(var(--bb-surface-3));
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #87867F;
+    background: rgb(var(--bb-muted) / 0.6);
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #CBC9BC;
+    background: rgb(var(--bb-muted));
   }
 
   /* Global form element styling — dark theme readable inputs */
@@ -67,24 +91,29 @@
     @apply text-brand-light border border-brand-shade3/50 rounded-btn text-sm
            focus:outline-none focus:border-brand-accent focus:ring-1
            focus:ring-brand-accent transition-colors;
-    background-color: #1F1F1F !important;
-    color: #F7F8F1 !important;
+    background-color: rgb(var(--bb-surface-3)) !important;
+    color: rgb(var(--bb-text)) !important;
   }
 
   /* Dropdown arrow only for select elements */
   select {
     -webkit-appearance: none;
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2387867F' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23aaa196' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 8px center;
     padding-right: 28px !important;
   }
 
-  /* Dark theme for native select dropdowns */
+  /* Light theme needs a dark dropdown arrow (data-URI cannot read variables) */
+  .light select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236f6a62' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
+
+  /* Native select dropdowns follow the theme */
   select option {
-    background-color: #1F1F1F;
-    color: #F7F8F1;
+    background-color: rgb(var(--bb-surface-3));
+    color: rgb(var(--bb-text));
   }
 
   /* Subtle noise texture on body for depth */
@@ -101,23 +130,23 @@
 
 /* React Flow — dark theme controls (outside @layer to beat rf's unlayered styles) */
 .react-flow__controls {
-  background: #1F1F1F !important;
-  border: 1px solid rgba(135, 134, 127, 0.2) !important;
+  background: rgb(var(--bb-surface-3)) !important;
+  border: 1px solid rgb(var(--bb-muted) / 0.2) !important;
   border-radius: 4px !important;
   box-shadow: none !important;
 }
 
 .react-flow__controls-button {
-  background: #1F1F1F !important;
-  border-bottom: 1px solid rgba(135, 134, 127, 0.15) !important;
-  fill: #87867F !important;
-  color: #87867F !important;
+  background: rgb(var(--bb-surface-3)) !important;
+  border-bottom: 1px solid rgb(var(--bb-muted) / 0.15) !important;
+  fill: rgb(var(--bb-muted)) !important;
+  color: rgb(var(--bb-muted)) !important;
 }
 
 .react-flow__controls-button:hover {
-  background: #2a2a2a !important;
-  fill: #CBC9BC !important;
-  color: #CBC9BC !important;
+  background: rgb(var(--bb-surface-2)) !important;
+  fill: rgb(var(--bb-text-3)) !important;
+  color: rgb(var(--bb-text-3)) !important;
 }
 
 .react-flow__controls-button:last-child {
@@ -125,10 +154,28 @@
 }
 
 .react-flow__controls-button svg {
-  fill: #87867F !important;
+  fill: rgb(var(--bb-muted)) !important;
 }
 
 .react-flow__controls-button:hover svg {
-  fill: #CBC9BC !important;
+  fill: rgb(var(--bb-text-3)) !important;
 }
 
+
+/* Light theme: status accents used across pages are the *-400 tones tuned for
+   the dark surfaces — darken them for contrast on light surfaces. Backgrounds
+   (`bg-*-500/10`) and borders stay as-is (soft washes read fine on both). */
+.light .text-red-400 { color: #dc2626; }
+.light .text-red-300 { color: #ef4444; }
+.light .text-amber-400, .light .text-amber-300 { color: #b45309; }
+.light .text-yellow-400 { color: #a16207; }
+.light .text-emerald-400 { color: #047857; }
+.light .text-green-400 { color: #15803d; }
+.light .text-blue-400 { color: #2563eb; }
+.light .text-purple-400, .light .text-purple-300 { color: #7e22ce; }
+.light .text-orange-400 { color: #c2410c; }
+
+/* Theme-specific logo assets (site pattern: separate light/dark files). */
+.logo-on-light { display: none; }
+.light .logo-on-light { display: block; }
+.light .logo-on-dark { display: none; }

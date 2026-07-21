@@ -4,32 +4,37 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Semantic tokens resolve through CSS variables (globals.css) so the
+        // admin follows the site's light/dark themes. Names are historical:
+        // "dark*" = surfaces, "light"/"shade*" = text tones — in the light
+        // theme the variables invert while class names stay unchanged.
         brand: {
           accent: '#D7513E',
-          'accent-hover': '#C04635',
-          dark: '#111111',
-          'dark-surface': '#181818',
-          'dark-alt': '#1F1F1F',
-          light: '#F7F8F1',
-          shade1: '#DFD8D0',
-          shade2: '#CBC9BC',
-          shade3: '#87867F',
+          'accent-hover': '#B94332',
+          dark: 'rgb(var(--bb-surface) / <alpha-value>)',
+          'dark-surface': 'rgb(var(--bb-surface-2) / <alpha-value>)',
+          'dark-alt': 'rgb(var(--bb-surface-3) / <alpha-value>)',
+          light: 'rgb(var(--bb-text) / <alpha-value>)',
+          shade1: 'rgb(var(--bb-text-2) / <alpha-value>)',
+          shade2: 'rgb(var(--bb-text-3) / <alpha-value>)',
+          shade3: 'rgb(var(--bb-muted) / <alpha-value>)',
         },
         status: {
           active: '#4CAF50',
           attention: '#D7513E',
-          idle: '#87867F',
+          idle: 'rgb(var(--bb-muted) / <alpha-value>)',
         },
       },
       fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'monospace'],
       },
       zIndex: {
         60: '60',
       },
       borderRadius: {
-        card: '2px',
-        btn: '2px',
+        card: '18px',
+        btn: '10px',
       },
       keyframes: {
         'slide-in-right': {

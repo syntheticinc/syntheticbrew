@@ -48,22 +48,6 @@ import type {
   MessageResponse,
   EventResponse,
 } from '../types';
-import {
-  MOCK_HEALTH,
-  MOCK_MODELS_LIST,
-  MOCK_MCP_SERVERS,
-  MOCK_CATALOG,
-  MOCK_TASKS_PAGINATED,
-  MOCK_TOKENS,
-  MOCK_SETTINGS,
-  MOCK_AUDIT_LOGS,
-  MOCK_CONFIG_YAML,
-} from '../mocks/pages';
-import { MOCK_AGENTS } from '../mocks/agents';
-import { MOCK_SESSIONS_LIST } from '../mocks/sessions';
-import { MOCK_SCHEMA_TEMPLATES } from '../mocks/schemaTemplates';
-import { mockSchemas, mockAgentRelations } from '../mocks/schemas';
-import { MOCK_KG_BUNDLES, MOCK_KG_SCHEMAS, MOCK_KG_ENTITIES } from '../mocks/knowledgeGraphs';
 
 const BASE_URL = '/api/v1';
 
@@ -95,13 +79,6 @@ function handleUnauthorized(): void {
     .catch((err) => console.error('auth recovery failed', err))
     .finally(() => { recovering = false; });
 }
-const PROTOTYPE_KEY = 'syntheticbrew_prototype_mode';
-// Build-time gate. A production build with VITE_PROTOTYPE_ENABLED unset cannot
-// enter prototype mode at all, even if localStorage is tampered with.
-// This matches the logic in hooks/usePrototype.tsx so the UI toggle and the
-// API layer agree on whether mocks are allowed.
-const PROTOTYPE_BUILD_ENABLED =
-  import.meta.env.VITE_PROTOTYPE_ENABLED === 'true' || import.meta.env.DEV;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -114,17 +91,6 @@ class APIClient {
 
   constructor() {
     this.token = localStorage.getItem('jwt');
-  }
-
-  private get isPrototype(): boolean {
-    // Defense-in-depth: a production build cannot return mock data even if
-    // localStorage is tampered with. The build-time gate must also be enabled.
-    if (!PROTOTYPE_BUILD_ENABLED) return false;
-    return localStorage.getItem(PROTOTYPE_KEY) === 'true';
-  }
-
-  private mock<T>(data: T): Promise<T> {
-    return Promise.resolve(data);
   }
 
   setToken(token: string) {
@@ -191,36 +157,18 @@ class APIClient {
 
   // ---- Agents ----
   listAgents() {
-    if (this.isPrototype) {
-      const agents: AgentInfo[] = Object.values(MOCK_AGENTS)
-        .filter((a) => a.name !== 'builder-assistant')
-        .map((a) => ({
-          name: a.name,
-          description: a.description,
-          tools_count: a.tools_count,
-          has_knowledge: a.has_knowledge,
-        }));
-      return this.mock(agents);
-    }
     return this.request<AgentInfo[]>('GET', '/agents');
   }
   getAgent(name: string) {
-    if (this.isPrototype) {
-      const agent = MOCK_AGENTS[name] ?? Object.values(MOCK_AGENTS)[0]!;
-      return this.mock<AgentDetail>(agent);
-    }
     return this.request<AgentDetail>('GET', `/agents/${encodeURIComponent(name)}`);
   }
   createAgent(data: CreateAgentRequest) {
-    if (this.isPrototype) return this.mock({ ...data, tools_count: 0, has_knowledge: false } as AgentDetail);
     return this.request<AgentDetail>('POST', '/agents', data);
   }
   updateAgent(name: string, data: Partial<CreateAgentRequest>) {
-    if (this.isPrototype) return this.mock({ name, ...data } as AgentDetail);
     return this.request<AgentDetail>('PATCH', `/agents/${encodeURIComponent(name)}`, data);
   }
   deleteAgent(name: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/agents/${encodeURIComponent(name)}`);
   }
 
@@ -233,21 +181,13 @@ class APIClient {
   // kind explicitly — the agent model dropdown uses `kind=chat`, the KB
   // wizard uses `kind=embedding`.
   listModels(params?: { kind?: ModelKind }) {
-    if (this.isPrototype) {
-      const models = MOCK_MODELS_LIST;
-      if (params?.kind === 'embedding') return this.mock(models.filter(m => m.kind === 'embedding'));
-      if (params?.kind === 'chat') return this.mock(models.filter(m => m.kind === 'chat'));
-      return this.mock(models);
-    }
     const query = params?.kind ? `?kind=${encodeURIComponent(params.kind)}` : '';
     return this.request<Model[]>('GET', `/models${query}`);
   }
   createModel(data: CreateModelRequest) {
-    if (this.isPrototype) return this.mock({ id: crypto.randomUUID(), ...data, kind: data.kind ?? 'chat', has_api_key: !!data.api_key, is_default: data.is_default ?? false, created_at: new Date().toISOString() } as Model);
     return this.request<Model>('POST', '/models', data);
   }
   updateModel(name: string, data: CreateModelRequest) {
-    if (this.isPrototype) return this.mock({ ...data, kind: data.kind ?? 'chat', name } as Model);
     return this.request<Model>('PATCH', `/models/${encodeURIComponent(name)}`, data);
   }
   // setDefaultModel promotes a single model to default for its (tenant, kind)
@@ -260,37 +200,23 @@ class APIClient {
   // consistent with updateModel/deleteModel to avoid a one-off id vs name
   // convention just for this action.
   setDefaultModel(name: string) {
-    if (this.isPrototype) {
-      // Update the shared MOCK list in place so the subsequent refetch
-      // reflects the swap without a real backend call.
-      for (const m of MOCK_MODELS_LIST) {
-        if (m.kind === 'chat') m.is_default = m.name === name;
-      }
-      const target = MOCK_MODELS_LIST.find((m) => m.name === name);
-      return this.mock<Model>(target ?? ({ name } as Model));
-    }
     return this.request<Model>('PATCH', `/models/${encodeURIComponent(name)}`, { is_default: true });
   }
   deleteModel(name: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/models/${encodeURIComponent(name)}`);
   }
 
   // ---- MCP Servers ----
   listMCPServers() {
-    if (this.isPrototype) return this.mock(MOCK_MCP_SERVERS);
     return this.request<MCPServer[]>('GET', '/mcp-servers');
   }
   createMCPServer(data: CreateMCPServerRequest) {
-    if (this.isPrototype) return this.mock({ id: crypto.randomUUID(), ...data, status: { status: 'connected', tools_count: 0 }, agents: [] } as MCPServer);
     return this.request<MCPServer>('POST', '/mcp-servers', data);
   }
   updateMCPServer(name: string, data: CreateMCPServerRequest) {
-    if (this.isPrototype) return this.mock({ id: '', ...data, name, agents: [] } as MCPServer);
     return this.request<MCPServer>('PATCH', `/mcp-servers/${encodeURIComponent(name)}`, data);
   }
   deleteMCPServer(name: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/mcp-servers/${encodeURIComponent(name)}`);
   }
   // refreshMCPServer triggers a lightweight tools/list re-fetch on the engine
@@ -298,7 +224,6 @@ class APIClient {
   // button on MCPPage so operators can pick up downstream rename/add/remove
   // of tools without waiting for the optional TTL refresher.
   refreshMCPServer(name: string) {
-    if (this.isPrototype) return this.mock({ name, tools_count: 0 });
     return this.request<{ name: string; tools_count: number }>(
       'POST', `/mcp-servers/${encodeURIComponent(name)}/refresh`,
     );
@@ -306,106 +231,84 @@ class APIClient {
 
   // ---- Tasks ----
   listTasks(params?: Record<string, string>) {
-    if (this.isPrototype) return this.mock(MOCK_TASKS_PAGINATED);
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
     return this.request<PaginatedTaskResponse>('GET', `/tasks${qs}`);
   }
   listTasksPaginated(params: Record<string, string>) {
-    if (this.isPrototype) return this.mock(MOCK_TASKS_PAGINATED);
     const qs = '?' + new URLSearchParams(params).toString();
     return this.request<PaginatedTaskResponse>('GET', `/tasks${qs}`);
   }
   getTask(id: string) {
-    if (this.isPrototype) return this.mock({ id, title: 'Mock Task', agent_name: 'assistant', status: 'completed', source: 'api', priority: 0, created_at: new Date().toISOString(), mode: 'interactive' } as TaskDetailResponse);
     return this.request<TaskDetailResponse>('GET', `/tasks/${id}`);
   }
   createTask(data: CreateTaskRequest) {
-    if (this.isPrototype) return this.mock({ task_id: 'mock-' + crypto.randomUUID(), status: 'pending' });
     return this.request<{ task_id: string; status: string }>('POST', '/tasks', data);
   }
   listSubtasks(parentId: string) {
-    if (this.isPrototype) return this.mock([] as TaskResponse[]);
     return this.request<TaskResponse[]>('GET', `/tasks/${parentId}/subtasks`);
   }
   approveTask(id: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('POST', `/tasks/${id}/approve`);
   }
   startTask(id: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('POST', `/tasks/${id}/start`);
   }
   completeTask(id: string, result?: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('POST', `/tasks/${id}/complete`, result ? { result } : undefined);
   }
   failTask(id: string, reason: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('POST', `/tasks/${id}/fail`, { reason });
   }
   setTaskPriority(id: string, priority: number) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('POST', `/tasks/${id}/priority`, { priority });
   }
   cancelTask(id: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/tasks/${id}`);
   }
 
   // ---- Health ----
   health() {
-    if (this.isPrototype) return this.mock(MOCK_HEALTH);
     return this.request<HealthResponse>('GET', '/health');
   }
 
   // ---- Tokens ----
   listTokens() {
-    if (this.isPrototype) return this.mock(MOCK_TOKENS);
     return this.request<APIToken[]>('GET', '/auth/tokens');
   }
   createToken(data: CreateTokenRequest) {
-    if (this.isPrototype) return this.mock({ id: crypto.randomUUID(), name: data.name, token: 'bb_proto_' + Math.random().toString(36).slice(2) } as CreateTokenResponse);
     return this.request<CreateTokenResponse>('POST', '/auth/tokens', data);
   }
   deleteToken(id: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/auth/tokens/${id}`);
   }
 
   // ---- Settings ----
   listSettings() {
-    if (this.isPrototype) return this.mock(MOCK_SETTINGS as Setting[] | Record<string, unknown>);
     // API may return Setting[] or flat object depending on backend implementation
     return this.request<Setting[] | Record<string, unknown>>('GET', '/settings');
   }
   updateSetting(key: string, value: string) {
-    if (this.isPrototype) return this.mock({ key, value } as Setting);
     return this.request<Setting>('PUT', `/settings/${encodeURIComponent(key)}`, { value });
   }
 
   // ---- Tools ----
   listToolMetadata() {
-    if (this.isPrototype) return this.mock([] as ToolMetadata[]);
     return this.request<ToolMetadata[]>('GET', '/tools/metadata');
   }
 
   // ---- Config ----
   reloadConfig() {
-    if (this.isPrototype) return this.mock({ reloaded: true, agents_count: 6 });
     return this.request<{ reloaded: boolean; agents_count: number }>('POST', '/config/reload');
   }
   exportConfig() {
-    if (this.isPrototype) return this.mock(MOCK_CONFIG_YAML);
     return this.request<string>('GET', '/config/export');
   }
   importConfig(yamlContent: string) {
-    if (this.isPrototype) return this.mock({ imported: true, agents_count: 3 });
     return this.requestRaw<{ imported: boolean; agents_count: number }>('POST', '/config/import', yamlContent, 'text/yaml');
   }
 
   // ---- Audit ----
   listAuditLogs(params: Record<string, string> = {}) {
-    if (this.isPrototype) return this.mock(MOCK_AUDIT_LOGS);
     const qs = Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
     return this.request<PaginatedResponse<AuditEntry>>('GET', `/audit${qs}`);
   }
@@ -414,10 +317,6 @@ class APIClient {
   // Filters: session_id, agent, tool, status (completed|failed), user_id,
   // from, to (RFC3339 or YYYY-MM-DD), page, per_page.
   listToolCalls(params: Record<string, string> = {}) {
-    if (this.isPrototype) {
-      // No mock data yet — prototype mode shows empty state.
-      return this.mock({ data: [], total: 0, page: 1, per_page: 50, total_pages: 0 });
-    }
     const qs = Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
     return this.request<PaginatedResponse<ToolCallEntry>>('GET', `/audit/tool-calls${qs}`);
   }
@@ -438,40 +337,14 @@ class APIClient {
   // ─── Schemas ─────────────────────────────────────────────────────────────────
 
   listSchemas() {
-    if (this.isPrototype) {
-      return this.mock<Schema[]>(
-        mockSchemas.map((s) => ({
-          id: s.id,
-          name: s.name,
-          description: s.description,
-          agents_count: s.agentIds.length,
-          entry_agent_name: s.entryAgentId,
-          created_at: s.updatedAt,
-          chat_enabled: true,
-        })),
-      );
-    }
     return this.request<Schema[]>('GET', '/schemas');
   }
 
   getSchema(schemaName: string) {
-    if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.name === schemaName) ?? mockSchemas[0]!;
-      return this.mock<Schema>({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        agents_count: s.agentIds.length,
-        entry_agent_name: s.entryAgentId,
-        created_at: s.updatedAt,
-        chat_enabled: true,
-      });
-    }
     return this.request<Schema>('GET', `/schemas/${encodeURIComponent(schemaName)}`);
   }
 
   createSchema(data: { name: string; description?: string }) {
-    if (this.isPrototype) return this.mock({ id: `mock-schema-${Date.now()}`, name: data.name, description: data.description, agents_count: 0, created_at: new Date().toISOString(), chat_enabled: false } as Schema);
     return this.request<Schema>('POST', '/schemas', data);
   }
 
@@ -481,23 +354,10 @@ class APIClient {
   // Engine 1.1.0+: schema name is immutable; PATCH with a different `name`
   // returns 409 Conflict. The Name input in Settings is readOnly.
   updateSchema(schemaName: string, data: { name?: string; description?: string; chat_enabled?: boolean; entry_agent_id?: string }) {
-    if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.name === schemaName);
-      return this.mock<Schema>({
-        id: s?.id ?? `mock-schema-${schemaName}`,
-        name: schemaName,
-        description: data.description ?? s?.description,
-        agents_count: s?.agentIds.length ?? 0,
-        entry_agent_name: s?.entryAgentId,
-        created_at: s?.updatedAt ?? new Date().toISOString(),
-        chat_enabled: data.chat_enabled ?? true,
-      });
-    }
     return this.request<Schema>('PATCH', `/schemas/${encodeURIComponent(schemaName)}`, data);
   }
 
   deleteSchema(schemaName: string) {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/schemas/${encodeURIComponent(schemaName)}`);
   }
 
@@ -515,10 +375,6 @@ class APIClient {
   // creating a relation adds both endpoints as implicit members; deleting
   // the last relation that referenced an agent removes it from the schema.
   listSchemaAgents(schemaName: string) {
-    if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.name === schemaName);
-      return this.mock<string[]>([...(s?.agentIds ?? [])]);
-    }
     return this.request<string[]>('GET', `/schemas/${encodeURIComponent(schemaName)}/agents`);
   }
 
@@ -530,25 +386,6 @@ class APIClient {
   // modify existing forks.
 
   listSchemaTemplates(filter?: { category?: SchemaTemplateCategory; q?: string }) {
-    if (this.isPrototype) {
-      let items = [...MOCK_SCHEMA_TEMPLATES];
-      if (filter?.category) {
-        items = items.filter((t) => t.category === filter.category);
-      }
-      if (filter?.q) {
-        const q = filter.q.toLowerCase();
-        items = items.filter(
-          (t) =>
-            t.name.toLowerCase().includes(q) ||
-            t.display.toLowerCase().includes(q) ||
-            t.description.toLowerCase().includes(q),
-        );
-      }
-      return this.mock<SchemaTemplateListResponse>({
-        version: '1.0',
-        templates: items,
-      });
-    }
     const qs = new URLSearchParams();
     if (filter?.category) qs.set('category', filter.category);
     if (filter?.q) qs.set('q', filter.q);
@@ -557,28 +394,10 @@ class APIClient {
   }
 
   getSchemaTemplate(name: string) {
-    if (this.isPrototype) {
-      const t = MOCK_SCHEMA_TEMPLATES.find((x) => x.name === name);
-      if (!t) throw new Error('template not found');
-      return this.mock<SchemaTemplate>(t);
-    }
     return this.request<SchemaTemplate>('GET', `/schema-templates/${encodeURIComponent(name)}`);
   }
 
   forkSchemaTemplate(templateName: string, schemaName: string) {
-    if (this.isPrototype) {
-      const t = MOCK_SCHEMA_TEMPLATES.find((x) => x.name === templateName);
-      if (!t) throw new Error('template not found');
-      const agentIds: Record<string, string> = {};
-      for (const a of t.definition.agents) {
-        agentIds[a.name] = `mock-${schemaName}-${a.name}`;
-      }
-      return this.mock<ForkTemplateResponse>({
-        schema_id: `mock-schema-${schemaName}`,
-        schema_name: schemaName,
-        agent_ids: agentIds,
-      });
-    }
     return this.request<ForkTemplateResponse>(
       'POST',
       `/schema-templates/${encodeURIComponent(templateName)}/fork`,
@@ -595,51 +414,18 @@ class APIClient {
   // new agent.
 
   listAgentRelations(schemaName: string) {
-    if (this.isPrototype) {
-      const s = mockSchemas.find((x) => x.name === schemaName);
-      const members = new Set(s?.agentIds ?? []);
-      const rels = mockAgentRelations
-        .filter((r) => members.has(r.sourceAgentId) && members.has(r.targetAgentId))
-        .map((r) => ({ id: r.id, schema_id: s?.id ?? schemaName, source: r.sourceAgentId, target: r.targetAgentId }));
-      return this.mock<{ id: string; schema_id: string; source: string; target: string }[]>(rels);
-    }
     return this.request<{ id: string; schema_id: string; source: string; target: string }[]>(
       'GET', `/schemas/${encodeURIComponent(schemaName)}/agent-relations`,
     );
   }
 
   createAgentRelation(schemaName: string, source: string, target: string) {
-    if (this.isPrototype) {
-      const id = `rel-${Date.now()}`;
-      mockAgentRelations.push({ id, sourceAgentId: source, targetAgentId: target });
-      const schema = mockSchemas.find((s) => s.name === schemaName);
-      if (schema && !schema.agentIds.includes(target)) {
-        schema.agentIds.push(target);
-      }
-      return this.mock({ id, schema_id: schema?.id ?? schemaName, source, target });
-    }
     return this.request<{ id: string; schema_id: string; source: string; target: string }>(
       'POST', `/schemas/${encodeURIComponent(schemaName)}/agent-relations`, { source, target },
     );
   }
 
   deleteAgentRelation(schemaName: string, relationId: string) {
-    if (this.isPrototype) {
-      const idx = mockAgentRelations.findIndex((r) => r.id === relationId);
-      if (idx >= 0) {
-        const [removed] = mockAgentRelations.splice(idx, 1);
-        const schema = mockSchemas.find((s) => s.name === schemaName);
-        if (schema && removed && removed.targetAgentId !== schema.entryAgentId) {
-          const stillReferenced = mockAgentRelations.some(
-            (r) => r.sourceAgentId === removed.targetAgentId || r.targetAgentId === removed.targetAgentId,
-          );
-          if (!stillReferenced) {
-            schema.agentIds = schema.agentIds.filter((id) => id !== removed.targetAgentId);
-          }
-        }
-      }
-      return this.mock(undefined as unknown as void);
-    }
     return this.request<void>('DELETE', `/schemas/${encodeURIComponent(schemaName)}/agent-relations/${relationId}`);
   }
 
@@ -656,29 +442,6 @@ class APIClient {
     to?: string;
     agent_name?: string;
   }): Promise<PaginatedSessions> {
-    if (this.isPrototype) {
-      const page = params?.page ?? 1;
-      const perPage = params?.per_page ?? 20;
-      let filtered = [...MOCK_SESSIONS_LIST];
-
-      if (params?.agent_name) {
-        filtered = filtered.filter((s) => s.entry_agent === params.agent_name);
-      }
-      if (params?.search) {
-        const q = params.search.toLowerCase();
-        filtered = filtered.filter(
-          (s) => s.session_id.toLowerCase().includes(q) || s.entry_agent.toLowerCase().includes(q),
-        );
-      }
-      if (params?.status && params.status.length > 0) {
-        filtered = filtered.filter((s) => params.status!.includes(s.status));
-      }
-
-      const total = filtered.length;
-      const start = (page - 1) * perPage;
-      const sessions = filtered.slice(start, start + perPage);
-      return this.mock<PaginatedSessions>({ sessions, total, page, per_page: perPage });
-    }
 
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
@@ -706,22 +469,18 @@ class APIClient {
   }
 
   deleteSession(sessionId: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/sessions/${sessionId}`);
   }
 
   getSessionMessages(sessionId: string): Promise<MessageResponse[]> {
-    if (this.isPrototype) return this.mock<MessageResponse[]>([]);
     return this.request<MessageResponse[]>('GET', `/sessions/${sessionId}/messages`);
   }
 
   getSessionEvents(sessionId: string): Promise<EventResponse[]> {
-    if (this.isPrototype) return this.mock<EventResponse[]>([]);
     return this.request<EventResponse[]>('GET', `/sessions/${sessionId}/messages`);
   }
 
   async getBuilderLastSession(): Promise<string | null> {
-    if (this.isPrototype) return this.mock<string | null>(null);
     try {
       const res = await this.request<{ session_id: string }>('GET', '/admin/assistant/last-session');
       return res.session_id ?? null;
@@ -738,29 +497,12 @@ class APIClient {
   // ─── Usage / Quota ───────────────────────────────────────────────────────────
 
   getUsageStatus(): Promise<UsageStatusData> {
-    if (this.isPrototype) {
-      return this.mock<UsageStatusData>({
-        active_users: { used: 12, limit: 2000 },
-        schemas: { used: 2, limit: 3 },
-        knowledge_documents: { used: 6, limit: 100 },
-        turns: { used: 18, limit: 50 },
-      });
-    }
     return this.request<UsageStatusData>('GET', '/usage-status');
   }
 
   // ─── MCP Catalog ───────────────────────────────────────────────────────────────
 
   async listCatalog(category?: string, query?: string): Promise<MCPCatalogEntry[]> {
-    if (this.isPrototype) {
-      let results = [...MOCK_CATALOG];
-      if (category) results = results.filter((e) => e.category === category);
-      if (query) {
-        const q = query.toLowerCase();
-        results = results.filter((e) => e.display.toLowerCase().includes(q) || e.name.toLowerCase().includes(q));
-      }
-      return this.mock(results);
-    }
     const params = new URLSearchParams();
     if (category) params.set('category', category);
     if (query) params.set('q', query);
@@ -772,43 +514,28 @@ class APIClient {
   // ─── Capabilities ──────────────────────────────────────────────────────────────
 
   async listCapabilities(agentName: string): Promise<Capability[]> {
-    if (this.isPrototype) {
-      return this.mock<Capability[]>([
-        { id: '1', agent_name: agentName, type: 'memory', config: { unlimited_retention: true, max_entries: 500 }, enabled: true },
-        { id: '2', agent_name: agentName, type: 'knowledge', config: { sources: ['support-docs.pdf'], top_k: 5 }, enabled: true },
-      ]);
-    }
     return this.request<Capability[]>('GET', `/agents/${encodeURIComponent(agentName)}/capabilities`);
   }
 
   async addCapability(agentName: string, data: CreateCapabilityRequest): Promise<Capability> {
-    if (this.isPrototype) {
-      return this.mock<Capability>({ id: String(Date.now()), agent_name: agentName, ...data });
-    }
     return this.request<Capability>('POST', `/agents/${encodeURIComponent(agentName)}/capabilities`, data);
   }
 
   async updateCapability(agentName: string, capId: string, data: UpdateCapabilityRequest): Promise<Capability> {
-    if (this.isPrototype) {
-      return this.mock<Capability>({ id: capId, agent_name: agentName, type: 'memory', config: {}, enabled: true, ...data });
-    }
     return this.request<Capability>('PUT', `/agents/${encodeURIComponent(agentName)}/capabilities/${capId}`, data);
   }
 
   async removeCapability(agentName: string, capId: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/agents/${encodeURIComponent(agentName)}/capabilities/${capId}`);
   }
 
   // ─── Knowledge ──────────────────────────────────────────────────────────────
 
   async getKnowledgeStatus(agentName: string): Promise<KnowledgeStatus> {
-    if (this.isPrototype) return this.mock<KnowledgeStatus>({ agent_name: agentName, total_files: 2, indexed_files: 2, status: 'ready' });
     return this.request<KnowledgeStatus>('GET', `/agents/${encodeURIComponent(agentName)}/knowledge/status`);
   }
 
   async listKnowledgeFiles(agentName: string): Promise<KnowledgeFile[]> {
-    if (this.isPrototype) return this.mock<KnowledgeFile[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = await this.request<any[]>('GET', `/agents/${encodeURIComponent(agentName)}/knowledge/files`);
     return (raw ?? []).map((r) => ({
@@ -824,20 +551,10 @@ class APIClient {
   }
 
   async deleteKnowledgeFile(agentName: string, fileId: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/agents/${encodeURIComponent(agentName)}/knowledge/files/${encodeURIComponent(fileId)}`);
   }
 
   async uploadKnowledgeFile(agentName: string, file: File): Promise<KnowledgeFile> {
-    if (this.isPrototype) {
-      return this.mock<KnowledgeFile>({
-        name: file.name,
-        type: file.name.split('.').pop() ?? '',
-        size: `${(file.size / 1024).toFixed(1)} KB`,
-        status: 'ready',
-        uploaded_at: new Date().toISOString(),
-      });
-    }
     const formData = new FormData();
     formData.append('file', file);
     const headers: Record<string, string> = {};
@@ -880,46 +597,36 @@ class APIClient {
   // ─── Knowledge Bases (many-to-many) ──────────────────────────────────────────
 
   async listKnowledgeBases(): Promise<KnowledgeBase[]> {
-    if (this.isPrototype) return this.mock<KnowledgeBase[]>([
-      { id: 'kb-1', name: 'Support Docs', description: 'Customer support documentation', embedding_model_id: '', file_count: 3, linked_agents: [], created_at: '2026-04-10T10:00:00Z', updated_at: '2026-04-10T10:00:00Z' },
-    ]);
     return this.request<KnowledgeBase[]>('GET', '/knowledge-bases');
   }
 
   async getKnowledgeBase(name: string): Promise<KnowledgeBase> {
-    if (this.isPrototype) return this.mock<KnowledgeBase>({ id: `mock-${name}`, name, file_count: 0, linked_agents: [], created_at: '', updated_at: '' });
     return this.request<KnowledgeBase>('GET', `/knowledge-bases/${encodeURIComponent(name)}`);
   }
 
   async createKnowledgeBase(data: CreateKnowledgeBaseRequest): Promise<KnowledgeBase> {
-    if (this.isPrototype) return this.mock<KnowledgeBase>({ id: `mock-${data.name}`, ...data, file_count: 0, linked_agents: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
     return this.request<KnowledgeBase>('POST', '/knowledge-bases', data);
   }
 
   // Engine 1.1.0+: KB name is immutable; PATCH with a different `name`
   // returns 409 Conflict. The Name input in the edit form is disabled.
   async updateKnowledgeBase(name: string, data: CreateKnowledgeBaseRequest): Promise<KnowledgeBase> {
-    if (this.isPrototype) return this.mock<KnowledgeBase>({ id: `mock-${name}`, ...data, file_count: 0, linked_agents: [], created_at: '', updated_at: new Date().toISOString() });
     return this.request<KnowledgeBase>('PATCH', `/knowledge-bases/${encodeURIComponent(name)}`, data);
   }
 
   async deleteKnowledgeBase(name: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(name)}`);
   }
 
   async linkAgentToKB(kbName: string, agentName: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('POST', `/knowledge-bases/${encodeURIComponent(kbName)}/agents/${encodeURIComponent(agentName)}`);
   }
 
   async unlinkAgentFromKB(kbName: string, agentName: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(kbName)}/agents/${encodeURIComponent(agentName)}`);
   }
 
   async listKBFiles(kbName: string): Promise<KnowledgeFile[]> {
-    if (this.isPrototype) return this.mock<KnowledgeFile[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = await this.request<any[]>('GET', `/knowledge-bases/${encodeURIComponent(kbName)}/files`);
     return (raw ?? []).map((r) => ({
@@ -936,15 +643,6 @@ class APIClient {
   }
 
   async uploadKBFile(kbName: string, file: File): Promise<KnowledgeFile> {
-    if (this.isPrototype) {
-      return this.mock<KnowledgeFile>({
-        name: file.name,
-        type: file.name.split('.').pop() ?? '',
-        size: `${(file.size / 1024).toFixed(1)} KB`,
-        status: 'ready',
-        uploaded_at: new Date().toISOString(),
-      });
-    }
     const formData = new FormData();
     formData.append('file', file);
     const headers: Record<string, string> = {};
@@ -985,52 +683,40 @@ class APIClient {
   }
 
   async deleteKBFile(kbName: string, fileId: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     return this.request<void>('DELETE', `/knowledge-bases/${encodeURIComponent(kbName)}/files/${encodeURIComponent(fileId)}`);
   }
 
   // ─── Resilience ──────────────────────────────────────────────────────────────
 
   async listCircuitBreakers(): Promise<CircuitBreakerState[]> {
-    if (this.isPrototype) return [];
     const data = await this.request<{ breakers: CircuitBreakerState[] }>('GET', '/resilience/circuit-breakers');
     return data.breakers ?? [];
   }
 
   async resetCircuitBreaker(name: string): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     await this.request<void>('POST', `/resilience/circuit-breakers/${encodeURIComponent(name)}/reset`);
   }
 
   // ─── Builder Assistant ───────────────────────────────────────────────────────
 
   async restoreBuilderAssistant(): Promise<void> {
-    if (this.isPrototype) return this.mock(undefined as unknown as void);
     await this.request<void>('POST', '/admin/builder-assistant/restore', undefined);
   }
 
   // ─── Knowledge Graphs ────────────────────────────────────────────────────
   //
   // Backend endpoints under /api/v1/knowledge-graphs are not deployed yet.
-  // Real calls will return whatever error the engine surfaces (typically a
-  // 404); prototype mode serves mock data so the UI is usable today.
+  // Real calls surface whatever error the engine returns (typically a 404).
 
   async listKnowledgeGraphs(): Promise<KGBundle[]> {
-    if (this.isPrototype) return this.mock<KGBundle[]>(MOCK_KG_BUNDLES);
     return this.request<KGBundle[]>('GET', '/knowledge-graphs');
   }
 
   async getKnowledgeGraph(bundleName: string): Promise<KGBundle> {
-    if (this.isPrototype) {
-      const found = MOCK_KG_BUNDLES.find((b) => b.bundle_name === bundleName);
-      if (!found) throw new Error(`bundle ${bundleName} not found`);
-      return this.mock<KGBundle>(found);
-    }
     return this.request<KGBundle>('GET', `/knowledge-graphs/${encodeURIComponent(bundleName)}`);
   }
 
   async listKGSchemas(bundleName: string): Promise<KGEntitySchema[]> {
-    if (this.isPrototype) return this.mock<KGEntitySchema[]>(MOCK_KG_SCHEMAS[bundleName] ?? []);
     return this.request<KGEntitySchema[]>(
       'GET',
       `/knowledge-graphs/${encodeURIComponent(bundleName)}/schemas`,
@@ -1038,12 +724,6 @@ class APIClient {
   }
 
   async getKGSchema(bundleName: string, entityType: string): Promise<KGEntitySchema> {
-    if (this.isPrototype) {
-      const schemas = MOCK_KG_SCHEMAS[bundleName] ?? [];
-      const found = schemas.find((s) => s.entity_type === entityType);
-      if (!found) throw new Error(`schema ${entityType} not found in ${bundleName}`);
-      return this.mock<KGEntitySchema>(found);
-    }
     return this.request<KGEntitySchema>(
       'GET',
       `/knowledge-graphs/${encodeURIComponent(bundleName)}/schemas/${encodeURIComponent(entityType)}`,
@@ -1057,26 +737,6 @@ class APIClient {
     limit: number = 50,
     offset: number = 0,
   ): Promise<KGEntitiesListResponse> {
-    if (this.isPrototype) {
-      const all = MOCK_KG_ENTITIES[bundleName]?.[entityType] ?? [];
-      const filtered = filters
-        ? all.filter((e) =>
-            Object.entries(filters).every(([k, v]) => {
-              if (!v) return true;
-              const field = e.data[k];
-              if (field == null) return false;
-              return String(field).toLowerCase().includes(v.toLowerCase());
-            }),
-          )
-        : all;
-      const slice = filtered.slice(offset, offset + limit);
-      return this.mock<KGEntitiesListResponse>({
-        items: slice,
-        total: filtered.length,
-        limit,
-        offset,
-      });
-    }
     const qp = new URLSearchParams();
     qp.set('limit', String(limit));
     qp.set('offset', String(offset));
@@ -1092,12 +752,6 @@ class APIClient {
   }
 
   async getKGEntity(bundleName: string, entityType: string, entityID: string): Promise<KGEntity> {
-    if (this.isPrototype) {
-      const all = MOCK_KG_ENTITIES[bundleName]?.[entityType] ?? [];
-      const found = all.find((e) => e.entity_id === entityID);
-      if (!found) throw new Error(`entity ${entityID} not found`);
-      return this.mock<KGEntity>(found);
-    }
     return this.request<KGEntity>(
       'GET',
       `/knowledge-graphs/${encodeURIComponent(bundleName)}/entities/${encodeURIComponent(entityType)}/${encodeURIComponent(entityID)}`,

@@ -117,6 +117,17 @@ describe('ConnectClaudeCode', () => {
     expect(snippet.textContent).toContain('Bearer bb_json_token');
   });
 
+  it('shows the self-contained setup prompt after mint', async () => {
+    await mintToken('bb_prompt_token');
+
+    const prompt = screen.getByTestId('setup-prompt-snippet');
+    expect(prompt.textContent).toContain('Set up my SyntheticBrew agent end-to-end');
+    expect(prompt.textContent).toContain('knowledge base');
+    expect(prompt.textContent).toContain('embed snippet');
+    // Self-contained: no external URLs in the prompt (CE stays origin-only).
+    expect(prompt.textContent).not.toMatch(/https?:\/\//);
+  });
+
   it('calls onMinted after a successful mint', async () => {
     mockApi.createToken.mockResolvedValue({ id: '3', name: 'coding-agent', token: 'bb_x' });
     const onMinted = vi.fn();

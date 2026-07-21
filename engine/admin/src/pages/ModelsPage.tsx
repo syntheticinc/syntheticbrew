@@ -25,7 +25,7 @@ const PROVIDER_TYPES = [
 ];
 
 // Kind filter persisted in localStorage so operators keep their chosen view
-// across page navigations. Matches the pattern used for prototype mode.
+// across page navigations.
 type KindFilter = 'all' | 'chat' | 'embedding';
 const KIND_FILTER_KEY = 'syntheticbrew_models_kind_filter';
 
@@ -302,7 +302,7 @@ function ModelsPageInner() {
       header: 'Provider',
       render: (row: Model) => (
         <span className="flex items-center gap-1.5">
-          <span className="px-2 py-0.5 bg-brand-light rounded text-xs text-brand-shade3 font-medium">
+          <span className="px-2 py-0.5 bg-brand-shade3/15 rounded text-xs text-brand-shade2 font-medium">
             {row.type}
           </span>
         </span>
@@ -339,7 +339,7 @@ function ModelsPageInner() {
         <h1 className="text-2xl font-bold text-brand-light">Models</h1>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+          className="px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
         >
           Add Model
         </button>
@@ -362,7 +362,7 @@ function ModelsPageInner() {
             onClick={() => setKindFilter(opt.value)}
             className={
               kindFilter === opt.value
-                ? 'px-3 py-1.5 bg-brand-accent text-brand-light rounded-btn text-xs font-medium'
+                ? 'px-3 py-1.5 bg-brand-accent text-white rounded-btn text-xs font-medium'
                 : 'px-3 py-1.5 bg-brand-dark-alt border border-brand-shade3/30 text-brand-shade2 rounded-btn text-xs font-medium hover:bg-brand-dark transition-colors'
             }
           >
@@ -394,7 +394,7 @@ function ModelsPageInner() {
             <>
               <button
                 onClick={() => openEdit(selected)}
-                className="flex-1 px-4 py-2 bg-brand-accent text-brand-light rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
+                className="flex-1 px-4 py-2 bg-brand-accent text-white rounded-btn text-sm font-medium hover:bg-brand-accent-hover transition-colors"
               >
                 Edit
               </button>
@@ -438,7 +438,7 @@ function ModelsPageInner() {
                 </span>
               </DetailRow>
               <DetailRow label="Type">
-                <span className="px-2 py-0.5 bg-brand-light rounded text-xs text-brand-shade3 font-medium">
+                <span className="px-2 py-0.5 bg-brand-shade3/15 rounded text-xs text-brand-shade2 font-medium">
                   {selected.type}
                 </span>
               </DetailRow>
