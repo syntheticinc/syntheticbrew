@@ -45,6 +45,25 @@ func isPublicWidgetAPIPath(path string) bool {
 	return middle != "" && !strings.Contains(middle, "/")
 }
 
+// isPublicOAuthPath reports whether the path is an anonymous OAuth
+// discovery/token/register endpoint invoked cross-origin by in-browser MCP
+// clients with bearer/none auth. These get a wildcard-origin, no-credentials
+// CORS policy. The interactive consent endpoints (/api/v1/oauth/authorize-info
+// and /api/v1/oauth/approve) are intentionally NOT matched — they ride the
+// admin session and stay under the same-origin credentialed policy.
+func isPublicOAuthPath(path string) bool {
+	if strings.HasPrefix(path, "/.well-known/oauth-") {
+		return true
+	}
+	switch path {
+	case "/oauth/token", "/oauth/register",
+		"/api/v1/oauth/token", "/api/v1/oauth/register":
+		return true
+	default:
+		return false
+	}
+}
+
 // Server is the HTTP server that hosts the REST API.
 type Server struct {
 	router     chi.Router
@@ -120,8 +139,23 @@ func NewServerWithCORS(port int, allowedOrigins []string) *Server {
 		MaxAge:           86400,
 	})
 
+	// OAuth discovery + token/register endpoints are called by in-browser MCP
+	// clients from arbitrary origins with bearer/none auth (no cookies), so they
+	// need a wildcard origin. AllowCredentials stays false — the wildcard is safe
+	// precisely because no ambient credentials ride along. The interactive
+	// consent endpoints (authorize-info, approve) are deliberately EXCLUDED: they
+	// ride the admin session and must keep the same-origin credentialed apiCORS.
+	oauthCORS := cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Accept"},
+		AllowCredentials: false,
+		MaxAge:           86400,
+	})
+
 	// Dispatch CORS by path: widget static bundle and public widget chat
-	// endpoint get permissive policies (embeddable on any customer site),
+	// endpoint get permissive policies (embeddable on any customer site), the
+	// OAuth discovery/token endpoints get a wildcard-no-credentials policy, and
 	// everything else gets the admin-API policy.
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -131,6 +165,10 @@ func NewServerWithCORS(port int, allowedOrigins []string) *Server {
 			}
 			if isPublicWidgetAPIPath(req.URL.Path) {
 				widgetAPICORS(next).ServeHTTP(w, req)
+				return
+			}
+			if isPublicOAuthPath(req.URL.Path) {
+				oauthCORS(next).ServeHTTP(w, req)
 				return
 			}
 			apiCORS(next).ServeHTTP(w, req)

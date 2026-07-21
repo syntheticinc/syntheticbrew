@@ -104,6 +104,14 @@ spec:
             - name: SYNTHETICBREW_JWT_PUBLIC_KEY_PATH
               value: {{ .Values.config.auth.jwtPublicKeyPath | quote }}
             {{- end }}
+            {{- if .Values.config.oauth.issuer }}
+            - name: SYNTHETICBREW_OAUTH_ISSUER
+              value: {{ .Values.config.oauth.issuer | quote }}
+            {{- if .Values.config.oauth.asKeySecret }}
+            - name: SYNTHETICBREW_OAUTH_AS_KEY_PATH
+              value: "/etc/syntheticbrew/oauth/{{ .Values.config.oauth.asKeySecretKey }}"
+            {{- end }}
+            {{- end }}
             {{- if .Values.config.embedURL }}
             - name: EMBED_URL
               value: {{ .Values.config.embedURL | quote }}
@@ -162,6 +170,11 @@ spec:
               readOnly: true
               {{- end }}
             {{- end }}
+            {{- if .Values.config.oauth.asKeySecret }}
+            - name: oauth-as-key
+              mountPath: /etc/syntheticbrew/oauth
+              readOnly: true
+            {{- end }}
             {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
             # Auto-mounted when readOnlyRootFilesystem is enabled. Engine writes
             # server.port discovery file (HOME=/tmp), Liquibase + GORM stage temp.
@@ -188,6 +201,12 @@ spec:
         - name: keys
           persistentVolumeClaim:
             claimName: {{ include "syntheticbrew-engine.fullname" . }}-keys
+        {{- end }}
+        {{- if .Values.config.oauth.asKeySecret }}
+        - name: oauth-as-key
+          secret:
+            secretName: {{ .Values.config.oauth.asKeySecret | quote }}
+            defaultMode: 0400
         {{- end }}
         {{- if .Values.containerSecurityContext.readOnlyRootFilesystem }}
         - name: tmp

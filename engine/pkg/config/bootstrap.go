@@ -37,6 +37,33 @@ type BootstrapConfig struct {
 	Updates    UpdatesConfig     `mapstructure:"updates"`
 	Seed       SeedConfig        `mapstructure:"seed"`
 	BYOK       BootstrapBYOK     `mapstructure:"byok"`
+	OAuth      BootstrapOAuth    `mapstructure:"oauth"`
+}
+
+// BootstrapOAuth configures the embedded OAuth 2.1 authorization server that
+// mints audience-bound access tokens for the MCP client flow.
+//
+// The server is default-on but degrades gracefully: when ASEnabled is true but
+// no issuer can be resolved (neither Issuer nor Engine.PublicBaseURL set) the
+// wiring logs a warning and disables the server rather than refusing to boot,
+// so existing installs without a public base URL are unaffected.
+type BootstrapOAuth struct {
+	// ASEnabled turns the authorization server on. Defaults to true.
+	ASEnabled bool `mapstructure:"as_enabled"`
+	// Issuer is the authorization-server base URL. Empty falls back to
+	// Engine.PublicBaseURL; if both are empty the server auto-disables.
+	Issuer string `mapstructure:"issuer"`
+	// ConsentURL is the consent page advertised as the authorization_endpoint.
+	// Empty defaults to Issuer + "/admin/oauth/consent".
+	ConsentURL string `mapstructure:"consent_url"`
+	// ASKeyPath is the hex-encoded authorization-server private key file. When
+	// set, it is the shared signing key mounted on every instance (e.g. a k8s
+	// Secret) — required for multi-instance deployments. When empty, the engine
+	// generates and persists the key under JWTKeysDir, which suits a single
+	// instance or instances sharing a keys volume. This is independent of auth
+	// mode: auth mode governs how user tokens are verified, not where the AS
+	// signing key lives.
+	ASKeyPath string `mapstructure:"as_key_path"`
 }
 
 // EngineBootstrap holds the minimal engine settings needed at startup.
@@ -85,8 +112,12 @@ type BootstrapSecurity struct {
 	// Accepts "local" or "external"; defaults to "local" when empty.
 	AuthMode string `mapstructure:"auth_mode"`
 
-	// JWTKeysDir is the directory where the local Ed25519 keypair is stored.
-	// Used only when AuthMode == "local". Defaults to <data_dir>/keys.
+	// JWTKeysDir is the directory where engine-managed Ed25519 keypairs are
+	// stored: the local-admin session key (local mode only) and the OAuth
+	// authorization-server key (any mode, when no explicit AS key path is set).
+	// Defaults to <data_dir>/keys in local mode only; in external mode it stays
+	// empty unless set, so an external deployment that enables the AS without a
+	// key path must set this or SYNTHETICBREW_OAUTH_AS_KEY_PATH.
 	JWTKeysDir string `mapstructure:"jwt_keys_dir"`
 
 	// JWTPublicKeyPath is the path to the Ed25519 public key of the external
@@ -298,6 +329,10 @@ func bindEnvVars(v *viper.Viper) {
 		"seed.bootstrap_admin_token":     EnvBootstrapAdminToken,
 		"byok.enabled":                   EnvBYOKEnabled,
 		"byok.allowed_providers":         EnvBYOKAllowedProviders,
+		"oauth.as_enabled":               EnvOAuthASEnabled,
+		"oauth.issuer":                   EnvOAuthIssuer,
+		"oauth.consent_url":              EnvOAuthConsentURL,
+		"oauth.as_key_path":              EnvOAuthASKeyPath,
 	}
 	for key, env := range bindings {
 		// BindEnv associates a Viper key with one or more env var names.
@@ -318,6 +353,10 @@ func bindEnvVars(v *viper.Viper) {
 func setBootstrapDefaults(v *viper.Viper) {
 	v.SetDefault("security.auth_mode", AuthModeLocal)
 	v.SetDefault("security.local_session_ttl", time.Hour)
+	// OAuth authorization server is default-on. It auto-disables at wiring time
+	// when no issuer can be resolved (see BootstrapOAuth), so this default is
+	// safe for installs that never set a public base URL.
+	v.SetDefault("oauth.as_enabled", true)
 	// Embeddings defaults intentionally omitted — the indexing package owns
 	// the canonical defaults (DefaultOllamaURL / DefaultEmbedModel /
 	// DefaultDimension); the consumer fills them when the field is empty.
@@ -355,6 +394,9 @@ func expandBootstrapEnvVars(cfg *BootstrapConfig) {
 	cfg.MCP.DocsURL = expandEnvVars(cfg.MCP.DocsURL)
 	cfg.Updates.VersionsURL = expandEnvVars(cfg.Updates.VersionsURL)
 	cfg.Seed.BootstrapAdminToken = expandEnvVars(cfg.Seed.BootstrapAdminToken)
+	cfg.OAuth.Issuer = expandEnvVars(cfg.OAuth.Issuer)
+	cfg.OAuth.ConsentURL = expandEnvVars(cfg.OAuth.ConsentURL)
+	cfg.OAuth.ASKeyPath = expandEnvVars(cfg.OAuth.ASKeyPath)
 }
 
 // validateBootstrap checks that required bootstrap fields are present.

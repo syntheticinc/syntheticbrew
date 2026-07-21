@@ -22,6 +22,7 @@ import OverviewPage from './pages/OverviewPage';
 import SchemasPage from './pages/SchemasPage';
 import SchemaDetailPage from './pages/SchemaDetailPage';
 import OnboardingWizard from './pages/OnboardingWizard';
+import OAuthConsentPage from './pages/OAuthConsentPage';
 // Wave 1+7 auth: the SPA never renders a login page. `useAuthProvider`
 // bootstraps a token via `auth/local-session` (local mode) or a URL hash
 // fragment (external mode) on mount. Until that completes we render a
@@ -52,6 +53,18 @@ export default function App() {
                 <OnboardingGate>
                   <OnboardingWizard />
                 </OnboardingGate>
+              </ProtectedRoute>
+            }
+          />
+          {/* OAuth consent needs an authenticated admin session (so the engine
+              can bind the consent nonce to the subject) but bypasses the
+              onboarding gate — a coding agent connecting must not be forced
+              through the wizard. Works in both local and external auth modes. */}
+          <Route
+            path="/oauth/consent"
+            element={
+              <ProtectedRoute>
+                <OAuthConsentPage />
               </ProtectedRoute>
             }
           />

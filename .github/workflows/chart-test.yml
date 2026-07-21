@@ -159,6 +159,30 @@ jobs:
           fi
           echo "OK: BYOK env gated on config.byok"
 
+      - name: Render — chart-managed DB Secret is a pre-install hook (migrations race guard)
+        run: |
+          set -euo pipefail
+          # A chart-managed DB Secret (no existingSecret) must be a pre-install/
+          # pre-upgrade hook at a weight below the migrations Job (5), or the
+          # migrations hook starts before the Secret exists and a fresh install
+          # hangs on CreateContainerConfigError. See CHANGELOG 0.14.0 Fixed. The
+          # hook is unconditional (like the ServiceAccount) — gating it on
+          # migrations.enabled would flip Helm ownership across upgrades and Helm
+          # would delete the Secret. Assert the hook holds with migrations both on
+          # and off.
+          for MIG in true false; do
+            R=/tmp/r-managed-secret-$MIG.yaml
+            helm template smoke engine/deploy/helm/syntheticbrew \
+              --set image.tag=1.0.0 \
+              --set postgresql.external.host=pg \
+              --set postgresql.external.password=pw \
+              --set migrations.enabled=$MIG \
+              --show-only templates/secret.yaml > "$R"
+            grep -q '"helm.sh/hook": pre-install,pre-upgrade' "$R"
+            grep -q '"helm.sh/hook-weight": "-5"' "$R"
+          done
+          echo "OK: chart-managed Secret is an unconditional pre-install hook"
+
       - name: replicaCount=local guard
         run: |
           set -euo pipefail
@@ -496,3 +520,104 @@ jobs:
           kubectl logs job/bb-syntheticbrew-engine-migrations --tail=200 || true
           kubectl logs job/bb-syntheticbrew-engine-config-apply --tail=200 || true
           kubectl logs job/bb-syntheticbrew-engine-knowledge-loader --tail=200 || true
+
+  # Separate job: install via the documented Quick Install (chart-managed DB
+  # password, NOT existingSecret) with OAuth enabled. Every other integration
+  # scenario points at a pre-existing DATABASE_URL Secret, so the chart-managed
+  # Secret + pre-install migrations-hook ordering (CHANGELOG 0.14.0 Fixed) is
+  # never exercised there — a fresh Quick Install used to hang and CI stayed
+  # green. This job reproduces that path end-to-end and asserts the OAuth 2.1
+  # sign-in surface + MCP endpoint a CE self-host on k8s actually gets.
+  integration-managed-secret:
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: helm/kind-action@v1
+        with:
+          node_image: kindest/node:v1.30.0
+          cluster_name: chart-test-managed-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+
+      - name: Build engine + migrations images from source
+        run: |
+          docker build -t local/syntheticbrew-engine:ci -f engine/Dockerfile engine
+          docker build -t local/syntheticbrew-migrations:ci -f engine/Dockerfile.migrations engine
+          kind load docker-image local/syntheticbrew-engine:ci local/syntheticbrew-migrations:ci \
+            --name chart-test-managed-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Apply postgres-pgvector fixture
+        run: |
+          kubectl apply -f engine/deploy/helm/syntheticbrew/tests/fixtures/postgres-pgvector.yaml
+          kubectl rollout status statefulset/postgres-pgvector --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=postgres-pgvector --timeout=300s
+
+      - name: helm install — chart-managed DB password + OAuth (fresh install must not hang)
+        run: |
+          # No existingSecret: the chart renders and manages the DATABASE_URL
+          # Secret itself. Credentials match the postgres-pgvector fixture. A
+          # bounded --timeout turns the pre-fix hang into a hard CI failure.
+          # bootstrapAdminToken reuses the fixture's known bb_ token so the MCP
+          # assertion below can call the endpoint.
+          helm install bb engine/deploy/helm/syntheticbrew \
+            --set image.repository=local/syntheticbrew-engine --set image.tag=ci --set image.pullPolicy=Never \
+            --set migrations.image.repository=local/syntheticbrew-migrations --set migrations.image.tag=ci --set migrations.image.pullPolicy=Never \
+            --set postgresql.external.host=postgres-pgvector \
+            --set postgresql.external.username=syntheticbrew \
+            --set postgresql.external.password=kind-test-password \
+            --set postgresql.external.database=syntheticbrew \
+            --set config.oauth.issuer=http://app.local.test \
+            --set bootstrapAdminToken.enabled=true \
+            --set bootstrapAdminToken.existingSecret=postgres-credentials \
+            --wait --timeout 15m
+
+      - name: Verify migrations ran + chart-managed Secret is a hook
+        run: |
+          set -euo pipefail
+          kubectl exec postgres-pgvector-0 -- \
+            psql -U postgres -d syntheticbrew -tAc "SELECT count(*) FROM databasechangelog" \
+            | awk '{ if ($1+0 < 1) { print "FAIL: databasechangelog empty"; exit 1 } else { print "OK: " $1 " changesets applied" } }'
+          H=$(kubectl get secret bb-syntheticbrew-engine-secrets -o jsonpath='{.metadata.annotations.helm\.sh/hook}')
+          test "$H" = "pre-install,pre-upgrade" || { echo "FAIL: chart-managed Secret is not a hook ($H)"; exit 1; }
+          echo "OK: chart-managed Secret carries pre-install hook"
+
+      - name: Smoke — health + OAuth discovery + MCP endpoint
+        run: |
+          set -euo pipefail
+          kubectl port-forward svc/bb-syntheticbrew-engine 18443:8443 >/tmp/pf.log 2>&1 &
+          PF_PID=$!
+          trap "kill $PF_PID 2>/dev/null || true" EXIT
+          kubectl wait --for=condition=available deploy/bb-syntheticbrew-engine --timeout=300s
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:18443/api/v1/health >/dev/null && break
+            sleep 2
+          done
+          # OAuth 2.1 AS discovery (RFC 8414) reflects the configured issuer.
+          curl -sf http://localhost:18443/.well-known/oauth-authorization-server \
+            | grep -q '"issuer":"http://app.local.test"'
+          # Protected-resource metadata (RFC 9728) advertises the MCP endpoint.
+          curl -sf http://localhost:18443/.well-known/oauth-protected-resource \
+            | grep -q '"resource":"http://app.local.test/api/v1/mcp/rpc"'
+          # Unauthenticated MCP call is challenged (401 + WWW-Authenticate).
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST http://localhost:18443/api/v1/mcp/rpc -d '{}')
+          test "$CODE" = "401" || { echo "FAIL: MCP unauth expected 401, got $CODE"; exit 1; }
+          # bb_ admin token → MCP tools/list returns tools.
+          TOKEN=$(kubectl get secret postgres-credentials -o jsonpath='{.data.token}' | base64 -d)
+          curl -sf -X POST http://localhost:18443/api/v1/mcp/rpc \
+            -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            | grep -q '"tools":\[' || { echo "FAIL: MCP tools/list returned no tools"; exit 1; }
+          echo "OK: health + OAuth discovery + MCP challenge + MCP tools/list"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pod -l app.kubernetes.io/instance=bb || true
+          kubectl logs -l app.kubernetes.io/instance=bb --all-containers --tail=200 || true
+          kubectl logs job/bb-syntheticbrew-engine-migrations --tail=200 || true

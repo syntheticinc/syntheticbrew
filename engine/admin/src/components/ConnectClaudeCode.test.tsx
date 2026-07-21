@@ -33,7 +33,7 @@ async function mintToken(token: string) {
 describe('ConnectClaudeCode', () => {
   it('renders the generate button and destructive-ops checkbox (off by default)', () => {
     render(<ConnectClaudeCode />);
-    expect(screen.getByText('Connect a coding agent')).toBeInTheDocument();
+    expect(screen.getByText('Manual setup — headless / CI')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Generate connection token' }),
     ).toBeInTheDocument();
@@ -117,15 +117,19 @@ describe('ConnectClaudeCode', () => {
     expect(snippet.textContent).toContain('Bearer bb_json_token');
   });
 
-  it('shows the self-contained setup prompt after mint', async () => {
+  it('shows a setup prompt pointing at the engine-served steps after mint', async () => {
     await mintToken('bb_prompt_token');
 
     const prompt = screen.getByTestId('setup-prompt-snippet');
-    expect(prompt.textContent).toContain('Set up my SyntheticBrew agent end-to-end');
-    expect(prompt.textContent).toContain('knowledge base');
-    expect(prompt.textContent).toContain('embed snippet');
-    // Self-contained: no external URLs in the prompt (CE stays origin-only).
-    expect(prompt.textContent).not.toMatch(/https?:\/\//);
+    // Single source of truth: the prompt fetches the engine-served steps rather
+    // than duplicating them here.
+    expect(prompt.textContent).toContain('/agent-setup/prompt.md');
+    expect(prompt.textContent).toContain('follow the instructions');
+    // Self-contained: only this engine's own origin, never an external host.
+    const external = (prompt.textContent!.match(/https?:\/\/[^\s"]+/g) ?? []).filter(
+      (u) => !u.startsWith(window.location.origin),
+    );
+    expect(external).toEqual([]);
   });
 
   it('calls onMinted after a successful mint', async () => {

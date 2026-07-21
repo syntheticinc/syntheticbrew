@@ -172,4 +172,16 @@ func TestEdDSAVerifier_Verify_TenantAndBasics(t *testing.T) {
 		_, err := verifier.Verify(signClaims(t, otherPriv, jwt.MapClaims{"sub": "u1"}))
 		require.Error(t, err)
 	})
+
+	t.Run("typ-tagged blob rejected even signed by this key", func(t *testing.T) {
+		// A no-aud, no-kid blob signed by the verifier's own key must not
+		// resolve to admin via the no-aud path — the typ claim marks it as an
+		// internal artifact, never a bearer credential.
+		for _, typ := range []string{"oauth_code", "oauth_client", "oauth_access"} {
+			token := signClaims(t, priv, jwt.MapClaims{"sub": "u1", "typ": typ})
+			if _, err := verifier.Verify(token); err == nil {
+				t.Fatalf("typ=%q blob must be rejected, got no error", typ)
+			}
+		}
+	})
 }

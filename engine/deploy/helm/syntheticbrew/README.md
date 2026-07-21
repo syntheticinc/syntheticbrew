@@ -73,6 +73,8 @@ helm install syntheticbrew-engine oci://ghcr.io/syntheticinc/charts/syntheticbre
 | `image.tag` | Engine image tag (pin to specific version) | `latest` |
 | `replicaCount` | Number of replicas (local auth mode: 1 only) | `1` |
 | `config.auth.mode` | Auth mode: `local` or `external` | `local` |
+| `config.oauth.issuer` | Public URL agents reach the engine at; enables the OAuth 2.1 sign-in for coding agents. Empty = OAuth off. | `""` |
+| `config.oauth.asKeySecret` | Name of a Secret holding the AS signing key, mounted read-only (multi-replica / external mode). Empty in local single-replica mode → key auto-generated in the keys volume. | `""` |
 | `config.byok.enabled` | Allow per-request BYOK (`X-BYOK-*` headers). Reconciled on every boot when set (declared state wins over Admin UI). Omit `config.byok` to manage via Admin → Settings. | _unset_ |
 | `config.byok.allowedProviders` | Allowlist of providers users may bring keys for; empty/omitted = all supported (openai, anthropic, openrouter, openai_compatible, ollama) | _unset_ |
 | `postgresql.external.host` | PostgreSQL host | `""` |

@@ -19,27 +19,40 @@ type Keypair struct {
 }
 
 // LoadOrGenerateKeypair returns an Ed25519 keypair for signing local-admin
-// sessions. On first run it writes both keys to `dir` with mode 0600 so the
-// signing half is protected but stable across restarts (otherwise all
-// existing admin sessions would be invalidated on every boot).
+// sessions. It is LoadOrGenerateKeypairNamed with the "jwt_ed25519" base name.
+func LoadOrGenerateKeypair(dir string) (*Keypair, error) {
+	return LoadOrGenerateKeypairNamed(dir, "jwt_ed25519")
+}
+
+// LoadOrGenerateKeypairNamed returns an Ed25519 keypair stored under `dir`
+// using `name` as the file base. On first run it writes both keys with mode
+// 0600 so the signing half is protected but stable across restarts (otherwise
+// all credentials signed with it would be invalidated on every boot).
 //
 // Layout:
 //
-//	<dir>/jwt_ed25519.priv  (32 bytes hex, mode 0600)
-//	<dir>/jwt_ed25519.pub   (32 bytes hex, mode 0644)
+//	<dir>/<name>.priv  (64 bytes hex, mode 0600)
+//	<dir>/<name>.pub   (32 bytes hex, mode 0644)
+//
+// Separate names give physically separate keypairs in the same directory: the
+// local-admin session key ("jwt_ed25519") and the OAuth authorization-server
+// key ("as_ed25519") are never the same key.
 //
 // Caller must ensure `dir` is outside the repo (add to .gitignore) and
 // persisted across container restarts (mount a volume).
-func LoadOrGenerateKeypair(dir string) (*Keypair, error) {
+func LoadOrGenerateKeypairNamed(dir, name string) (*Keypair, error) {
 	if dir == "" {
 		return nil, errors.New("keypair dir is required")
+	}
+	if name == "" {
+		return nil, errors.New("keypair name is required")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 
-	privPath := filepath.Join(dir, "jwt_ed25519.priv")
-	pubPath := filepath.Join(dir, "jwt_ed25519.pub")
+	privPath := filepath.Join(dir, name+".priv")
+	pubPath := filepath.Join(dir, name+".pub")
 
 	priv, err := readHexFile(privPath, ed25519.PrivateKeySize)
 	if err == nil {
@@ -102,6 +115,38 @@ func LoadPublicKey(path string) (ed25519.PublicKey, error) {
 		return nil, err
 	}
 	return ed25519.PublicKey(raw), nil
+}
+
+// LoadPrivateKey reads an Ed25519 private key from a hex-encoded file. It
+// accepts either the 64-byte full private key (as LoadOrGenerateKeypairNamed
+// writes) or a 32-byte seed (expanded via ed25519.NewKeyFromSeed). Used in
+// external mode to load the pre-provisioned authorization-server signing key,
+// which must be identical across replicas.
+func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := hex.DecodeString(string(trimTrailingNewlines(data)))
+	if err != nil {
+		return nil, fmt.Errorf("decode hex %s: %w", path, err)
+	}
+	switch len(decoded) {
+	case ed25519.PrivateKeySize:
+		// A full 64-byte key carries its own public half; reject one whose
+		// public bytes don't match the seed, otherwise every token would fail
+		// verification against the derived public key with no clear cause.
+		key := ed25519.PrivateKey(decoded)
+		derived := ed25519.NewKeyFromSeed(decoded[:ed25519.SeedSize])
+		if !key.Public().(ed25519.PublicKey).Equal(derived.Public()) {
+			return nil, fmt.Errorf("%s: 64-byte key is internally inconsistent (public half does not match seed)", path)
+		}
+		return key, nil
+	case ed25519.SeedSize:
+		return ed25519.NewKeyFromSeed(decoded), nil
+	default:
+		return nil, fmt.Errorf("%s: want %d or %d bytes, got %d", path, ed25519.SeedSize, ed25519.PrivateKeySize, len(decoded))
+	}
 }
 
 func readHexFile(path string, wantLen int) ([]byte, error) {

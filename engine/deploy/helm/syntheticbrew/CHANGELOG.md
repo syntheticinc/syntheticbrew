@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.14.0] — 2026-07-20
+
+### Added
+
+- **OAuth 2.1 authorization server config** (engine `appVersion` 1.17.0). New `config.oauth` values: `issuer` (public URL agents reach the engine at; empty leaves the AS off → `SYNTHETICBREW_OAUTH_ISSUER`) and `asKeySecret` / `asKeySecretKey` (name of a Secret holding the AS signing key, mounted read-only → `SYNTHETICBREW_OAUTH_AS_KEY_PATH`). Set `asKeySecret` for multi-replica / external mode so every replica signs with the same key; in local single-replica mode leave it empty and the engine generates and persists the key in the keys volume alongside the session key.
+
+### Fixed
+
+- **Fresh install with a chart-managed DB password hung the migrations Job.** The migrations Job runs as a `pre-install`/`pre-upgrade` hook, and Helm applies normal resources only after every hook completes — so on a fresh install the chart-managed `-secrets` Secret (holding `DATABASE_URL`) did not exist yet when the hook started, and the migrations pod looped on `CreateContainerConfigError: secret not found`. This hit the documented Quick Install (`--set postgresql.external.password=…`); the `existingSecret` path was unaffected because that Secret pre-exists. The chart-managed Secret is now itself a `pre-install`/`pre-upgrade` hook at a weight below the migrations Job (mirroring the ServiceAccount), so it is created first, with `hook-delete-policy: before-hook-creation` and no `hook-succeeded` (the engine Deployment references it at runtime). Regression-guarded by a render assertion plus a new chart-managed-password integration install (OAuth enabled, asserting the MCP endpoint) in `chart-test`, which previously only exercised the `existingSecret` path. NOTE: Helm hooks are not part of the release manifest, so a chart-managed `-secrets` Secret is **not removed on `helm uninstall`** — delete it manually if you tear the release down (the `existingSecret` path is unaffected; there the Secret is yours). This matches the chart's existing ServiceAccount hook behavior.
+
 ## [0.13.0] — 2026-07-18
 
 ### Changed

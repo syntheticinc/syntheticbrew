@@ -107,6 +107,13 @@ class APIClient {
     return this.token !== null;
   }
 
+  // getToken exposes the current bearer for the OAuth consent flow, whose
+  // endpoints speak raw RFC JSON and bypass request()/the {data} envelope but
+  // still need the admin session bearer attached.
+  getToken(): string | null {
+    return this.token;
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.token) {

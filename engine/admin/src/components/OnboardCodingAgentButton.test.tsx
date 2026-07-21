@@ -1,14 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import OnboardCodingAgentButton from './OnboardCodingAgentButton';
 
+// The whole security point of Stage 3: no token is minted or embedded. Guard
+// that the component never touches createToken.
+const createToken = vi.fn();
 vi.mock('../api/client', () => ({
-  api: { createToken: vi.fn() },
+  api: { createToken },
 }));
 
-import { api } from '../api/client';
-const mockApi = vi.mocked(api);
+function renderButton(props?: { compact?: boolean }) {
+  return render(
+    <MemoryRouter>
+      <OnboardCodingAgentButton {...props} />
+    </MemoryRouter>,
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -18,58 +27,58 @@ beforeEach(() => {
 });
 
 describe('OnboardCodingAgentButton', () => {
-  it('mints a provision token and copies a self-contained instruction', async () => {
-    mockApi.createToken.mockResolvedValue({ id: '1', name: 'coding-agent', token: 'bb_onboard_1' });
-
-    render(<OnboardCodingAgentButton />);
+  it('copies a token-free fetch-prompt line and never mints a token', async () => {
+    renderButton();
     await userEvent.click(screen.getByTestId('agents-empty-connect-agent'));
 
     await waitFor(() =>
       expect(screen.getByTestId('agents-empty-connect-agent')).toHaveTextContent('Copied ✓'),
     );
 
-    expect(mockApi.createToken).toHaveBeenCalledWith({
-      name: expect.stringMatching(/^coding-agent-\d{4}-\d{2}-\d{2}$/),
-      scopes: ['provision'],
-    });
+    // No token minting — the agent connects via OAuth, not an embedded secret.
+    expect(createToken).not.toHaveBeenCalled();
+
     const prompt = vi.mocked(navigator.clipboard.writeText).mock.calls[0]![0] as string;
-    // Short fetch-instruction: full steps live at the engine-served prompt.md.
-    expect(prompt).toContain(`Fetch ${window.location.origin}/agent-setup/prompt.md`);
-    expect(prompt).toContain('bb_onboard_1');
+    expect(prompt).toBe(
+      `Fetch ${window.location.origin}/agent-setup/prompt.md and follow the instructions.`,
+    );
+    // No access token leaks into the copied text.
+    expect(prompt).not.toMatch(/access token/i);
+    expect(prompt).not.toMatch(/bb_/);
     // Self-contained: no URLs beyond this engine's own origin.
-    const external = prompt.match(/https?:\/\/[^\s"]+/g)!.filter(
+    const external = (prompt.match(/https?:\/\/[^\s"]+/g) ?? []).filter(
       (u) => !u.startsWith(window.location.origin),
     );
     expect(external).toEqual([]);
   });
 
-  it('reuses the minted token on repeat clicks', async () => {
-    mockApi.createToken.mockResolvedValue({ id: '1', name: 'coding-agent', token: 'bb_once' });
-
-    render(<OnboardCodingAgentButton />);
-    await userEvent.click(screen.getByTestId('agents-empty-connect-agent'));
-    await waitFor(() =>
-      expect(screen.getByTestId('agents-empty-connect-agent')).toHaveTextContent('Copied ✓'),
-    );
-    await userEvent.click(screen.getByTestId('agents-empty-connect-agent'));
-
-    expect(mockApi.createToken).toHaveBeenCalledTimes(1);
+  it('links to the API Keys page for the manual key path', () => {
+    renderButton();
+    const link = screen.getByTestId('onboard-apikeys-link');
+    expect(link).toHaveAttribute('href', '/api-keys');
   });
 
-  it('renders the compact top-bar variant', async () => {
-    mockApi.createToken.mockResolvedValue({ id: '1', name: 'coding-agent', token: 'bb_c' });
-
-    render(<OnboardCodingAgentButton compact />);
+  it('renders the compact top-bar variant and copies the same line', async () => {
+    renderButton({ compact: true });
     const btn = screen.getByTestId('topbar-connect-agent');
     expect(btn).toHaveTextContent('Connect coding agent');
+
     await userEvent.click(btn);
     await waitFor(() => expect(btn).toHaveTextContent('Copied ✓'));
+
+    expect(createToken).not.toHaveBeenCalled();
+    const prompt = vi.mocked(navigator.clipboard.writeText).mock.calls[0]![0] as string;
+    expect(prompt).toBe(
+      `Fetch ${window.location.origin}/agent-setup/prompt.md and follow the instructions.`,
+    );
   });
 
-  it('shows an error state when minting fails', async () => {
-    mockApi.createToken.mockRejectedValue(new Error('boom'));
+  it('shows an error state when the clipboard copy fails', async () => {
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error('denied'));
+    // Legacy fallback also fails.
+    document.execCommand = vi.fn().mockReturnValue(false);
 
-    render(<OnboardCodingAgentButton />);
+    renderButton();
     await userEvent.click(screen.getByTestId('agents-empty-connect-agent'));
 
     await waitFor(() =>

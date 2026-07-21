@@ -62,13 +62,6 @@ export function currentTheme(): ResolvedTheme {
   return 'dark';
 }
 
-/** Apply the persisted theme to the document. Call once on startup. */
-export function initTheme(): ResolvedTheme {
-  const theme = currentTheme();
-  apply(theme);
-  return theme;
-}
-
 /** Persist and apply a theme choice. */
 export function setTheme(theme: ResolvedTheme): void {
   writeCookie(theme);
