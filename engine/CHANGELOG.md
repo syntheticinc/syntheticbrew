@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.17.1] — 2026-07-22
+
+### Added
+
+- Admin dashboard: the widget embed page now notes that the widget shows a "Powered by SyntheticBrew" badge on the free plan, with an upgrade link to remove it. Shown only in externally-authenticated (hosted) deployments; self-hosted installs are unaffected.
+
 ## [1.17.0] — 2026-07-20
 
 ### Added
