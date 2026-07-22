@@ -44,6 +44,12 @@ function escapeAttr(s: string): string {
 }
 
 export default function WidgetConfigPage() {
+  // Plan management lives on the cloud dashboard; self-hosted deployments
+  // get no plan-related hint here (same gate as QuotaBanner).
+  const landingUrl = import.meta.env.VITE_LANDING_URL as string | undefined;
+  const upgradeUrl =
+    import.meta.env.VITE_AUTH_MODE === 'external' && landingUrl ? `${landingUrl}/billing` : null;
+
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<WidgetSnippetConfig>(DEFAULT_CONFIG);
@@ -249,6 +255,20 @@ export default function WidgetConfigPage() {
                     Replace <code className="text-brand-shade2">your-engine.example.com</code> with the hostname where
                     your SyntheticBrew engine is reachable from the browser.
                   </p>
+                  {upgradeUrl && (
+                    <p className="mt-2 text-[11px] text-brand-shade3 font-mono">
+                      The widget shows a &quot;Powered by SyntheticBrew&quot; badge on the free plan —{' '}
+                      <a
+                        href={upgradeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand-accent hover:underline"
+                      >
+                        upgrade
+                      </a>{' '}
+                      to remove it.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
