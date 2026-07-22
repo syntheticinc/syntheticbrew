@@ -76,7 +76,7 @@ func (t *adminCreateModelTool) Info(_ context.Context) (*schema.ToolInfo, error)
 		Desc: "Creates an LLM model configuration. Requires name, type, and model_name. Optional: base_url, api_key, is_default (promote to tenant default chat model).",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"name":       {Type: schema.String, Desc: "Unique model config name", Required: true},
-			"type":       {Type: schema.String, Desc: "Provider type: openai_compatible, anthropic, etc.", Required: true},
+			"type":       {Type: schema.String, Desc: "Provider type", Enum: []string{"ollama", "openai_compatible", "anthropic", "azure_openai", "openrouter"}, Required: true},
 			"model_name": {Type: schema.String, Desc: "Model identifier (e.g. gpt-4, claude-3)", Required: true},
 			"base_url":   {Type: schema.String, Desc: "Base URL for the API endpoint", Required: false},
 			"api_key":    {Type: schema.String, Desc: "API key (stored at rest in the engine database; never returned in API responses)", Required: false},
@@ -166,11 +166,11 @@ func (t *adminUpdateModelTool) Info(_ context.Context) (*schema.ToolInfo, error)
 		Desc: "Updates an LLM model configuration by ID. Provide only fields to change. API key is only updated if provided. Setting is_default=true promotes this model to the tenant default (atomic swap).",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"model_id":   {Type: schema.String, Desc: "Model config ID to update", Required: true},
-			"name":       {Type: schema.String, Desc: "New name", Required: false},
-			"type":       {Type: schema.String, Desc: "New type", Required: false},
-			"model_name": {Type: schema.String, Desc: "New model identifier", Required: false},
-			"base_url":   {Type: schema.String, Desc: "New base URL", Required: false},
-			"api_key":    {Type: schema.String, Desc: "New API key", Required: false},
+			"name":       {Type: schema.String, Desc: "Replacement model config name (omit to keep current)", Required: false},
+			"type":       {Type: schema.String, Desc: "Provider type (omit to keep current)", Enum: []string{"ollama", "openai_compatible", "anthropic", "azure_openai", "openrouter"}, Required: false},
+			"model_name": {Type: schema.String, Desc: "Model identifier, e.g. gpt-4 (omit to keep current)", Required: false},
+			"base_url":   {Type: schema.String, Desc: "API endpoint base URL (omit to keep current)", Required: false},
+			"api_key":    {Type: schema.String, Desc: "API key; stored at rest, never returned (omit to keep current)", Required: false},
 			"is_default": {Type: schema.Boolean, Desc: "Promote this model to the tenant default chat model (atomic)", Required: false},
 		}),
 	}, nil

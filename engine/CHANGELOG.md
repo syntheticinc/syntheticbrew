@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.18.0] — 2026-07-22
+
+### Added
+
+- **MCP server card.** New anonymous discovery endpoint `GET /.well-known/mcp/server-card.json` describing the server (name, version, endpoint, capability overview) — lets registries and scanners index the server without an authenticated `tools/list`.
+- **MCP `initialize` metadata.** The initialize response now carries `serverInfo.title` and server-level `instructions` guiding clients toward the provision-first flow.
+
+### Changed
+
+- **MCP tool schema quality.** Rewrote weak tool descriptions (including a clear split between `provision_agent` and `admin_create_agent`), added missing enums (agent lifecycle, tool execution, MCP transports, model providers, capability types, document file types) and `items` schemas for array parameters, and replaced terse parameter descriptions.
+
 ## [1.17.1] — 2026-07-22
 
 ### Added

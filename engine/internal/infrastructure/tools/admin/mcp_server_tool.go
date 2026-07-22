@@ -89,11 +89,11 @@ func (t *adminCreateMCPServerTool) Info(_ context.Context) (*schema.ToolInfo, er
 		Desc: "Creates an MCP server configuration. For stdio: provide command and args. For sse/http/streamable-http: provide url. enabled defaults to true when omitted.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"name":     {Type: schema.String, Desc: "Server name", Required: true},
-			"type":     {Type: schema.String, Desc: "Transport type: stdio, http, sse, streamable-http", Required: true},
+			"type":     {Type: schema.String, Desc: "Transport type", Enum: []string{"stdio", "http", "sse", "streamable-http"}, Required: true},
 			"command":  {Type: schema.String, Desc: "Command to run (for stdio)", Required: false},
-			"url":      {Type: schema.String, Desc: "Server URL (for sse/http)", Required: false},
-			"args":     {Type: schema.Array, Desc: "Command arguments array", Required: false},
-			"env_vars": {Type: schema.Object, Desc: "Environment variables as key-value pairs", Required: false},
+			"url":      {Type: schema.String, Desc: "Server URL (for sse/http/streamable-http)", Required: false},
+			"args":     {Type: schema.Array, Desc: "Command arguments array (for stdio)", ElemInfo: &schema.ParameterInfo{Type: schema.String, Desc: "Command argument"}, Required: false},
+			"env_vars": {Type: schema.Object, Desc: "Environment variables as a string-to-string map", Required: false},
 			"enabled":  {Type: schema.Boolean, Desc: "Whether the server is active (default true).", Required: false},
 		}),
 	}, nil
@@ -187,12 +187,12 @@ func (t *adminUpdateMCPServerTool) Info(_ context.Context) (*schema.ToolInfo, er
 		Desc: "Updates an MCP server by ID. Passing enabled=false keeps the server configured but blocks it from being injected into agents.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"server_id": {Type: schema.String, Desc: "MCP server ID to update", Required: true},
-			"name":      {Type: schema.String, Desc: "New name", Required: false},
-			"type":      {Type: schema.String, Desc: "New type", Required: false},
-			"command":   {Type: schema.String, Desc: "New command", Required: false},
-			"url":       {Type: schema.String, Desc: "New URL", Required: false},
-			"args":      {Type: schema.Array, Desc: "New args", Required: false},
-			"env_vars":  {Type: schema.Object, Desc: "New env vars", Required: false},
+			"name":      {Type: schema.String, Desc: "Replacement server name (omit to keep current)", Required: false},
+			"type":      {Type: schema.String, Desc: "Transport type (omit to keep current)", Enum: []string{"stdio", "http", "sse", "streamable-http"}, Required: false},
+			"command":   {Type: schema.String, Desc: "Command to run for stdio transport (omit to keep current)", Required: false},
+			"url":       {Type: schema.String, Desc: "Server URL for sse/http/streamable-http transport (omit to keep current)", Required: false},
+			"args":      {Type: schema.Array, Desc: "Command arguments; replaces the current list (omit to keep current)", ElemInfo: &schema.ParameterInfo{Type: schema.String, Desc: "Command argument"}, Required: false},
+			"env_vars":  {Type: schema.Object, Desc: "Environment variables as a string-to-string map; replaces the current map (omit to keep current)", Required: false},
 			"enabled":   {Type: schema.Boolean, Desc: "New enabled state (omit to preserve).", Required: false},
 		}),
 	}, nil
@@ -287,7 +287,7 @@ func NewAdminDeleteMCPServerTool(repo MCPServerRepository, reloader func(context
 func (t *adminDeleteMCPServerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_delete_mcp_server",
-		Desc: "Deletes an MCP server by ID.",
+		Desc: "Deletes an MCP server configuration by ID. Agents that referenced it lose its tools; detach it from agents first with admin_detach_mcp_server_from_agent if you want a controlled rollout.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"server_id": {Type: schema.String, Desc: "MCP server ID to delete", Required: true},
 		}),

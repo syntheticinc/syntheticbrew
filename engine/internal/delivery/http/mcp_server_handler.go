@@ -71,12 +71,25 @@ type initializeResult struct {
 	ProtocolVersion string         `json:"protocolVersion"`
 	Capabilities    map[string]any `json:"capabilities"`
 	ServerInfo      serverInfo     `json:"serverInfo"`
+	Instructions    string         `json:"instructions,omitempty"`
 }
 
 type serverInfo struct {
 	Name    string `json:"name"`
+	Title   string `json:"title,omitempty"`
 	Version string `json:"version,omitempty"`
 }
+
+// mcpServerTitle is the human-readable server name (MCP spec 2025-06-18 `title`).
+const mcpServerTitle = "SyntheticBrew"
+
+// mcpServerInstructions is the server-level usage guidance returned from
+// initialize. Kept short: it is injected into LLM client context verbatim.
+const mcpServerInstructions = "This server provisions and manages AI chat agents on SyntheticBrew. " +
+	"Start with provision_agent to create a ready-to-use chat agent in one call. " +
+	"Ground it in your content with admin_create_knowledge_base + admin_add_document + admin_link_knowledge_base " +
+	"(poll admin_list_documents until each document is 'ready'), then call get_embed_snippet to embed the agent on a website. " +
+	"The admin_* tools give fine-grained control over agents, chat schemas, models, MCP servers, and capabilities."
 
 // toolsCallParams is the tools/call params.
 type toolsCallParams struct {
@@ -136,7 +149,8 @@ func (h *MCPServerHandler) handleInitialize(w http.ResponseWriter, req *mcp.Requ
 	result := initializeResult{
 		ProtocolVersion: proto,
 		Capabilities:    map[string]any{"tools": map[string]any{}},
-		ServerInfo:      serverInfo{Name: "syntheticbrew-engine", Version: h.version},
+		ServerInfo:      serverInfo{Name: "syntheticbrew-engine", Title: mcpServerTitle, Version: h.version},
+		Instructions:    mcpServerInstructions,
 	}
 	h.writeResult(w, req.ID, result)
 }

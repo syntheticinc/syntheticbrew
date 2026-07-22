@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -834,6 +835,18 @@ func Run(sc ServerConfig) error {
 		tenantExtractor := deliveryhttp.NewJWTTenantExtractor("tenant_id")
 		tenantMW := deliveryhttp.NewTenantMiddleware(tenantExtractor, sc.RequireTenant)
 
+		// MCP server card — anonymous discovery manifest for catalog scanners
+		// that cannot complete the OAuth flow. The endpoint URL mirrors the
+		// canonical MCP resource: the AS resource when the AS is enabled, else
+		// derived from the public base URL, else the bare endpoint path.
+		mcpCardEndpoint := oauthMCPResourcePath
+		if asWiring.Enabled {
+			mcpCardEndpoint = asWiring.Resource
+		} else if base := strings.TrimSuffix(bootstrapCfg.Engine.PublicBaseURL, "/"); base != "" {
+			mcpCardEndpoint = base + oauthMCPResourcePath
+		}
+		mcpServerCardHandler := deliveryhttp.NewMCPServerCardHandler(sc.Version, mcpCardEndpoint)
+
 		// Protected management routes + public health/registry/local-session
 		// — extracted to registerHTTPRoutes (see routes_register.go).
 		registerHTTPRoutes(routesDeps{
@@ -862,6 +875,7 @@ func Run(sc ServerConfig) error {
 			LocalSessionHandler:  localSessionHandler,
 			OAuthHandler:         oauthHandler,
 			OAuthProtectedRes:    oauthProtectedResource,
+			MCPServerCard:        mcpServerCardHandler,
 			TransportPolicy:      sc.Plugin.TransportPolicy(),
 			Plugin:               sc.Plugin,
 			ExternalRouter:       r,
