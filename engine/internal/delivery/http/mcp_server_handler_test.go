@@ -119,6 +119,25 @@ func TestMCPServer_Initialize_EchoesProtocol(t *testing.T) {
 	assert.Equal(t, "9.9.9", result.ServerInfo.Version)
 }
 
+// TestMCPServer_Initialize_TitleAndInstructions verifies initialize carries the
+// human-readable server title (MCP spec 2025-06-18) and the server-level usage
+// instructions — both are quality signals consumed by MCP clients and catalogs.
+func TestMCPServer_Initialize_TitleAndInstructions(t *testing.T) {
+	store, _ := newTestStore()
+	h := NewMCPServerHandler(store, nil, "9.9.9")
+
+	rec, resp := doRPC(t, h, ctxWithScopes(ScopeAdmin),
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.Nil(t, resp.Error)
+	var result initializeResult
+	require.NoError(t, json.Unmarshal(resp.Result, &result))
+	assert.Equal(t, mcpServerTitle, result.ServerInfo.Title)
+	require.NotEmpty(t, result.Instructions)
+	assert.Contains(t, result.Instructions, "provision_agent")
+}
+
 func TestMCPServer_UnknownMethod_MethodNotFound(t *testing.T) {
 	store, _ := newTestStore()
 	h := NewMCPServerHandler(store, nil, "test")

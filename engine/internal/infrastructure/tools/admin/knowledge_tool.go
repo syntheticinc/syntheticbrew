@@ -138,7 +138,7 @@ Indexing is asynchronous — the document starts in status 'indexing'. Poll admi
 			"kb_name":   {Type: schema.String, Desc: "Name of the target knowledge base.", Required: true},
 			"file_name": {Type: schema.String, Desc: "Document file name (e.g. faq.md).", Required: true},
 			"content":   {Type: schema.String, Desc: "Full text content of the document.", Required: true},
-			"file_type": {Type: schema.String, Desc: "Document format: one of md, txt, csv.", Required: true},
+			"file_type": {Type: schema.String, Desc: "Document format.", Enum: []string{"md", "txt", "csv"}, Required: true},
 		}),
 	}, nil
 }

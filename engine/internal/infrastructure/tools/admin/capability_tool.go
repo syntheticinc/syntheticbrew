@@ -30,7 +30,7 @@ func (t *adminAddCapabilityTool) Info(_ context.Context) (*schema.ToolInfo, erro
 		Desc: "Adds a capability to an agent. Types: memory, knowledge. Both auto-inject tools at runtime (memory_recall/memory_store for memory, knowledge_search for knowledge).",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"agent_name":      {Type: schema.String, Desc: "Agent name", Required: true},
-			"capability_type": {Type: schema.String, Desc: "Type: memory or knowledge", Required: true},
+			"capability_type": {Type: schema.String, Desc: "Capability type", Enum: []string{"memory", "knowledge"}, Required: true},
 			"config_json":     {Type: schema.String, Desc: "Optional JSON config string for the capability", Required: false},
 		}),
 	}, nil
@@ -106,7 +106,7 @@ func NewAdminRemoveCapabilityTool(repo CapabilityRepository, reloader func(conte
 func (t *adminRemoveCapabilityTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_remove_capability",
-		Desc: "Removes a capability from an agent by capability ID.",
+		Desc: "Removes a capability (memory or knowledge) from an agent by capability ID; its auto-injected tools disappear from the agent. Find capability IDs with admin_get_agent.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"capability_id": {Type: schema.String, Desc: "Capability ID to remove", Required: true},
 		}),
@@ -159,7 +159,7 @@ func NewAdminUpdateCapabilityTool(repo CapabilityRepository, reloader func(conte
 func (t *adminUpdateCapabilityTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_update_capability",
-		Desc: "Updates a capability's config or enabled state by ID.",
+		Desc: "Updates a capability's JSON config or toggles it on/off by capability ID. Use admin_get_agent to find the capability ID and current config.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"capability_id": {Type: schema.String, Desc: "Capability ID to update", Required: true},
 			"config_json":   {Type: schema.String, Desc: "New JSON config string", Required: false},

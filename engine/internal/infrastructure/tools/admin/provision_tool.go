@@ -74,7 +74,7 @@ Recommended follow-ups after provisioning: attach a knowledge base (so the agent
 			"name":          {Type: schema.String, Desc: "Unique agent name (lowercase letters, digits, hyphens; must start with a letter).", Required: true},
 			"system_prompt": {Type: schema.String, Desc: "System prompt defining role, scope, refusals, and tone. This is the primary quality lever.", Required: true},
 			"model_name":    {Type: schema.String, Desc: "Model name to bind. If empty, the agent uses the deployment's default model when one is available and answers immediately; otherwise bind a model before it can answer.", Required: false},
-			"tools":         {Type: schema.Array, Desc: "Optional array of builtin tool names to grant the agent.", Required: false},
+			"tools":         {Type: schema.Array, Desc: "Optional array of builtin tool names to grant the agent.", ElemInfo: &schema.ParameterInfo{Type: schema.String, Desc: "Builtin tool name"}, Required: false},
 			"schema_name":   {Type: schema.String, Desc: "Chat schema name. Defaults to the agent name.", Required: false},
 		}),
 	}, nil

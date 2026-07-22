@@ -151,7 +151,7 @@ func NewAdminDeleteAgentRelationTool(repo AgentRelationRepository, reloader func
 func (t *adminDeleteAgentRelationTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_delete_agent_relation",
-		Desc: "Deletes an agent relation by ID.",
+		Desc: "Deletes a delegation relation between two agents by relation ID. Find the ID with admin_list_agent_relations.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"relation_id": {Type: schema.String, Desc: "Agent relation ID to delete", Required: true},
 		}),

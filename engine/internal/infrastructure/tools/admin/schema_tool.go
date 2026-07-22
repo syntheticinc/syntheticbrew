@@ -28,7 +28,7 @@ func NewAdminListSchemasTool(repo SchemaRepository) tool.InvokableTool {
 func (t *adminListSchemasTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name:        "admin_list_schemas",
-		Desc:        "Lists all schemas. A schema groups agents into a workflow with edges and triggers.",
+		Desc:        "Lists all chat schemas (workflows). A schema groups agents behind a single entry agent that end users chat with.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
 	}, nil
 }
@@ -117,7 +117,7 @@ func NewAdminCreateSchemaTool(creator SchemaCreator, reloader func(context.Conte
 func (t *adminCreateSchemaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_create_schema",
-		Desc: "Creates a new schema (workflow). Requires name. Optional: description.",
+		Desc: "Creates an empty chat schema (workflow) that groups agents behind one chat entry point. Use it when building a multi-agent setup manually — provision_agent creates a chat-enabled schema for you automatically.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"name":        {Type: schema.String, Desc: "Schema name", Required: true},
 			"description": {Type: schema.String, Desc: "Schema description", Required: false},
@@ -295,7 +295,7 @@ func NewAdminDeleteSchemaTool(repo SchemaRepository, reloader func(context.Conte
 func (t *adminDeleteSchemaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_delete_schema",
-		Desc: "Deletes a schema by ID. WARNING: This removes all edges and agent associations in the schema.",
+		Desc: "Deletes a schema by ID. WARNING: destructive — removes all agent relations and associations in the schema.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"schema_id": {Type: schema.String, Desc: "Schema ID to delete", Required: true},
 		}),

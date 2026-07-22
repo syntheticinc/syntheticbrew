@@ -60,6 +60,9 @@ type routesDeps struct {
 	// routes are registered.
 	OAuthHandler      *deliveryhttp.OAuthHandler
 	OAuthProtectedRes *deliveryhttp.OAuthProtectedResource
+	// MCPServerCard serves the anonymous /.well-known/mcp/server-card.json
+	// discovery manifest (catalog-scanner fallback; MCP endpoint stays authed).
+	MCPServerCard     *deliveryhttp.MCPServerCardHandler
 	TransportPolicy   mcpcatalog.TransportPolicy
 	Plugin            pluginpkg.Plugin
 	ExternalRouter    chi.Router
@@ -107,6 +110,17 @@ func registerHTTPRoutes(deps routesDeps) {
 		healthHandler.SetPlatformDefaultChecker(components.ModelSelector)
 	}
 	r.Get("/api/v1/health", healthHandler.ServeHTTP)
+
+	// MCP server card (public, anonymous) — declarative discovery manifest for
+	// MCP catalog scanners that cannot complete the OAuth flow. Discloses only
+	// what the server is (name, endpoint, capability overview); the MCP
+	// JSON-RPC endpoint itself stays fully authorized.
+	if deps.MCPServerCard != nil {
+		r.Get("/.well-known/mcp/server-card.json", deps.MCPServerCard.ServeHTTP)
+		if deps.HasInternalServer {
+			internalRouter.Get("/.well-known/mcp/server-card.json", deps.MCPServerCard.ServeHTTP)
+		}
+	}
 
 	// Model registry (public — read-only catalog, no auth needed)
 	modelRegistry := registry.New()

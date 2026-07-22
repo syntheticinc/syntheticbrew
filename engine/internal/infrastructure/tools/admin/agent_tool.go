@@ -113,15 +113,15 @@ func NewAdminCreateAgentTool(repo AgentRepository, reloader func(context.Context
 func (t *adminCreateAgentTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_create_agent",
-		Desc: "Creates a new agent. Requires name and system_prompt. Optional: model, lifecycle (persistent/ephemeral, default persistent), tool_execution (sequential/parallel), max_steps, builtin_tools array.",
+		Desc: "Creates a bare agent (no chat schema). Prefer provision_agent when you want an end-user-ready chat agent in one call; use this low-level tool when assembling a multi-agent schema manually. Requires name and system_prompt.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"name":           {Type: schema.String, Desc: "Unique agent name (lowercase, hyphens allowed)", Required: true},
 			"system_prompt":  {Type: schema.String, Desc: "System prompt for the agent", Required: true},
 			"model":          {Type: schema.String, Desc: "Model name to use", Required: false},
-			"lifecycle":      {Type: schema.String, Desc: "Agent lifecycle: persistent or ephemeral (default: persistent)", Required: false},
-			"tool_execution": {Type: schema.String, Desc: "Tool execution mode: sequential or parallel (default: sequential)", Required: false},
+			"lifecycle":      {Type: schema.String, Desc: "Agent lifecycle (default: persistent)", Enum: []string{"persistent", "ephemeral"}, Required: false},
+			"tool_execution": {Type: schema.String, Desc: "Tool execution mode (default: sequential)", Enum: []string{"sequential", "parallel"}, Required: false},
 			"max_steps":      {Type: schema.Integer, Desc: "Max steps per turn (default: 0 = unlimited)", Required: false},
-			"builtin_tools":  {Type: schema.Array, Desc: "Array of builtin tool names to assign", Required: false},
+			"builtin_tools":  {Type: schema.Array, Desc: "Array of builtin tool names to assign", ElemInfo: &schema.ParameterInfo{Type: schema.String, Desc: "Builtin tool name"}, Required: false},
 		}),
 	}, nil
 }
@@ -206,12 +206,12 @@ func (t *adminUpdateAgentTool) Info(_ context.Context) (*schema.ToolInfo, error)
 		Desc: "Updates an existing agent by name. All provided fields replace the current values.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"name":           {Type: schema.String, Desc: "Agent name to update", Required: true},
-			"system_prompt":  {Type: schema.String, Desc: "New system prompt", Required: false},
-			"model":          {Type: schema.String, Desc: "New model name", Required: false},
-			"lifecycle":      {Type: schema.String, Desc: "New lifecycle", Required: false},
-			"tool_execution": {Type: schema.String, Desc: "New tool execution mode", Required: false},
-			"max_steps":      {Type: schema.Integer, Desc: "New max steps", Required: false},
-			"builtin_tools":  {Type: schema.Array, Desc: "New builtin tools array (replaces existing)", Required: false},
+			"system_prompt":  {Type: schema.String, Desc: "Replacement system prompt (omit to keep current)", Required: false},
+			"model":          {Type: schema.String, Desc: "Model name to switch the agent to (omit to keep current)", Required: false},
+			"lifecycle":      {Type: schema.String, Desc: "Agent lifecycle (omit to keep current)", Enum: []string{"persistent", "ephemeral"}, Required: false},
+			"tool_execution": {Type: schema.String, Desc: "Tool execution mode (omit to keep current)", Enum: []string{"sequential", "parallel"}, Required: false},
+			"max_steps":      {Type: schema.Integer, Desc: "Max steps per turn (omit to keep current)", Required: false},
+			"builtin_tools":  {Type: schema.Array, Desc: "Builtin tool names; replaces the agent's current tool list (omit to keep current)", ElemInfo: &schema.ParameterInfo{Type: schema.String, Desc: "Builtin tool name"}, Required: false},
 		}),
 	}, nil
 }

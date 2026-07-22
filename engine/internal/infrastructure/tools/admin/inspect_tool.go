@@ -66,7 +66,7 @@ func NewAdminGetSessionTool(repo SessionRepository) tool.InvokableTool {
 func (t *adminGetSessionTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: "admin_get_session",
-		Desc: "Returns details of a specific session by ID.",
+		Desc: "Returns a single conversation session by ID, including its metadata and message stats. Use it to inspect or debug an end-user conversation found via admin_list_sessions.",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"session_id": {Type: schema.String, Desc: "Session ID", Required: true},
 		}),
