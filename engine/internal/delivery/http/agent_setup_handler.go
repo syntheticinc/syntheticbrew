@@ -102,7 +102,7 @@ After the MCP connection works, use the SyntheticBrew MCP tools to set everythin
 1. Call provision_agent to create an agent named "support" (or the user's choice) with instructions to answer customer questions about the user's product, grounded and honest — it must say "I don't know" rather than invent answers.
 2. Refine the agent's system instructions with the product context the user gave you (admin_update_agent).
 3. Ground it: create a knowledge base with admin_create_knowledge_base, upload the user's docs with admin_add_document (markdown/text; ask the user for files or fetch pages they point you to), link it with admin_link_knowledge_base, and poll admin_list_documents until documents are indexed ("ready").
-4. Call get_embed_snippet and hand the user the ready-to-paste <script> snippet for their website.
+4. Call get_embed_snippet to get the ready-to-paste <script> snippet. If you are working inside the user's website project, offer to add it to the site layout yourself (typically right before </body> in the shared layout or index page) — show the user the exact change and apply it once they agree. Otherwise, hand the user the snippet to paste manually.
 5. Suggest one test question — ideally one whose answer lives in the uploaded docs — so the user sees a grounded answer immediately.
 
 ---
