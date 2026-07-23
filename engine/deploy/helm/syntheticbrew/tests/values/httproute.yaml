@@ -7,7 +7,7 @@ replicaCount: 1
 
 image:
   repository: syntheticinc/syntheticbrew
-  tag: "1.11.0"
+  tag: "1.15.0"
 
 postgresql:
   external:
@@ -47,4 +47,4 @@ migrations:
   enabled: true
   image:
     repository: syntheticinc/syntheticbrew-migrations
-    tag: "1.11.0"
+    tag: "1.15.0"
