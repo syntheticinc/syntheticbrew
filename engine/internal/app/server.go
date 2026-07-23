@@ -45,6 +45,8 @@ import (
 	"github.com/syntheticinc/syntheticbrew/internal/service/lifecycle"
 	memorysvc "github.com/syntheticinc/syntheticbrew/internal/service/memory"
 
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/persistence/models"
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/secrets"
 	"github.com/syntheticinc/syntheticbrew/internal/service/resilience"
 	"github.com/syntheticinc/syntheticbrew/internal/service/sessionprocessor"
 	"github.com/syntheticinc/syntheticbrew/internal/service/turnexecutor"
@@ -224,6 +226,20 @@ func Run(sc ServerConfig) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	// Secrets-at-rest cipher for stored credentials (LLM provider API keys).
+	// Cloud/EE (non-Noop plugin) fails closed without SYNTHETICBREW_SECRETS_KEY:
+	// the key must be provisioned explicitly, never trapped in an ephemeral
+	// container filesystem. CE falls back to an auto-generated key file in
+	// the data dir so self-hosters get encryption without configuration.
+	_, pluginIsNoop := sc.Plugin.(pluginpkg.Noop)
+	secretKey, secretsErr := secrets.LoadKey(dataDir, !pluginIsNoop)
+	if secretsErr != nil {
+		return fmt.Errorf("load secrets key: %w", secretsErr)
+	}
+	if err := secrets.Init(secretKey); err != nil {
+		return fmt.Errorf("init secrets cipher: %w", err)
+	}
+
 	// Try loading bootstrap config for PostgreSQL database connection.
 	var agentRegistry *agentregistry.AgentRegistry
 	var registryMgr *agentregistry.Manager
@@ -242,6 +258,13 @@ func Run(sc ServerConfig) error {
 		})
 		if pgErr != nil {
 			return fmt.Errorf("connect to PostgreSQL: %w", pgErr)
+		}
+
+		// One-time, idempotent backfill: seal any legacy plaintext API keys.
+		// Errors are non-fatal — unsealed rows still work (Open passes
+		// plaintext through) and re-seal on their next save.
+		if err := backfillSealedSecrets(ctx, pgDB); err != nil {
+			slog.WarnContext(ctx, "secrets backfill incomplete", "error", err)
 		}
 
 		agentRepo := configrepo.NewGORMAgentRepository(pgDB)
@@ -1303,4 +1326,46 @@ func warnUnsafeLocalBind(ctx context.Context, authMode, host string, port int) {
 		"listen_host", host,
 		"listen_port", port,
 	)
+}
+
+// backfillSealedSecrets encrypts legacy plaintext API keys in place. It
+// selects only rows without the encryption prefix and saves each one, letting
+// the model's BeforeSave hook do the sealing. Idempotent: an interrupted run
+// simply leaves fewer plaintext rows for the next boot.
+func backfillSealedSecrets(ctx context.Context, db *gorm.DB) error {
+	if !secrets.Enabled() {
+		return nil
+	}
+	var rows []models.LLMProviderModel
+	if err := db.WithContext(ctx).
+		Where("api_key_encrypted <> '' AND api_key_encrypted NOT LIKE 'enc:v1:%'").
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("list plaintext keys: %w", err)
+	}
+	var failed int
+	for i := range rows {
+		if err := db.WithContext(ctx).Model(&models.LLMProviderModel{}).
+			Where("id = ?", rows[i].ID).
+			Update("api_key_encrypted", mustSeal(rows[i].APIKeyEncrypted, rows[i].TenantID)).Error; err != nil {
+			failed++
+			slog.WarnContext(ctx, "seal legacy api key failed", "model_id", rows[i].ID, "error", err)
+		}
+	}
+	if len(rows) > 0 {
+		slog.InfoContext(ctx, "sealed legacy api keys", "count", len(rows)-failed, "failed", failed)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d rows failed", failed, len(rows))
+	}
+	return nil
+}
+
+// mustSeal seals a value, falling back to the original on error so a
+// backfill problem can never destroy a working key.
+func mustSeal(plain, aad string) string {
+	sealed, err := secrets.Seal(plain, aad)
+	if err != nil {
+		return plain
+	}
+	return sealed
 }

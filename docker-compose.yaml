@@ -26,9 +26,19 @@ services:
       - SYNTHETICBREW_ADMIN_PASSWORD=${SYNTHETICBREW_ADMIN_PASSWORD:?SYNTHETICBREW_ADMIN_PASSWORD is required}
       - DB_USER=syntheticbrew
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      # Optional: hex-encoded 32-byte key for encrypting stored LLM API keys.
+      # When unset, the engine auto-generates one in its data dir (persisted
+      # in the enginedata volume below).
+      - SYNTHETICBREW_SECRETS_KEY=${SYNTHETICBREW_SECRETS_KEY:-}
+      - XDG_DATA_HOME=/var/lib/syntheticbrew
+    volumes:
+      # Persists the engine data dir — including the auto-generated
+      # secrets key — across container recreation.
+      - enginedata:/var/lib/syntheticbrew
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   pgdata:
+  enginedata:

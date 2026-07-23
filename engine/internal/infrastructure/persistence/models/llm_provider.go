@@ -3,6 +3,10 @@ package models
 import (
 	"encoding/json"
 	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/syntheticinc/syntheticbrew/internal/infrastructure/secrets"
 )
 
 // ModelConfig holds type-specific configuration for an LLM provider model.
@@ -66,6 +70,32 @@ type LLMProviderModel struct {
 }
 
 func (LLMProviderModel) TableName() string { return "models" }
+
+// BeforeSave seals the API key at rest (AES-256-GCM via the secrets package,
+// AAD-bound to the tenant). Idempotent: empty and already-sealed values pass
+// through, so repeated saves and the boot-time backfill are safe. When no
+// cipher is initialized (unit tests), the value is stored as-is.
+func (m *LLMProviderModel) BeforeSave(_ *gorm.DB) error {
+	sealed, err := secrets.Seal(m.APIKeyEncrypted, m.TenantID)
+	if err != nil {
+		return err
+	}
+	m.APIKeyEncrypted = sealed
+	return nil
+}
+
+// AfterFind opens the sealed API key so every consumer (model cache, LLM
+// clients, adapters) keeps seeing plaintext in memory. A sealed value that
+// cannot be opened (missing/rotated key) fails the read loudly rather than
+// handing ciphertext to an LLM client.
+func (m *LLMProviderModel) AfterFind(_ *gorm.DB) error {
+	plain, err := secrets.Open(m.APIKeyEncrypted, m.TenantID)
+	if err != nil {
+		return err
+	}
+	m.APIKeyEncrypted = plain
+	return nil
+}
 
 // GetConfig parses the Config jsonb into a ModelConfig struct.
 func (m *LLMProviderModel) GetConfig() ModelConfig {
